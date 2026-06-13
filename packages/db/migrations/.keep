@@ -1,0 +1,2 @@
+# Drizzle-generated SQL migrations land here.
+# Run `pnpm db:generate` to produce the first one after editing schema.

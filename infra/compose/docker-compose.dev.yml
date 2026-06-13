@@ -1,0 +1,115 @@
+name: trackflow-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tf-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trackflow
+      POSTGRES_PASSWORD: trackflow
+      POSTGRES_DB: trackflow
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trackflow -d trackflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "log_min_duration_statement=200"
+
+  redis:
+    image: redis:7-alpine
+    container_name: tf-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command:
+      - "redis-server"
+      - "--save"
+      - "60"
+      - "1000"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "1gb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: tf-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - miniodata:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-setup:
+    # Creates the dev buckets and a service user with rw access
+    image: minio/mc:latest
+    container_name: tf-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 minio minio123 &&
+      mc mb --ignore-existing local/trackflow-screenshots &&
+      mc mb --ignore-existing local/trackflow-exports &&
+      mc mb --ignore-existing local/trackflow-agent-updates &&
+      mc anonymous set download local/trackflow-agent-updates &&
+      exit 0
+      "
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: tf-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: tf-otel
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

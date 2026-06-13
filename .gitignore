@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Tauri / Rust
+target/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# Test
+coverage/
+.nyc_output/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+
+# Husky
+.husky/_
+
+# Secrets / certs
+*.pem
+*.key
+*.crt
+!**/test/fixtures/**
+
+# Generated
+packages/desktop-sdk/src/generated/
+apps/api/openapi/openapi.json

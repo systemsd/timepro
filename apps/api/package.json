@@ -1,0 +1,39 @@
+{
+  "name": "@trackflow/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/server.ts",
+    "build": "tsup src/server.ts --format esm --target node20 --clean --sourcemap",
+    "start": "node dist/server.js",
+    "lint": "echo '[api] lint stub — wire @trackflow/eslint-config later' && exit 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gen:openapi": "tsx scripts/gen-openapi.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/sensible": "^6.0.0",
+    "@fastify/under-pressure": "^9.0.0",
+    "@trackflow/db": "workspace:*",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.36.0",
+    "fastify": "^5.0.0",
+    "fastify-plugin": "^5.0.0",
+    "fastify-type-provider-zod": "^4.0.0",
+    "pino-pretty": "^11.3.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@trackflow/eslint-config": "workspace:*",
+    "@trackflow/tsconfig": "workspace:*",
+    "@types/node": "^20.16.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

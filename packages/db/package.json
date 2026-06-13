@@ -1,0 +1,39 @@
+{
+  "name": "@trackflow/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts",
+    "./tenant": "./src/tenant.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "lint": "echo '[db] lint stub — wire @trackflow/eslint-config later' && exit 0",
+    "typecheck": "tsc --noEmit",
+    "build": "echo '[db] no build step (source-only package)' && exit 0",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "tsx src/seeds/dev.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.36.0",
+    "pg": "^8.13.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@trackflow/eslint-config": "workspace:*",
+    "@trackflow/tsconfig": "workspace:*",
+    "@types/node": "^20.16.0",
+    "@types/pg": "^8.11.10",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.28.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
