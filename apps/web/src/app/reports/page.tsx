@@ -4,13 +4,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import {
+  createSavedReport,
+  deleteSavedReport,
   getReportFilters,
+  getSavedReports,
   runReport,
   type GroupDim,
   type ReportFilters,
   type ReportGroupNode,
   type ReportResult,
   type ReportType,
+  type RunReportInput,
+  type SavedReport,
 } from '@/lib/api';
 
 // ---- date helpers (viewer-local) ----
@@ -235,6 +240,9 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [saved, setSaved] = useState<SavedReport[]>([]);
+  const reloadSaved = () => getSavedReports().then((r) => setSaved(r.reports)).catch(() => setSaved([]));
+
   // default group-by per report type
   useEffect(() => {
     if (mode === 'summary') setGroupBy(['employee', 'project']);
@@ -244,6 +252,7 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!checked || !session) return;
     getReportFilters().then(setFilters).catch(() => setFilters({ employees: [], clients: [], projects: [] }));
+    reloadSaved();
   }, [checked, session]);
 
   const setPreset = (p: Preset) => {
@@ -253,23 +262,11 @@ export default function ReportsPage() {
     setActivePreset(p);
   };
 
-  const run = async () => {
-    if (mode === 'saved') return;
+  const execute = async (input: RunReportInput) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await runReport({
-        type: mode,
-        from,
-        to,
-        userIds: userIds.length ? userIds : undefined,
-        clientIds: clientIds.length ? clientIds : undefined,
-        projectIds: projectIds.length ? projectIds : undefined,
-        noteContains: noteContains.trim() || undefined,
-        groupBy: mode === 'detailed' ? undefined : groupBy,
-        onlyOffline,
-        excludeArchived,
-      });
+      const res = await runReport(input);
       setResult(res);
       setTab('timeline');
     } catch (e) {
@@ -278,6 +275,81 @@ export default function ReportsPage() {
       setLoading(false);
     }
   };
+
+  const currentInput = (): RunReportInput | null => {
+    if (mode === 'saved') return null;
+    return {
+      type: mode,
+      from,
+      to,
+      userIds: userIds.length ? userIds : undefined,
+      clientIds: clientIds.length ? clientIds : undefined,
+      projectIds: projectIds.length ? projectIds : undefined,
+      noteContains: noteContains.trim() || undefined,
+      groupBy: mode === 'detailed' ? undefined : groupBy,
+      onlyOffline,
+      excludeArchived,
+    };
+  };
+
+  const run = async () => {
+    const input = currentInput();
+    if (input) await execute(input);
+  };
+
+  const loadSaved = async (r: SavedReport) => {
+    const c = r.config;
+    setMode(c.type);
+    setFrom(c.from);
+    setTo(c.to);
+    setActivePreset((c.preset as Preset | null) ?? null);
+    setUserIds(c.userIds ?? []);
+    setClientIds(c.clientIds ?? []);
+    setProjectIds(c.projectIds ?? []);
+    setNoteContains(c.noteContains ?? '');
+    if (c.groupBy) setGroupBy(c.groupBy);
+    setOnlyOffline(!!c.onlyOffline);
+    setExcludeArchived(!!c.excludeArchived);
+    await execute({
+      type: c.type,
+      from: c.from,
+      to: c.to,
+      userIds: c.userIds,
+      clientIds: c.clientIds,
+      projectIds: c.projectIds,
+      noteContains: c.noteContains,
+      groupBy: c.type === 'detailed' ? undefined : c.groupBy,
+      onlyOffline: c.onlyOffline,
+      excludeArchived: c.excludeArchived,
+    });
+  };
+
+  const saveCurrent = async () => {
+    const input = currentInput();
+    if (!input) return;
+    const name = window.prompt('Name this report:');
+    if (!name || !name.trim()) return;
+    const isShared = window.confirm('Share with the whole organization?\n(OK = shared, Cancel = just me)');
+    try {
+      await createSavedReport(name.trim(), { ...input, preset: activePreset }, isShared);
+      await reloadSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const removeSaved = async (id: string) => {
+    if (!window.confirm('Delete this saved report?')) return;
+    try {
+      await deleteSavedReport(id);
+      await reloadSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const exportCsv = () => { if (result) downloadCsv(result); };
+  const exportPdf = () => window.print();
 
   const toggleGroup = (d: GroupDim) =>
     setGroupBy((g) => (g.includes(d) ? g.filter((x) => x !== d) : [...g, d]));
@@ -357,9 +429,9 @@ export default function ReportsPage() {
               <label className="rep-check disabled" title="Absences arrive in sub-phase 5F"><input type="checkbox" disabled /> Include absences</label>
             )}
             <div className="rep-actions-right">
-              <button className="rep-export" disabled title="Exports arrive in sub-phase 5C">Excel</button>
-              <button className="rep-export" disabled title="Exports arrive in sub-phase 5C">PDF</button>
-              <button className="rep-export" disabled title="Saved reports arrive in sub-phase 5C">Save report</button>
+              <button className="rep-export" onClick={exportCsv} disabled={!result} title="Download as CSV (opens in Excel)">Excel</button>
+              <button className="rep-export" onClick={exportPdf} disabled={!result} title="Print / save as PDF">PDF</button>
+              <button className="rep-export" onClick={saveCurrent} disabled={mode === 'saved'} title="Save this report configuration">Save report</button>
               <button className="rep-show" onClick={run} disabled={loading || mode === 'saved'}>
                 {loading ? 'Running…' : 'Show report'}
               </button>
@@ -370,11 +442,14 @@ export default function ReportsPage() {
         {error && <div className="error">{error}</div>}
 
         {mode === 'saved' ? (
-          <div className="rep-placeholder">No saved reports yet — saving &amp; loading lands in sub-phase 5C.</div>
+          <SavedList saved={saved} onLoad={loadSaved} onDelete={removeSaved} />
         ) : !result ? (
           <div className="rep-placeholder">Pick a range and click <strong>Show report</strong>.</div>
         ) : (
-          <ResultArea result={result} tab={tab} setTab={setTab} />
+          <div className="rep-printable">
+            <div className="rep-print-head">{result.type.charAt(0).toUpperCase() + result.type.slice(1)} report · {dmy(result.range.from)} – {dmy(result.range.to)}</div>
+            <ResultArea result={result} tab={tab} setTab={setTab} />
+          </div>
         )}
       </div>
     </div>
@@ -467,4 +542,80 @@ function PivotTable({ label, rows }: { label: string; rows: ReportResult['by_emp
       </tbody>
     </table>
   );
+}
+
+function SavedList({
+  saved, onLoad, onDelete,
+}: {
+  saved: SavedReport[];
+  onLoad: (r: SavedReport) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (saved.length === 0)
+    return <div className="rep-placeholder">No saved reports yet. Build a report, then click <strong>Save report</strong>.</div>;
+  return (
+    <div className="rep-saved">
+      {saved.map((r) => (
+        <div className="rep-saved-row" key={r.id}>
+          <button className="rep-saved-open" onClick={() => onLoad(r)}>
+            <span className="rep-saved-name">{r.name}</span>
+            <span className="rep-saved-meta">
+              {r.config.type} · {r.is_shared ? 'shared' : 'private'}
+              {!r.is_mine && r.owner_name ? ` · by ${r.owner_name}` : ''}
+            </span>
+          </button>
+          {(r.is_mine) && (
+            <button className="rep-saved-del" title="Delete" onClick={() => onDelete(r.id)}>✕</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- CSV export (client-side, zero-dep) ----
+
+function csvCell(v: string | number): string {
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function csvRow(cells: Array<string | number>): string {
+  return cells.map(csvCell).join(',');
+}
+function flattenGroups(nodes: ReportGroupNode[], trail: string[], out: string[][]): void {
+  for (const n of nodes) {
+    const path = [...trail, n.label];
+    if (n.children && n.children.length > 0) flattenGroups(n.children, path, out);
+    else out.push([...path, hm(n.seconds), String(n.seconds)]);
+  }
+}
+function downloadCsv(result: ReportResult): void {
+  const lines: string[] = [];
+  if (result.type === 'detailed') {
+    lines.push(csvRow(['Date', 'Employee', 'Project', 'Note', 'From', 'To', 'Duration', 'Seconds']));
+    for (const r of result.detailed) {
+      lines.push(csvRow([dmy(r.date), r.display_name, r.project_name ?? 'No project', r.note ?? '', clock(r.from), clock(r.to), hm(r.duration_seconds), r.duration_seconds]));
+    }
+    lines.push('');
+    lines.push(csvRow(['Total', '', '', '', '', '', hm(result.total_seconds), result.total_seconds]));
+  } else {
+    const dims = result.group_by.map((d) => d.charAt(0).toUpperCase() + d.slice(1));
+    lines.push(csvRow([...dims, 'Duration', 'Seconds']));
+    const rows: string[][] = [];
+    flattenGroups(result.groups, [], rows);
+    for (const r of rows) lines.push(csvRow(r));
+    lines.push('');
+    const pad = Array(Math.max(0, dims.length - 1)).fill('');
+    lines.push(csvRow(['Total', ...pad, hm(result.total_seconds), result.total_seconds]));
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `report-${result.type}-${result.range.from}_${result.range.to}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

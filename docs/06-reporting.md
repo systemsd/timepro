@@ -12,10 +12,12 @@ Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard r
 
 ## 0. Reports Console — UI & feature spec
 
-> **Status: 5A + 5B built; 5C–5F pending.** Phase 5 / **B7** deliverable. The Reports nav tab is **live**.
+> **Status: 5A + 5B + 5C built; 5D–5F pending.** Phase 5 / **B7** deliverable. The Reports nav tab is **live**.
 > - ✅ **5A — query API**: `GET /v1/reports/filters` (RBAC-scoped employees + client/project catalogs) and `POST /v1/reports/run` (Summary/Detailed/Weekly, computed on-the-fly from `time_entries`, viewer-tz). See `apps/api/src/routes/reports.ts`.
 > - ✅ **5B — console UI**: `apps/web/src/app/reports/page.tsx` — filter bar, Summary/Detailed/Weekly/Saved dropdown, daily-totals chart (red weekends), result tabs, expand/collapse group tables.
-> - ⛔ **5C** exports (Excel/PDF) + Saved/Shared reports · **5D** rollups/scheduler · **5E** realtime · **5F** weekly-limits + absences.
+> - ✅ **5C — saved reports + exports**: `saved_reports` table (migration `0004`, per-user + `is_shared` org-visible), CRUD at `/v1/reports/saved`; "Saved Report" dropdown lists/loads/deletes; **Excel** = client-side CSV, **PDF** = browser print (`@media print`). **Shareable public links deferred** (use `is_shared` for org-visibility).
+> - ✅ **5E — realtime presence (B10)**: websocket `GET /v1/realtime/presence` (snapshot + live `update` frames from the in-process presence pub/sub); web `useRealtimePresence` (shared socket, role-gated) overlays live dots on the dashboard roster + Timeline nav, replacing the 30s presence poll (totals poll now 60s). `apps/api/src/routes/realtime.ts`, `lib/presence.ts`.
+> - ⛔ **5D** rollups/scheduler · **5F** weekly-limits + absences.
 >
 > Open questions are flagged inline with **⚠️**.
 

@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
+import { useRealtimePresence } from '@/lib/useRealtimePresence';
 import {
   getRoster,
   getScreenshots,
   getScreenshotObjectUrl,
   getToday,
+  type Presence,
   type Roster,
   type RosterRow,
   type ScreenshotMeta,
@@ -34,18 +36,23 @@ function ManagerHome() {
   const router = useRouter();
   const [roster, setRoster] = useState<Roster | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const live = useRealtimePresence(); // realtime dots (B10 / 5E)
 
   useEffect(() => {
     const fetchRoster = () =>
       getRoster().then(setRoster).catch((e) => setError(e instanceof Error ? e.message : String(e)));
     void fetchRoster();
-    const id = setInterval(fetchRoster, 30_000); // refresh presence + totals
+    // presence now arrives over the websocket; the poll only refreshes time totals
+    const id = setInterval(fetchRoster, 60_000);
     return () => clearInterval(id);
   }, []);
 
   if (!session) return null;
   const tzLabel = `UTC${offsetLabel()}`;
-  const online = roster?.totals.online ?? 0;
+  const presenceOf = (r: RosterRow): Presence => live[r.user_id] ?? r.presence;
+  const online = roster
+    ? roster.rows.reduce((n, r) => (presenceOf(r) !== 'offline' ? n + 1 : n), 0)
+    : 0;
   const workedToday = (roster?.totals.today_seconds ?? 0) > 0;
   const headline =
     online > 0
@@ -85,7 +92,7 @@ function ManagerHome() {
               <td className="val">{fmt(roster?.totals.month_seconds)}</td>
             </tr>
             {(roster?.rows ?? []).map((r) => (
-              <RosterRowView key={r.user_id} row={r} onOpen={() => router.push(`/timeline/${r.user_id}`)} />
+              <RosterRowView key={r.user_id} row={r} presence={presenceOf(r)} onOpen={() => router.push(`/timeline/${r.user_id}`)} />
             ))}
           </tbody>
         </table>
@@ -94,12 +101,12 @@ function ManagerHome() {
   );
 }
 
-function RosterRowView({ row, onOpen }: { row: RosterRow; onOpen: () => void }) {
+function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Presence; onOpen: () => void }) {
   return (
     <tr>
       <td className="l">
         <div className="emp">
-          <span className={`presence-dot ${row.presence}`} title={presenceLabel(row.presence)} />
+          <span className={`presence-dot ${presence}`} title={presenceLabel(presence)} />
           <div>
             <button className="emp-name" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'block' }} onClick={onOpen}>
               {row.display_name}

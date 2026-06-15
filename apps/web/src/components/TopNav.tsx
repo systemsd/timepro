@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearSession, type WebSession } from '@/lib/session';
-import { getTeamMembers, type TeamMember } from '@/lib/api';
+import { getTeamMembers, type Presence, type TeamMember } from '@/lib/api';
+import { useRealtimePresence } from '@/lib/useRealtimePresence';
 
 interface Props {
   session: WebSession;
@@ -28,6 +29,7 @@ export function TopNav({ session, active }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const closeTimer = useRef<number | null>(null);
+  const live = useRealtimePresence(); // realtime dots (B10 / 5E)
 
   // lazily load employees for the Timeline dropdown (admin/manager only)
   useEffect(() => {
@@ -106,22 +108,25 @@ export function TopNav({ session, active }: Props) {
               ) : members.length === 0 ? (
                 <div className="nav-menu-empty">No employees</div>
               ) : (
-                members.map((m) => (
-                  <button
-                    key={m.user_id}
-                    className="nav-menu-item"
-                    onClick={() => {
-                      setTimelineOpen(false);
-                      router.push(`/timeline/${m.user_id}`);
-                    }}
-                  >
-                    <span
-                      className={`presence-dot ${m.presence}`}
-                      title={m.presence === 'tracking' ? 'Tracking' : m.presence === 'connected' ? 'Online' : 'Offline'}
-                    />
-                    {m.display_name || m.email}
-                  </button>
-                ))
+                members.map((m) => {
+                  const p: Presence = live[m.user_id] ?? m.presence;
+                  return (
+                    <button
+                      key={m.user_id}
+                      className="nav-menu-item"
+                      onClick={() => {
+                        setTimelineOpen(false);
+                        router.push(`/timeline/${m.user_id}`);
+                      }}
+                    >
+                      <span
+                        className={`presence-dot ${p}`}
+                        title={p === 'tracking' ? 'Tracking' : p === 'connected' ? 'Online' : 'Offline'}
+                      />
+                      {m.display_name || m.email}
+                    </button>
+                  );
+                })
               )}
             </div>
           )}

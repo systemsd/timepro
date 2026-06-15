@@ -1,9 +1,9 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, asc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
-import { forbid, visibleUsers } from '../lib/access';
+import { forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
 
 /**
  * Reports console query API (B7 / Phase 5, sub-phase 5A).
@@ -440,6 +440,152 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           by_client: pivot(flat, 'client'),
           notes,
         };
+      });
+    },
+  );
+
+  // ---- saved reports (5C) ----
+
+  // Serialized builder state. Kept permissive (passthrough) so the UI can evolve
+  // the builder without a migration; the run endpoint re-validates on load.
+  const SavedConfig = z
+    .object({
+      type: z.enum(['summary', 'detailed', 'weekly']),
+      preset: z.string().nullable().optional(),
+      from: z.string(),
+      to: z.string(),
+      userIds: z.array(z.string()).optional(),
+      clientIds: z.array(z.string()).optional(),
+      projectIds: z.array(z.string()).optional(),
+      noteContains: z.string().optional(),
+      groupBy: z.array(GroupDim).optional(),
+      onlyOffline: z.boolean().optional(),
+      excludeArchived: z.boolean().optional(),
+    })
+    .passthrough();
+
+  const SavedRow = z.object({
+    id: z.string(),
+    name: z.string(),
+    is_shared: z.boolean(),
+    owner_user_id: z.string(),
+    owner_name: z.string().nullable(),
+    is_mine: z.boolean(),
+    config: SavedConfig,
+  });
+
+  /** List the requester's own saved reports + any shared with the org. */
+  app.get(
+    '/reports/saved',
+    {
+      preHandler: [requireAuth],
+      schema: { response: { 200: z.object({ reports: z.array(SavedRow) }) }, tags: ['reports'] },
+    },
+    async (req) => {
+      return req.withTenantDb(async (tx) => {
+        const rows = await tx
+          .select({
+            id: schema.savedReports.id,
+            name: schema.savedReports.name,
+            isShared: schema.savedReports.isShared,
+            ownerUserId: schema.savedReports.ownerUserId,
+            ownerName: schema.users.displayName,
+            config: schema.savedReports.config,
+          })
+          .from(schema.savedReports)
+          .innerJoin(schema.users, eq(schema.users.id, schema.savedReports.ownerUserId))
+          .where(
+            and(
+              eq(schema.savedReports.organizationId, req.organizationId!),
+              isNull(schema.savedReports.deletedAt),
+              or(
+                eq(schema.savedReports.ownerUserId, req.userId!),
+                eq(schema.savedReports.isShared, true),
+              ),
+            ),
+          )
+          .orderBy(desc(schema.savedReports.updatedAt));
+        return {
+          reports: rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            is_shared: r.isShared,
+            owner_user_id: r.ownerUserId,
+            owner_name: r.ownerName,
+            is_mine: r.ownerUserId === req.userId,
+            config: r.config as z.infer<typeof SavedConfig>,
+          })),
+        };
+      });
+    },
+  );
+
+  /** Save a report config. */
+  app.post(
+    '/reports/saved',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        body: z.object({
+          name: z.string().trim().min(1).max(120),
+          config: SavedConfig,
+          is_shared: z.boolean().default(false),
+        }),
+        response: { 200: z.object({ id: z.string() }) },
+        tags: ['reports'],
+      },
+    },
+    async (req) => {
+      return req.withTenantDb(async (tx) => {
+        const [row] = await tx
+          .insert(schema.savedReports)
+          .values({
+            organizationId: req.organizationId!,
+            ownerUserId: req.userId!,
+            name: req.body.name,
+            config: req.body.config,
+            isShared: req.body.is_shared,
+          })
+          .returning({ id: schema.savedReports.id });
+        return { id: row!.id };
+      });
+    },
+  );
+
+  /** Delete a saved report (owner, or an admin/owner). */
+  app.delete(
+    '/reports/saved/:id',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        response: { 200: z.object({ ok: z.boolean() }) },
+        tags: ['reports'],
+      },
+    },
+    async (req) => {
+      const role = await requesterRole(req);
+      return req.withTenantDb(async (tx) => {
+        const [existing] = await tx
+          .select({ ownerUserId: schema.savedReports.ownerUserId })
+          .from(schema.savedReports)
+          .where(
+            and(
+              eq(schema.savedReports.id, req.params.id),
+              eq(schema.savedReports.organizationId, req.organizationId!),
+              isNull(schema.savedReports.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!existing) return { ok: true }; // already gone / not visible
+        if (existing.ownerUserId !== req.userId && !isAdmin(role))
+          forbid('Only the owner or an admin can delete this report');
+
+        await tx
+          .update(schema.savedReports)
+          .set({ deletedAt: new Date() })
+          .where(eq(schema.savedReports.id, req.params.id));
+        return { ok: true };
       });
     },
   );

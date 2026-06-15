@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import sensible from '@fastify/sensible';
 import underPressure from '@fastify/under-pressure';
+import websocket from '@fastify/websocket';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import { createDb } from '@timepro/db';
 
@@ -25,6 +26,7 @@ import { presenceRoutes } from './routes/presence';
 import { ingestRoutes } from './routes/ingest';
 import { adminRoutes } from './routes/admin';
 import { reportRoutes } from './routes/reports';
+import { realtimeRoutes } from './routes/realtime';
 
 /**
  * App factory. Used by both `server.ts` and integration tests.
@@ -59,6 +61,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
 
   // -------- platform plugins --------
   await app.register(sensible);
+  await app.register(websocket);
   await app.register(cookie, { secret: config.AUTH_INTERNAL_SHARED_SECRET });
   await app.register(cors, {
     origin: config.API_CORS_ORIGINS,
@@ -99,6 +102,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(ingestRoutes, { prefix: '/v1' });
   await app.register(adminRoutes, { prefix: '/v1' });
   await app.register(reportRoutes, { prefix: '/v1' });
+  await app.register(realtimeRoutes, { prefix: '/v1' });
 
   return app;
 }

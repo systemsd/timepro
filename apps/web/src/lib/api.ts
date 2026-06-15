@@ -451,6 +451,49 @@ export async function runReport(input: RunReportInput): Promise<ReportResult> {
   return res.json();
 }
 
+/** Serialized Reports-console builder state for a saved report. */
+export interface SavedReportConfig extends RunReportInput {
+  preset?: string | null;
+}
+
+export interface SavedReport {
+  id: string;
+  name: string;
+  is_shared: boolean;
+  owner_user_id: string;
+  owner_name: string | null;
+  is_mine: boolean;
+  config: SavedReportConfig;
+}
+
+export async function getSavedReports(): Promise<{ reports: SavedReport[] }> {
+  const res = await fetch(`${API_BASE}/v1/reports/saved`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function createSavedReport(
+  name: string,
+  config: SavedReportConfig,
+  isShared: boolean,
+): Promise<{ id: string }> {
+  const res = await fetch(`${API_BASE}/v1/reports/saved`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ name, config, is_shared: isShared }),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function deleteSavedReport(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/reports/saved/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) await asError(res);
+}
+
 export interface ScreenshotMeta {
   id: string;
   captured_at: string;

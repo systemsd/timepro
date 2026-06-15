@@ -16,3 +16,4 @@ export * from './screenshots';
 export * from './settingsScoped';
 export * from './notifications';
 export * from './auditLogs';
+export * from './savedReports';
