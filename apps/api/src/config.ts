@@ -18,6 +18,9 @@ const Schema = z.object({
     .default('http://localhost:3000')
     .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
 
+  /** Public URL of the web dashboard — used to build the View-online handoff link. */
+  WEB_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
+
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
 
@@ -30,6 +33,14 @@ const Schema = z.object({
 
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   SENTRY_DSN: z.string().optional(),
+
+  /**
+   * Where screenshots are written. MVP: local filesystem. Set to an
+   * absolute path; defaults to `./data/screenshots` next to the api process.
+   *
+   * We'll swap this for an S3 driver later — see [07-storage.md].
+   */
+  STORAGE_DIR: z.string().default('./data/screenshots'),
 });
 
 export type Config = z.infer<typeof Schema>;

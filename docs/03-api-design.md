@@ -1,10 +1,18 @@
-# TrackFlow — REST API Design
+# TimePro — REST API Design
+
+> **Implementation status** — ✅ built · 🟡 partial · ⛔ planned.
+>
+> - ✅ Implemented route groups: `auth` (dev-login + handoff/exchange), `health`, `me/today`, `projects`, `screenshots` (multipart ingest + list + raw), `team`, `timer`. RFC 9457 errors. Zod validation.
+> - 🟡 Auth uses a dev shim — `x-dev-org` + `x-dev-user` headers (non-production), not the JWT/cookie scheme described below. RBAC is enforced on `team` routes only.
+> - ⛔ JWT/refresh tokens, device registration, rate limiting, idempotency keys, cursor pagination, webhooks, exports, notifications, activity/URL read endpoints, realtime WS, and generated OpenAPI (`gen:openapi` is a stub).
+>
+> The endpoint catalog below is the target surface; only the groups marked ✅ exist today.
 
 Fastify + TypeScript. Zod schemas at every boundary. OpenAPI generated from route schemas.
 
 ## 1. Conventions
 
-- Base URL: `https://api.trackflow.app/v1`
+- Base URL: `https://api.timepro.app/v1`
 - All requests: `Content-Type: application/json` except multipart (screenshots fallback path).
 - Auth: `Authorization: Bearer <jwt>` for agents and API tokens; `HttpOnly` cookie for web.
 - Tenant: derived from JWT `org` claim. Org switching uses `POST /v1/auth/switch-org`.
@@ -18,7 +26,7 @@ Fastify + TypeScript. Zod schemas at every boundary. OpenAPI generated from rout
 
 ```json
 {
-  "type": "https://api.trackflow.app/errors/validation",
+  "type": "https://api.timepro.app/errors/validation",
   "title": "Validation failed",
   "status": 422,
   "code": "validation_failed",
@@ -309,7 +317,7 @@ GET    /v1/webhooks/:id/deliveries
 POST   /v1/webhooks/:id/test
 ```
 
-Signed with `X-TrackFlow-Signature: t=...,v1=hmac_sha256(secret, t + "." + body)`.
+Signed with `X-TimePro-Signature: t=...,v1=hmac_sha256(secret, t + "." + body)`.
 
 ---
 

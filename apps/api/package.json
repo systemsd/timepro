@@ -1,5 +1,5 @@
 {
-  "name": "@trackflow/api",
+  "name": "@timepro/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "dev": "tsx watch --clear-screen=false src/server.ts",
     "build": "tsup src/server.ts --format esm --target node20 --clean --sourcemap",
     "start": "node dist/server.js",
-    "lint": "echo '[api] lint stub — wire @trackflow/eslint-config later' && exit 0",
+    "lint": "echo '[api] lint stub — wire @timepro/eslint-config later' && exit 0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "gen:openapi": "tsx scripts/gen-openapi.ts"
@@ -16,9 +16,10 @@
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
     "@fastify/cors": "^10.0.0",
+    "@fastify/multipart": "^9.0.1",
     "@fastify/sensible": "^6.0.0",
     "@fastify/under-pressure": "^9.0.0",
-    "@trackflow/db": "workspace:*",
+    "@timepro/db": "workspace:*",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.0",
     "fastify": "^5.0.0",
@@ -28,8 +29,8 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@trackflow/eslint-config": "workspace:*",
-    "@trackflow/tsconfig": "workspace:*",
+    "@timepro/eslint-config": "workspace:*",
+    "@timepro/tsconfig": "workspace:*",
     "@types/node": "^20.16.0",
     "tsup": "^8.3.0",
     "tsx": "^4.19.0",

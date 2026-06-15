@@ -1,11 +1,18 @@
-# TrackFlow — Monorepo (Execution Spec)
+# TimePro — Monorepo (Execution Spec)
+
+> **Implementation status** — ✅ built · ⛔ planned.
+>
+> - ✅ Scaffolded: apps `api`, `web`, `desktop`; packages `db`, `tsconfig`, `eslint-config`.
+> - ⛔ Described here but **not yet scaffolded:** apps `worker`, `scheduler`, `realtime`; packages `shared`, `auth`, `ui`, `storage`, `desktop-sdk`, `tailwind-config`. Codegen (`gen:openapi`/`gen:sdk`) is stubbed.
+>
+> This spec is the target layout; current reality is in [`CLAUDE.md`](../CLAUDE.md).
 
 Turborepo + pnpm. Workspaces driven by `pnpm-workspace.yaml`. Turbo pipelines for build/test/lint with remote caching (Turbo Cloud or self-hosted).
 
 ## 1. Top-Level Layout
 
 ```
-trackflow/
+timepro/
 ├── apps/
 │   ├── web/                    # Next.js dashboard
 │   ├── api/                    # Fastify REST API
@@ -17,7 +24,7 @@ trackflow/
 │   ├── db/                     # Drizzle schema + migrations + repo helpers
 │   ├── shared/                 # Shared types, zod schemas, utilities
 │   ├── auth/                   # Auth core, abilities (RBAC), token handling
-│   ├── ui/                     # shadcn/ui re-exports + TrackFlow components
+│   ├── ui/                     # shadcn/ui re-exports + TimePro components
 │   ├── storage/                # S3 client, presign, encryption envelopes
 │   ├── desktop-sdk/            # TS client generated from OpenAPI; used by `desktop`'s UI tests + integration
 │   ├── eslint-config/          # Shared ESLint config
@@ -73,7 +80,7 @@ packages:
 
 ```json
 {
-  "name": "trackflow",
+  "name": "timepro",
   "private": true,
   "packageManager": "pnpm@9.10.0",
   "scripts": {
@@ -82,14 +89,14 @@ packages:
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "db:generate": "turbo run db:generate --filter=@trackflow/db",
-    "db:migrate": "turbo run db:migrate --filter=@trackflow/db"
+    "db:generate": "turbo run db:generate --filter=@timepro/db",
+    "db:migrate": "turbo run db:migrate --filter=@timepro/db"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
     "typescript": "^5.6.0",
-    "@trackflow/eslint-config": "workspace:*",
-    "@trackflow/tsconfig": "workspace:*"
+    "@timepro/eslint-config": "workspace:*",
+    "@timepro/tsconfig": "workspace:*"
   }
 }
 ```
@@ -134,17 +141,17 @@ apps/web/
 
 **Dependencies**
 
-- `@trackflow/shared`
-- `@trackflow/auth`
-- `@trackflow/ui`
+- `@timepro/shared`
+- `@timepro/auth`
+- `@timepro/ui`
 - `next`, `react`, `@tanstack/react-query`, `zod`, `tailwindcss`
 
 **Environment variables**
 
 ```
-NEXT_PUBLIC_API_URL=https://api.trackflow.app
+NEXT_PUBLIC_API_URL=https://api.timepro.app
 INTERNAL_API_URL=http://api:3001         # private, for server actions
-AUTH_COOKIE_DOMAIN=.trackflow.app
+AUTH_COOKIE_DOMAIN=.timepro.app
 AUTH_INTERNAL_SHARED_SECRET=...          # service-to-service
 SENTRY_DSN=...
 ```
@@ -207,7 +214,7 @@ apps/api/
 **Dependencies**
 
 - `fastify`, `@fastify/cors`, `@fastify/rate-limit`, `@fastify/jwt`, `@fastify/swagger`, `@fastify/cookie`
-- `@trackflow/db`, `@trackflow/auth`, `@trackflow/shared`, `@trackflow/storage`
+- `@timepro/db`, `@timepro/auth`, `@timepro/shared`, `@timepro/storage`
 - `bullmq`, `ioredis`, `zod`
 - `pino`, `@opentelemetry/sdk-node`, `@sentry/node`
 
@@ -217,8 +224,8 @@ apps/api/
 PORT=3001
 DATABASE_URL=...
 REDIS_URL=...
-S3_BUCKET_SCREENSHOTS=trackflow-screenshots
-S3_BUCKET_EXPORTS=trackflow-exports
+S3_BUCKET_SCREENSHOTS=timepro-screenshots
+S3_BUCKET_EXPORTS=timepro-exports
 S3_REGION=us-east-1
 KMS_KEY_ID=...
 JWT_SIGNING_KEY_PRIMARY=...
@@ -268,7 +275,7 @@ apps/worker/
 **Dependencies**
 
 - `bullmq`, `ioredis`
-- `@trackflow/db`, `@trackflow/storage`, `@trackflow/shared`
+- `@timepro/db`, `@timepro/storage`, `@timepro/shared`
 - `@aws-sdk/client-s3`, `@aws-sdk/client-ses`, `@aws-sdk/client-kms`
 - `sharp` (thumbnails), `exceljs`, `csv-stringify`, `mjml`, `nodemailer`
 - `pino`, OpenTelemetry, Sentry
@@ -283,8 +290,8 @@ S3_BUCKET_SCREENSHOTS=...
 S3_BUCKET_EXPORTS=...
 KMS_KEY_ID=...
 SES_REGION=us-east-1
-SES_FROM=noreply@trackflow.app
-WEBHOOK_USER_AGENT=TrackFlow-Webhook/1.0
+SES_FROM=noreply@timepro.app
+WEBHOOK_USER_AGENT=TimePro-Webhook/1.0
 LOG_LEVEL=info
 ```
 
@@ -316,7 +323,7 @@ apps/scheduler/
 **Dependencies**
 
 - `bullmq`, `ioredis`, `node-cron`
-- `@trackflow/db`, `@trackflow/shared`
+- `@timepro/db`, `@timepro/shared`
 
 **Environment variables**
 
@@ -350,7 +357,7 @@ apps/realtime/
 
 - `@fastify/websocket` or `ws` + `uWebSockets.js`
 - `ioredis`
-- `@trackflow/auth`, `@trackflow/shared`
+- `@timepro/auth`, `@timepro/shared`
 
 **Environment variables**
 
@@ -385,7 +392,7 @@ apps/desktop/
 ```
 
 **Dependencies (JS)**
-- `react`, `vite`, `@tauri-apps/api`, `@trackflow/desktop-sdk`, `@trackflow/ui`
+- `react`, `vite`, `@tauri-apps/api`, `@timepro/desktop-sdk`, `@timepro/ui`
 
 **Dependencies (Rust)**: in `Cargo.toml`:
 - `tauri`, `tauri-plugin-single-instance`, `tauri-plugin-updater`, `tauri-plugin-autostart`, `tauri-plugin-store`
@@ -394,19 +401,19 @@ apps/desktop/
 **Environment variables (dev)**
 
 ```
-TRACKFLOW_API_URL=https://api.trackflow.app
-TRACKFLOW_UPDATES_URL=https://updates.trackflow.app
-TRACKFLOW_LOG_DIR=~/.trackflow/logs
+TIMEPRO_API_URL=https://api.timepro.app
+TIMEPRO_UPDATES_URL=https://updates.timepro.app
+TIMEPRO_LOG_DIR=~/.timepro/logs
 RUST_LOG=info
 ```
 
 **Build**
 
-- `pnpm --filter @trackflow/desktop tauri build` per platform.
+- `pnpm --filter @timepro/desktop tauri build` per platform.
 - macOS: signed with Developer ID, notarized.
 - Windows: signed with EV cert + Authenticode.
 - Linux: .AppImage + .deb + .rpm.
-- Updater manifest published to `s3://trackflow-agent-updates/`.
+- Updater manifest published to `s3://timepro-agent-updates/`.
 
 ---
 
@@ -501,14 +508,14 @@ packages/auth/
 
 ### 3.4 `packages/ui`
 
-**Responsibility**: shadcn/ui components + TrackFlow-branded primitives, used by `web` and `desktop`.
+**Responsibility**: shadcn/ui components + TimePro-branded primitives, used by `web` and `desktop`.
 
 ```
 packages/ui/
 ├── components.json              # shadcn config
 └── src/
     ├── primitives/              # shadcn-generated
-    ├── trackflow/               # branded composites
+    ├── timepro/               # branded composites
     │   ├── ProjectPicker.tsx
     │   ├── TimerButton.tsx
     │   ├── ScreenshotCard.tsx
@@ -652,7 +659,7 @@ process.on('SIGTERM', async () => {
 - `pnpm gen:openapi` — runs `apps/api` build with `@fastify/swagger` to emit `packages/desktop-sdk/openapi/openapi.json`.
 - `pnpm gen:sdk` — runs `openapi-typescript` to produce `packages/desktop-sdk/src/generated/`.
 - `pnpm db:generate` — diff schema → SQL migration.
-- `pnpm build:agent:<platform>` — runs `pnpm --filter @trackflow/desktop tauri build` with the right targets and signs the bundle.
+- `pnpm build:agent:<platform>` — runs `pnpm --filter @timepro/desktop tauri build` with the right targets and signs the bundle.
 
 CI runs `pnpm gen:openapi && pnpm gen:sdk` and fails the build if there are uncommitted changes (so SDK stays in lockstep with the API).
 

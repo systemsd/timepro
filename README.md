@@ -1,19 +1,25 @@
-# TrackFlow
+# TimePro
 
 A production-grade, multi-tenant employee time-tracking and productivity-monitoring platform — comparable in scope to Hubstaff, Time Doctor, and ScreenshotMonitor.
 
-> **Status:** architecture + scaffold. Implementation tracks the roadmap in [`docs/11-roadmap.md`](docs/11-roadmap.md).
+> **Status:** working MVP across web, API, and desktop agent — time tracking, automatic
+> screenshot capture, web dashboard, login, desktop→web auto-login, and team management.
+> Tracks the roadmap in [`docs/11-roadmap.md`](docs/11-roadmap.md).
+>
+> Working on this repo with Claude Code? Read [`CLAUDE.md`](CLAUDE.md) first.
 
 ---
 
 ## What's in this repo
 
-- **`docs/`** — complete production-ready architecture documentation (13 documents). Start with [`docs/00-overview.md`](docs/00-overview.md).
-- **`apps/`** — `web` (Next.js), `api` (Fastify), `worker` (BullMQ), `scheduler`, `realtime`, `desktop` (Tauri + Rust).
-- **`packages/`** — `db` (Drizzle), `shared` (types + zod), `auth` (RBAC + JWT), `ui` (shadcn), `storage` (S3 + KMS), `desktop-sdk`, plus shared dev configs.
-- **`infra/`** — Docker Compose for local + staging, Nginx config, Terraform (Phase 2).
+- **`docs/`** — complete architecture documentation (13 documents). Start with [`docs/00-overview.md`](docs/00-overview.md).
+- **`apps/`** — `api` (Fastify), `web` (Next.js), `desktop` (Tauri + Rust + React). *Built.*
+- **`packages/`** — `db` (Drizzle), `tsconfig`, `eslint-config`. *Built.*
+- **`infra/`** — Docker Compose for local dev (Postgres, Redis, Minio, MailHog), OTel collector.
 
-Full structure and per-app dependencies: [`docs/12-monorepo.md`](docs/12-monorepo.md).
+> The docs describe additional services (`worker`, `scheduler`, `realtime`) and packages
+> (`shared`, `auth`, `ui`, `storage`, `desktop-sdk`) that are **planned but not yet scaffolded**.
+> See [`docs/12-monorepo.md`](docs/12-monorepo.md) for the full target layout.
 
 ---
 
@@ -39,66 +45,66 @@ Full structure and per-app dependencies: [`docs/12-monorepo.md`](docs/12-monorep
 
 ## Quickstart (local dev)
 
-> Prereqs: Node 22 (`nvm use`), pnpm 9 (`corepack enable`), Docker, Rust toolchain (only for desktop agent work).
+> Prereqs: Node 20 (`nvm use`), pnpm 9 (`corepack enable`), a reachable Postgres, and — for the
+> desktop agent only — the Rust toolchain (`rustup`).
 
 ```bash
-# 1. Install JS deps
+# 1. install
 pnpm install
 
-# 2. Bring up local infra (Postgres, Redis, Minio, MailHog)
+# 2. local infra (optional — skip if you run your own Postgres; set DATABASE_URL in .env)
 docker compose -f infra/compose/docker-compose.dev.yml up -d
 
-# 3. Run migrations + seed
-pnpm db:migrate
-pnpm db:seed
+# 3. database
+cp .env.example .env          # then edit DATABASE_URL / DATABASE_ADMIN_URL
+pnpm db:generate              # first run only: produce the initial migration
+pnpm db:migrate               # apply migrations (auto-creates citext + pgcrypto)
+pnpm db:seed                  # demo org + owner + team + projects
 
-# 4. Start everything (api + web + worker + scheduler)
-pnpm dev
+# 4. run the API and web (separate terminals)
+pnpm --filter @timepro/api dev      # → http://localhost:3001
+pnpm --filter @timepro/web dev      # → http://localhost:3000
+
+# 5. desktop agent (separate terminal; needs the API running)
+source "$HOME/.cargo/env"
+TIMEPRO_API_URL=http://localhost:3001 pnpm --filter @timepro/desktop tauri:dev
 ```
 
-Then:
+Sign in (web or desktop) with **`owner@timepro.local`** (email-only MVP login).
 
-- Web: <http://localhost:3000>
-- API: <http://localhost:3001>
-- API docs (OpenAPI / Stoplight): <http://localhost:3001/docs>
-- Minio console: <http://localhost:9001> (`minio` / `minio123`)
-- MailHog: <http://localhost:8025>
+Local services when using the Compose stack:
 
-Desktop agent (separate terminal, after the API is running):
-
-```bash
-pnpm --filter @trackflow/desktop tauri dev
-```
+- Web: <http://localhost:3000> · API: <http://localhost:3001>
+- Minio console: <http://localhost:9001> (`minio` / `minio123`) · MailHog: <http://localhost:8025>
 
 ---
 
 ## Common scripts
 
 ```bash
-pnpm dev                       # Run all apps in watch mode
-pnpm build                     # Build everything (turbo orchestrated)
-pnpm lint                      # ESLint across the monorepo
-pnpm typecheck                 # TypeScript --noEmit across the monorepo
-pnpm test                      # Unit + integration tests
-pnpm db:generate               # Drizzle: diff schema → migration SQL
-pnpm db:migrate                # Apply pending migrations
-pnpm db:studio                 # Drizzle Studio
-pnpm gen:openapi               # Emit OpenAPI from API route schemas
-pnpm gen:sdk                   # Regenerate @trackflow/desktop-sdk
+pnpm build                     # turbo build across workspaces
+pnpm typecheck                 # tsc --noEmit across workspaces
+pnpm db:generate               # drizzle-kit: schema diff → migration SQL
+pnpm db:migrate                # apply pending migrations
+pnpm db:seed                   # seed demo data
+pnpm db:studio                 # drizzle studio
+pnpm gen:openapi               # emit OpenAPI from API route schemas
 ```
+
+> `pnpm lint` is currently a stub (ESLint not yet wired — see `packages/eslint-config`).
 
 ---
 
 ## Repository conventions
 
-- **Conventional Commits** (`feat:`, `fix:`, `chore:`, …).
-- Trunk-based with short-lived branches; PR required for `main`.
-- CI: lint + type-check + test + OpenAPI/SDK drift check on every PR.
-- Migrations are **expand-only**. Forward-only DB changes.
-- Public-facing API changes require an OpenAPI diff review and `BREAKING:` label when applicable.
+- **Conventional Commits** (`feat:`, `fix:`, `chore:`, …). Branch before committing on `main`.
+- Migrations are **expand-only / forward-only** — never roll back the DB; write a new migration.
+- The desktop agent's API URL is **baked at build time**, not user-entered — set `PRODUCTION_API_BASE`
+  in `apps/desktop/src-tauri/src/state.rs` before building installers.
+- More conventions and gotchas: [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
 ## License
 
-Proprietary. © TrackFlow. All rights reserved.
+Proprietary. © TimePro. All rights reserved.

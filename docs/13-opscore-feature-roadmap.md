@@ -1,0 +1,218 @@
+# TimePro × OpsCore — Consolidated Feature Roadmap
+
+Planning document for the spec set provided after the initial MVP. **No implementation** — this
+captures features, phases, shared building blocks, conflicts, and open decisions.
+
+Status legend: ✅ built · 🟡 partial · 🔴 not built · ⏳ blocked on input.
+
+---
+
+## 1. The ten specs at a glance
+
+| # | Spec | Core ask |
+| - | ---- | -------- |
+| S1 | Opscore connection + login | Users from OpsCore; sign in with OpsCore credentials |
+| S2 | Role-aware "My Home" | Admin/manager sees a team roster instead of personal dashboard |
+| S3 | Employee daily Timeline | Click an employee → their day view; switch days/months |
+| S4 | Timeline nav dropdown | Hover the Timeline tab → employee list with green/grey online dots |
+| S5 | Admin-only Team tab | Team tab restricted to admins |
+| S6 | Projects from OpsCore (Team) | Project assignment list sourced from OpsCore |
+| S7 | Per-user effective-settings overrides | Override each setting per user |
+| S8 | ☰ menu | Projects · Clients · Settings · Download |
+| S9 | Projects page | Manage projects (catalog from OpsCore) + project members |
+| S10 | Clients page | Clients = OpsCore "business partners"; time-per-client reports |
+| S11 | Settings page | The settings catalog + org defaults + per-user overrides |
+| S12 | Download page | Cross-platform installers + browser extension |
+
+(Numbered S1–S12; S1 and S5–S12 came as distinct screenshots.)
+
+---
+
+## 2. Shared building blocks (the real foundations)
+
+Most specs are thin UI on top of a few cross-cutting capabilities. Build these once; many features
+light up together.
+
+| Block | Powers | Status |
+| ----- | ------ | ------ |
+| **B1 — OpsCore sync engine** | users (S1), projects (S6/S9), clients (S10) — one engine, three entity types | 🔴 |
+| **B2 — OpsCore OIDC auth** | web + desktop login (S1); brings **real JWT/session auth** (replaces dev shim) | 🔴 |
+| **B3 — Presence / heartbeat** | online dots in My Home (S2) + Timeline dropdown (S4) + "N online" headlines | 🔴 (`devices.last_seen_at` exists) |
+| **B4 — Activity tracking** | activity % + strip (S3), "Activity Level" setting (S11), activity column (S2) | 🔴 (`activity_samples` table exists, unused) |
+| **B5 — App & URL tracking** | last app/URL column (S2), per-slot app/URL (S3), "App & URL" setting (S11), browser extension (S12) | 🔴 (no tables) |
+| **B6 — Settings engine** | Settings page (S11), Team per-user overrides (S7), agent behavior | 🔴 (`settings_scoped` exists) |
+| **B7 — Reports** | time-per-client (S10), weekly-limit enforcement (S11), team totals at scale (S2) | 🔴 |
+| **B8 — Rollups + scheduler** | scale-out of S2/S3 aggregation; recurring OpsCore sync (B1) | 🔴 |
+| **B9 — Build/sign/host pipeline** | Download page artifacts (S12) | 🔴 (local macOS build only) |
+| **B10 — Realtime (WS)** | live presence/roster updates (S2/S4) | 🔴 |
+
+---
+
+## 3. Phased roadmap
+
+Ordered by dependency and value. Each phase is shippable.
+
+### Phase 0 — Quick wins (no external blockers)
+- **S5** Admin-only Team tab (hide nav, gate route, tighten API to owner/admin).
+- **S8 (shell)** ☰ menu with the four items routing to pages (stubs ok).
+- **S12 (page)** Download page UI with placeholder URLs.
+- **S2 (Phase 1)** Role-aware My Home roster — names + time totals + last-screenshot thumbnail, computed on the fly. *(Online dot grey until B3.)*
+- **S3 (Phase 1)** Employee Timeline — screenshot slots + day total + day/month nav. *(Activity strip waits on B4.)*
+- **S4 (Phase 1)** Timeline dropdown listing employees. *(Dots grey until B3.)*
+- **S9 (Phase 1)** Projects page + project-members assignment (local catalog interim).
+- **S10 (Phase 1)** Clients data model + page (local interim).
+
+### Phase 1 — Settings engine (B6) — unblocks several specs
+- **S11** Settings catalog, resolution engine (org default ← user override), Settings page, agent fetches effective settings.
+- **S7** Team per-user overrides (same engine).
+- Enforcement wired for settings whose features exist (screenshots/hr, notify, auto-pause, blur).
+
+### Phase 2 — Presence (B3)
+- Agent heartbeat → `devices.last_seen_at`; presence read; green/grey dots in S2 + S4; "N online" in S2.
+
+### Phase 3 — OpsCore integration (B1 + B2)
+- **B2** OIDC login (web → then desktop, RFC 8252). Brings **real JWT auth**, retires the email dev login + `x-dev-*` shim.
+- **B1** Sync engine: users → projects → clients. Sets S1/S6/S9/S10 catalogs to OpsCore-authoritative.
+- Team identity/role becomes read-only ("managed in OpsCore").
+
+### Phase 4 — Capture expansion (B4 + B5)
+- **B4** Activity tracking (kbd/mouse → `activity_samples`) → S3 activity strip/%, "Activity Level" setting takes effect, S2 activity.
+- **B5** App & URL tracking (+ browser extension) → S2 last app/URL, S3 per-slot app/URL, "App & URL" setting, S12 extension download.
+
+### Phase 5 — Reports & scale (B7 + B8 + B10)
+- **B7** Reports (incl. time-per-client S10, weekly-limit enforcement).
+- **B8** Rollups + scheduler (scale S2/S3; recurring OpsCore sync).
+- **B10** Realtime presence/roster (replaces polling).
+
+### Phase 6 — Ship pipeline (B9)
+- Cross-platform CI builds (mac arm64/x64, Windows, Linux), code-signing + notarization, host artifacts, wire Download URLs.
+
+---
+
+## 4. ⚠️ Conflicts & contradictions to resolve
+
+These are real inconsistencies across the specs (or against earlier decisions) — they need a ruling.
+
+> **Resolved so far:**
+> - **C2 → Read-only catalogs.** Projects & Clients are OpsCore-managed; **remove Create/Archive/Delete** from the Projects (S9) and Clients (S10) pages. TimePro shows them + manages *assignments* only.
+> - **C3 → OpsCore owns project↔client.** The mapping **syncs from OpsCore**; no local "assign projects to clients." The Clients empty-state copy changes accordingly.
+> - **C5 → Org default + per-user override (2 levels).** No team-scope settings; the `teams` table stays unused by the settings engine. "Team setting" in the screenshot = the org default.
+> - **C4 → Two shades.** Presence has **three states**: grey = offline, light-green = app open/connected (fresh heartbeat), solid-green = actively tracking (timer running). B3 must track both heartbeat and timer state.
+> - **C1 → Managers manage their own team.** The Team page is accessible to **admin/owner (all employees)** and **managers (their own team only)**; **employees have no access**. This *refines* S5's "admin-only" — managers get team-scoped management, not just viewing.
+> - **C6 → Viewer/org timezone.** All day/week/month boundaries and "last active" labels render in the **org/viewer timezone** ("UTC+5" note). `me/today` moves off its fixed-UTC boundary.
+> - **C8 → Keep a break-glass local owner.** Even with OpsCore as the IdP, **one local owner/admin** can sign in with a TimePro password so an OpsCore outage doesn't lock everyone out. B2 keeps a password path for that single account.
+> - **C9 → Self-delete admin-configurable, default OFF.** `screenshots.allow_self_delete` ships **off**; admins opt in. The Download page's "you can delete your screenshots" copy is **conditional** on that setting.
+>
+> Still open: **C7** only (My Account vs Settings) — see below.
+
+### C1 — Manager access to Team (S5 vs earlier Team work)
+- **Earlier:** managers could *view* the Team page (read-only); RBAC allowed owner/admin/manager.
+- **S5:** "Team tab only accessible by admin users."
+- **Conflict:** does **manager lose Team access entirely?** And does **owner** count as admin here (assumed yes)?
+- Also: S2/S3/S4 give managers a roster + employee timelines. So a manager can see *people's activity* but not the *Team management* page. Confirm that's the intent (view activity ✅, manage team ❌ for managers).
+
+### C2 — Read-only vs hybrid catalogs (S6/S9 Projects, S10 Clients)
+- **OpsCore is authoritative** (your S1 answer) ⇒ catalogs should be **read-only** in TimePro.
+- **But** the Projects screenshot shows **Create / Archive / Delete**, and the Clients screenshot shows **Create**.
+- **Conflict:** can admins create/delete projects & clients **locally**, or only in OpsCore (TimePro read-only)?
+- Needs **one consistent answer** for both Projects and Clients.
+
+### C3 — Project↔Client mapping ownership (S10)
+- If projects *and* clients both come from OpsCore, does **OpsCore define which project belongs to which client** (syncs automatically)?
+- **Or** does TimePro assign projects to clients **locally** (the Clients empty-state says "assign projects to clients")?
+- These can't both be the source of truth — pick one.
+
+### C4 — "Online" definition (S2 dot vs S4 dot)
+- **S4:** green = "online **and running tracker app**."
+- **S2:** the dot + "No one online" headline implies the same, but the row also shows "Last active 2 days ago" with time totals — i.e., online is independent of whether a timer is running.
+- **Conflict/clarify:** is **green = app open & connected** (heartbeat fresh), or **green = actively tracking** (timer running)? One definition, used everywhere. (Optionally two shades: connected vs tracking.)
+
+### C5 — Settings scope levels (S7 vs S11 vs data model)
+- **S7:** "override the setting values **for each user**" (org default + user override).
+- **S11:** "Individual settings … used instead of the **team** setting" (calls the default a *team* setting).
+- **Data model** (`settings_scoped`) supports org → team → project → user.
+- **Conflict/clarify:** are there real **teams** as a scope between org and user, or is "team setting" just the **org default**? (We have a `teams` table but it's unused.) Decide: 2-level (org+user) or full hierarchy.
+
+### C6 — Timezone basis (S2 "UTC+5", S3 day boundary)
+- **Clarify:** are day/week/month boundaries and labels in the **org/viewer timezone**, the **employee's** timezone, or fixed UTC? `me/today` currently uses **UTC** day boundary. The "All times are UTC+5" note implies a configurable display tz. One rule, applied consistently across My Home, Timeline, Reports.
+
+### C7 — "My Account" vs "Settings" (S11 + S5 role text)
+- The Admin role text says "does **not** have access to owner's **My Account** page settings," implying **two** settings surfaces: org **Settings** (admin-editable) and owner-only **My Account**.
+- **Clarify:** is there a separate owner-only "My Account" area distinct from the ☰ → Settings page? What lives in each?
+
+### C8 — Source of truth for users when OpsCore is down / break-glass
+- **OpsCore authoritative** + **both clients use OpsCore login** ⇒ if OpsCore is unreachable, **nobody can log in**.
+- **Clarify:** keep a **break-glass local owner/admin** login? (Earlier I flagged this; still open.)
+
+### C9 — Screenshot delete permissions (S12 text)
+- Download page says employees "can also **delete** your screenshots" at My Home.
+- Existing setting `screenshots.allow_self_delete` exists, default locked off; the architecture treats deletion as sensitive.
+- **Conflict/clarify:** can employees self-delete screenshots by default? (Affects audit/compliance.)
+
+---
+
+## 5. Open questions (need your input, not contradictions)
+
+### Settings catalog specifics (S11)
+1. **Value ranges**: screenshots/hr range (0–60?); blur options (allow / always / none?); week-start (Mon/Sun/…); currency list (which symbols?).
+2. **"Employee desktop application settings"** sub-category — what settings are in it?
+
+### OpsCore specifics (S1/B1/B2)
+3. OIDC discovery URL, scopes, and which **claims** carry email / name / **roles** / tenant.
+4. The exact **Opscore role names** → TimePro role mapping (owner/admin/manager/employee).
+5. Service-to-service auth for the directory APIs — OAuth client_credentials or API key?
+6. **OpsCore entity APIs**: confirm endpoints exist for **users**, **projects**, and **business partners** (clients) — and whether they expose project↔client and user↔project relationships.
+7. Org/tenant mapping: one OpsCore tenant ↔ one TimePro org? Multi-tenant?
+8. Desktop redirect style — loopback (`127.0.0.1`) vs custom URI scheme.
+
+### Timeline / My Home (S2/S3/S4)
+9. **"Last active"** = last screenshot, last tracked time, or last heartbeat?
+10. Timeline **slot granularity** — 10-minute slots (Scrnio convention)?
+11. Manager **visibility scope** — only their team(s), or all employees? (admin/owner = all.)
+
+### Download (S12)
+12. Installer **hosting** (agent-updates bucket/CDN vs static link) and **signing timing** (ship unsigned interim or wait for certs?).
+13. Browser-extension **browsers** + whether it ships with B5 (app/URL tracking).
+
+---
+
+## 6. How this maps onto the existing codebase
+
+| Already built (reuse) | Spec it serves |
+| --------------------- | -------------- |
+| Team page (members, roles, project toggles, invite/pause/archive/delete) | S5, S6, S7 |
+| `me/today` aggregation pattern | S2, S3 |
+| Screenshots + `/screenshots/:id/raw` | S2, S3 |
+| `time_entries` | S2, S3, S7/S11 (limits), S10 (reports) |
+| `memberships` + roles + RBAC | S2, S4, S5 |
+| `TopNav` (My Home / Timeline / Team / ☰ placeholders) | S2, S4, S5, S8 |
+| `project_members` join | S6, S9 |
+| `settings_scoped` table | S7, S11 |
+| `devices.last_seen_at` column | B3 |
+| `activity_samples` table (unused) | B4 |
+| `client_name` text on projects (to normalize) | S10 |
+| Desktop build (`tauri:build`), baked API base | S12 |
+
+| Net-new / not started | Spec |
+| --------------------- | ---- |
+| `clients` table + `project.client_id` | S10 |
+| `opscore_*` id columns + sync engine | S1, S6, S9, S10 |
+| OIDC client + callback + JWT sessions | S1 |
+| Heartbeat endpoint + presence | S2, S4 |
+| `app_usage` / `url_usage` tables + capture + extension | S2, S3, S5(app/url setting), S12 |
+| Settings API + resolver | S7, S11 |
+| Reports engine | S10, S11(limits) |
+| CI build/sign/host pipeline | S12 |
+
+---
+
+## 7. Recommended first build order (when you greenlight)
+
+1. **Phase 0 quick wins** (S5, ☰ shell, My Home roster, Timeline, Projects/Clients pages) — high visible progress, no blockers.
+2. **B6 Settings engine** (S11 + S7) — keystone; unblocks the most.
+3. **B3 Presence** — lights up dots across S2/S4.
+4. **B1+B2 OpsCore** — the integration backbone (auth + sync).
+5. **B4+B5 Capture** (activity, app/URL, extension).
+6. **B7+B8 Reports/rollups**, then **B9 ship pipeline**, **B10 realtime**.
+
+Resolve **C1–C9** before the phases they touch; the most urgent are **C2/C3** (OpsCore catalog authority — gates S6/S9/S10) and **C5** (settings scope — gates S7/S11).

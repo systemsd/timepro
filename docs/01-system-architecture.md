@@ -1,4 +1,10 @@
-# TrackFlow — System & Service Architecture
+# TimePro — System & Service Architecture
+
+> **Implementation status** — ✅ built · 🟡 partial · ⛔ planned.
+>
+> - ✅ `api` (Fastify), `web` (Next.js), `desktop` (Tauri); PostgreSQL.
+> - 🟡 Tenancy isolation is enforced by application-level `organization_id` filtering inside `withTenant`; the Postgres RLS policies described below are **not yet applied** (no table has `rowsecurity` enabled). The GUC is set but no policy reads it yet.
+> - ⛔ `worker`, `scheduler`, `realtime` services; Nginx/CDN edge; Redis (the URL is configured but the API does not yet connect to it); OpenTelemetry/Prometheus/Tempo; rate limiting; idempotency keys; the multi-AZ deployment topology.
 
 ## 1. Service Inventory
 

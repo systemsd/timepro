@@ -1,4 +1,9 @@
-# TrackFlow — Queue & Background Job Architecture
+# TimePro — Queue & Background Job Architecture
+
+> **Implementation status:** ⛔ **Planned — not built.** There is no `worker`, `scheduler`, or
+> Redis/BullMQ wiring yet. Work that the queues will eventually do (thumbnails, rollups, exports,
+> notifications) is currently either done inline in the API request path or not done at all.
+> This document is the target design.
 
 BullMQ 5.x on Redis 7. Workers are horizontally scaled per-queue. The `scheduler` is a leader-elected singleton that produces cron jobs.
 

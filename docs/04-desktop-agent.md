@@ -1,4 +1,12 @@
-# TrackFlow — Desktop Agent Architecture
+# TimePro — Desktop Agent Architecture
+
+> **Implementation status** — ✅ built · 🟡 partial · ⛔ planned.
+>
+> - ✅ Tauri 2 shell; email login (dev); timer start/stop + project picker; **automatic screenshot capture** (`xcap`, cross-platform); idle detection (`user-idle`); HTTP sync (`reqwest`); Settings screen; "view online" handoff; API base baked at build time.
+> - 🟡 Sync is direct HTTP with no local queue; state is in-memory only.
+> - ⛔ Keyboard/mouse activity hooks, app tracking, URL tracking, offline SQLite outbox, encrypted local storage / OS keyring tokens, WebSocket settings push, auto-update, tray/menu-bar icon, single-instance + supervisor, code-signing/notarization.
+>
+> Live code: `apps/desktop/src-tauri/src/` (`commands.rs`, `api.rs`, `state.rs`, `capture/`).
 
 Tauri 2.x. Rust backend, React + TypeScript UI. Cross-platform: macOS 12+, Windows 10+, Ubuntu 20.04+.
 
@@ -178,7 +186,7 @@ If `notify=true`, a brief tray badge + optional native toast — non-blocking.
 
 ## 4. Local Storage (SQLite)
 
-`~/.trackflow/agent.db` (encrypted with SQLCipher).
+`~/.timepro/agent.db` (encrypted with SQLCipher).
 
 ```sql
 CREATE TABLE outbox (
@@ -280,7 +288,7 @@ All UI calls Rust via `invoke('command_name', args)`. No direct network from JS.
 | Sleep / wake        | OS sleep notifications close the current minute bucket; resume creates a new entry |
 | Network change      | Detect via `system-configuration` (mac), `IP Helper API` (win), `NetworkManager` D-Bus (linux) → trigger sync flush + WS reconnect |
 | Crash               | Supervisor restarts up to 3× in 5min, then backs off + Sentry report |
-| Logs                | `~/.trackflow/logs/agent.log` with daily rotation, 7-day retention |
+| Logs                | `~/.timepro/logs/agent.log` with daily rotation, 7-day retention |
 | Permissions         | First-run checks for required OS permissions; UI walks user through granting them |
 
 ---
@@ -301,7 +309,7 @@ UI flows users through this in onboarding. Missing permissions are surfaced as b
 
 ## 11. Updater
 
-`tauri-plugin-updater` with a self-hosted manifest at `https://updates.trackflow.app/{platform}/{arch}.json`. Manifest entries are signed with Ed25519; agent verifies before applying. Channels: `stable`, `beta`, `internal`. Org-level pinning supported (enterprise customers can pin to a version).
+`tauri-plugin-updater` with a self-hosted manifest at `https://updates.timepro.app/{platform}/{arch}.json`. Manifest entries are signed with Ed25519; agent verifies before applying. Channels: `stable`, `beta`, `internal`. Org-level pinning supported (enterprise customers can pin to a version).
 
 ---
 

@@ -1,4 +1,9 @@
-# TrackFlow — Development Roadmap
+# TimePro — Development Roadmap
+
+> **Current position:** mid-MVP. A working slice spans all three surfaces — desktop time tracking +
+> automatic screenshot capture, the web dashboard, login + desktop→web auto-login, and team
+> management. Still open within Phase 1: real auth (passwords/JWT/MFA), S3 storage + thumbnails,
+> activity/app/URL tracking, reporting rollups, and notifications. Phases 2–3 below are unstarted.
 
 Three phases sized for a focused team of ~6–10 engineers (1 staff, 3 backend, 2 frontend, 1–2 Rust/desktop, 1 ops/SRE).
 
@@ -88,7 +93,7 @@ Three phases sized for a focused team of ~6–10 engineers (1 staff, 3 backend, 
 
 ## Phase 2 — Production (≈ 16 weeks after MVP)
 
-> Goal: convert pilots to paying customers. Make TrackFlow operationally robust, expand capture to URLs and Linux, ship billing, harden security to SOC 2 readiness.
+> Goal: convert pilots to paying customers. Make TimePro operationally robust, expand capture to URLs and Linux, ship billing, harden security to SOC 2 readiness.
 
 ### Themes
 

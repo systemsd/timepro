@@ -1,16 +1,22 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import sensible from '@fastify/sensible';
 import underPressure from '@fastify/under-pressure';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
-import { createDb } from '@trackflow/db';
+import { createDb } from '@timepro/db';
 
 import type { Config } from './config';
 import { tenantPlugin } from './plugins/tenant';
 import { errorMapperPlugin } from './plugins/error-mapper';
 import { healthRoutes } from './routes/health';
 import { timerRoutes } from './routes/timer';
+import { authRoutes } from './routes/auth';
+import { projectRoutes } from './routes/projects';
+import { screenshotRoutes } from './routes/screenshots';
+import { meRoutes } from './routes/me';
+import { teamRoutes } from './routes/team';
 
 /**
  * App factory. Used by both `server.ts` and integration tests.
@@ -57,6 +63,13 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
     maxRssBytes: 2 * 1024 * 1024 * 1024,
     retryAfter: 30,
   });
+  await app.register(multipart, {
+    limits: {
+      fileSize: 25 * 1024 * 1024, // single screenshot cap
+      files: 1,
+      fields: 4,
+    },
+  });
 
   // -------- domain plugins --------
   await app.register(errorMapperPlugin);
@@ -64,7 +77,12 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
 
   // -------- routes --------
   await app.register(healthRoutes);
+  await app.register(authRoutes, { prefix: '/v1' });
+  await app.register(projectRoutes, { prefix: '/v1' });
   await app.register(timerRoutes, { prefix: '/v1' });
+  await app.register(screenshotRoutes, { prefix: '/v1' });
+  await app.register(meRoutes, { prefix: '/v1' });
+  await app.register(teamRoutes, { prefix: '/v1' });
 
   return app;
 }

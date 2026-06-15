@@ -1,4 +1,8 @@
-# TrackFlow — Scaling Strategy
+# TimePro — Scaling Strategy
+
+> **Implementation status:** ⛔ **Forward-looking planning only.** Nothing here is built — the
+> system currently runs as a single dev instance. The capacity model, tier architectures, and cost
+> estimates are projections to guide future infrastructure decisions, not a description of what exists.
 
 ## 1. Capacity Tiers
 

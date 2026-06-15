@@ -1,8 +1,8 @@
 {
-  "name": "trackflow",
+  "name": "timepro",
   "version": "0.1.0",
   "private": true,
-  "description": "TrackFlow — multi-tenant employee time tracking & productivity monitoring",
+  "description": "TimePro — multi-tenant employee time tracking & productivity monitoring",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20.0.0",
@@ -19,15 +19,15 @@
     "clean": "turbo run clean && rimraf node_modules .turbo",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
-    "db:generate": "pnpm --filter @trackflow/db db:generate",
-    "db:migrate": "pnpm --filter @trackflow/db db:migrate",
-    "db:studio": "pnpm --filter @trackflow/db db:studio",
-    "db:seed": "pnpm --filter @trackflow/db db:seed",
-    "gen:openapi": "pnpm --filter @trackflow/api gen:openapi"
+    "db:generate": "pnpm --env-file=.env --filter @timepro/db db:generate",
+    "db:migrate": "pnpm --env-file=.env --filter @timepro/db db:migrate",
+    "db:studio": "pnpm --env-file=.env --filter @timepro/db db:studio",
+    "db:seed": "pnpm --env-file=.env --filter @timepro/db db:seed",
+    "gen:openapi": "pnpm --env-file=.env --filter @timepro/api gen:openapi"
   },
   "devDependencies": {
-    "@trackflow/eslint-config": "workspace:*",
-    "@trackflow/tsconfig": "workspace:*",
+    "@timepro/eslint-config": "workspace:*",
+    "@timepro/tsconfig": "workspace:*",
     "@types/node": "^20.16.0",
     "prettier": "^3.3.3",
     "rimraf": "^6.0.1",

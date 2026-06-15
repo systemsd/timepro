@@ -1,4 +1,13 @@
-# TrackFlow — System Overview
+# TimePro — System Overview
+
+> **Implementation status** — this document describes the full target system; much of it is still
+> forward-looking. Legend: ✅ built · 🟡 partial · ⛔ planned.
+>
+> - ✅ Web console, REST API, and desktop agent (MVP); time tracking; automatic screenshot capture; team management; desktop→web auto-login.
+> - 🟡 Auth (email-only dev login, no JWT/MFA); tenancy (app-level filtering, RLS not yet enforced); storage (local filesystem, not S3).
+> - ⛔ Workers/queues, scheduler, realtime hub, reporting rollups, activity/app/URL tracking, billing, multi-region, observability stack.
+>
+> Per-area detail is in each document's own status banner. Ground truth: [`CLAUDE.md`](../CLAUDE.md).
 
 > A production-grade, multi-tenant employee time-tracking and productivity-monitoring platform.
 > Comparable in scope to Hubstaff, Time Doctor, and ScreenshotMonitor.
@@ -7,7 +16,7 @@
 
 ## 1. Product Statement
 
-TrackFlow lets organizations track employee work time, capture and review screenshots, measure activity, monitor application and URL usage, and produce payroll-ready reports — across Windows, macOS, and Linux.
+TimePro lets organizations track employee work time, capture and review screenshots, measure activity, monitor application and URL usage, and produce payroll-ready reports — across Windows, macOS, and Linux.
 
 Three primary surfaces:
 

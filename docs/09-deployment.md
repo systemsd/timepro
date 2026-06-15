@@ -1,4 +1,9 @@
-# TrackFlow — Deployment Architecture
+# TimePro — Deployment Architecture
+
+> **Implementation status** — ✅ built · ⛔ planned.
+>
+> - ✅ `infra/compose/docker-compose.dev.yml` runs the local dev stack (Postgres, Redis, Minio, MailHog, OTel collector).
+> - ⛔ Not yet built: per-service Dockerfiles, the production Nginx config, CI/CD pipelines, blue/green rollout, backups/DR, and the managed-infra topology. The Dockerfile and Nginx snippets below are illustrative targets, not files in the repo.
 
 Docker for packaging. Ubuntu 22.04 LTS hosts. Nginx in front. Compose for staging; ECS/EKS/Nomad for production-at-scale (any of them work — choose by team familiarity).
 
@@ -6,13 +11,13 @@ Docker for packaging. Ubuntu 22.04 LTS hosts. Nginx in front. Compose for stagin
 
 | Service     | Image                                          | Base                        |
 | ----------- | ---------------------------------------------- | --------------------------- |
-| `api`       | `ghcr.io/trackflow/api:<sha>`                  | `gcr.io/distroless/nodejs22`|
-| `web`       | `ghcr.io/trackflow/web:<sha>`                  | `gcr.io/distroless/nodejs22`|
-| `worker`    | `ghcr.io/trackflow/worker:<sha>`               | `gcr.io/distroless/nodejs22`|
-| `scheduler` | `ghcr.io/trackflow/scheduler:<sha>`            | `gcr.io/distroless/nodejs22`|
-| `realtime`  | `ghcr.io/trackflow/realtime:<sha>`             | `gcr.io/distroless/nodejs22`|
-| `nginx`     | `ghcr.io/trackflow/nginx:<sha>`                | `nginx:1.27-alpine`         |
-| `migrate`   | `ghcr.io/trackflow/migrate:<sha>` (one-shot)   | `node:22-alpine`            |
+| `api`       | `ghcr.io/timepro/api:<sha>`                  | `gcr.io/distroless/nodejs22`|
+| `web`       | `ghcr.io/timepro/web:<sha>`                  | `gcr.io/distroless/nodejs22`|
+| `worker`    | `ghcr.io/timepro/worker:<sha>`               | `gcr.io/distroless/nodejs22`|
+| `scheduler` | `ghcr.io/timepro/scheduler:<sha>`            | `gcr.io/distroless/nodejs22`|
+| `realtime`  | `ghcr.io/timepro/realtime:<sha>`             | `gcr.io/distroless/nodejs22`|
+| `nginx`     | `ghcr.io/timepro/nginx:<sha>`                | `nginx:1.27-alpine`         |
+| `migrate`   | `ghcr.io/timepro/migrate:<sha>` (one-shot)   | `node:22-alpine`            |
 
 Multi-stage Dockerfiles. Final image excludes dev dependencies. Built reproducibly with pnpm via `pnpm deploy --filter <app>`. Image size targets: API/worker < 200 MB; web < 250 MB.
 
@@ -25,7 +30,7 @@ WORKDIR /repo
 
 FROM base AS prune
 COPY . .
-RUN pnpm dlx turbo prune --scope=@trackflow/api --docker
+RUN pnpm dlx turbo prune --scope=@timepro/api --docker
 
 FROM base AS install
 COPY --from=prune /repo/out/json/ ./
@@ -36,10 +41,10 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 FROM base AS build
 COPY --from=install /repo/ ./
 COPY --from=prune /repo/out/full/ ./
-RUN pnpm turbo run build --filter=@trackflow/api
+RUN pnpm turbo run build --filter=@timepro/api
 
 FROM base AS deploy
-RUN pnpm deploy --filter=@trackflow/api --prod /app
+RUN pnpm deploy --filter=@timepro/api --prod /app
 WORKDIR /app
 
 FROM gcr.io/distroless/nodejs22-debian12:nonroot
@@ -58,7 +63,7 @@ CMD ["dist/server.js"]
 Single Nginx in front of every service. TLS termination, routing by host + path, rate limiting.
 
 ```nginx
-# /etc/nginx/conf.d/trackflow.conf
+# /etc/nginx/conf.d/timepro.conf
 
 upstream tf_api      { least_conn; server api1:3001; server api2:3001; server api3:3001; }
 upstream tf_web      { least_conn; server web1:3000; server web2:3000; }
@@ -71,9 +76,9 @@ limit_req_zone $http_authorization  zone=auth:10m rate=100r/s;
 
 server {
   listen 443 ssl http2;
-  server_name app.trackflow.app;
-  ssl_certificate     /etc/letsencrypt/live/app.trackflow.app/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/app.trackflow.app/privkey.pem;
+  server_name app.timepro.app;
+  ssl_certificate     /etc/letsencrypt/live/app.timepro.app/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/app.timepro.app/privkey.pem;
   ssl_protocols TLSv1.3;
   add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
   add_header X-Frame-Options DENY always;
@@ -108,7 +113,7 @@ server {
 }
 ```
 
-`api.trackflow.app` is a separate vhost with stricter rate limits per-bucket as defined in [03-api-design.md](03-api-design.md). CloudFront sits in front of Nginx for static + agent updates.
+`api.timepro.app` is a separate vhost with stricter rate limits per-bucket as defined in [03-api-design.md](03-api-design.md). CloudFront sits in front of Nginx for static + agent updates.
 
 ---
 
@@ -117,9 +122,9 @@ server {
 | Env       | Purpose                | Hostnames                                   | Data                  |
 | --------- | ---------------------- | ------------------------------------------- | --------------------- |
 | `dev`     | Local                  | `localhost`                                 | docker-compose        |
-| `preview` | PR-per-environment     | `pr-123.preview.trackflow.app`              | Shared preview DB     |
-| `staging` | Pre-prod, mirrors prod | `staging.trackflow.app`                     | Scrubbed prod restore |
-| `prod`    | Real users             | `app.trackflow.app`, `api.trackflow.app`    | Live                  |
+| `preview` | PR-per-environment     | `pr-123.preview.timepro.app`              | Shared preview DB     |
+| `staging` | Pre-prod, mirrors prod | `staging.timepro.app`                     | Scrubbed prod restore |
+| `prod`    | Real users             | `app.timepro.app`, `api.timepro.app`    | Live                  |
 
 Each env: own Postgres, Redis, S3 prefix, KMS key. Secrets per env in Secrets Manager.
 
@@ -158,28 +163,28 @@ Rollback: image tags are immutable; redeploy previous SHA. Migrations are forwar
 version: "3.9"
 services:
   nginx:
-    image: ghcr.io/trackflow/nginx:${SHA}
+    image: ghcr.io/timepro/nginx:${SHA}
     ports: ["443:443"]
     depends_on: [api, web, realtime]
   api:
-    image: ghcr.io/trackflow/api:${SHA}
+    image: ghcr.io/timepro/api:${SHA}
     deploy: { replicas: 3 }
     env_file: ./envs/api.env
     depends_on: [postgres, redis]
   web:
-    image: ghcr.io/trackflow/web:${SHA}
+    image: ghcr.io/timepro/web:${SHA}
     deploy: { replicas: 2 }
     env_file: ./envs/web.env
   worker:
-    image: ghcr.io/trackflow/worker:${SHA}
+    image: ghcr.io/timepro/worker:${SHA}
     deploy: { replicas: 3 }
     env_file: ./envs/worker.env
   scheduler:
-    image: ghcr.io/trackflow/scheduler:${SHA}
+    image: ghcr.io/timepro/scheduler:${SHA}
     deploy: { replicas: 1, restart_policy: { condition: any } }
     env_file: ./envs/scheduler.env
   realtime:
-    image: ghcr.io/trackflow/realtime:${SHA}
+    image: ghcr.io/timepro/realtime:${SHA}
     deploy: { replicas: 2 }
     env_file: ./envs/realtime.env
   postgres:
@@ -234,14 +239,14 @@ Examples (api):
 ```
 DATABASE_URL=postgres://...
 REDIS_URL=redis://...
-S3_BUCKET_SCREENSHOTS=trackflow-screenshots
-S3_BUCKET_EXPORTS=trackflow-exports
+S3_BUCKET_SCREENSHOTS=timepro-screenshots
+S3_BUCKET_EXPORTS=timepro-exports
 S3_REGION=us-east-1
 KMS_KEY_ID=arn:aws:kms:us-east-1:...
 JWT_SIGNING_KEY_PRIMARY=...
 JWT_SIGNING_KEY_NEXT=...               # for overlap during rotation
 SES_REGION=us-east-1
-SES_FROM=noreply@trackflow.app
+SES_FROM=noreply@timepro.app
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 SENTRY_DSN=...
 PORT=3001

@@ -1,4 +1,9 @@
-# TrackFlow — Reporting Architecture
+# TimePro — Reporting Architecture
+
+> **Implementation status** — ✅ built · ⛔ planned.
+>
+> - ✅ `GET /v1/me/today` computes today's tracked time, status, and screenshot count **on the fly** from `time_entries` + `screenshots`.
+> - ⛔ Everything else here is planned: `reports_hourly/daily/weekly/monthly` rollup tables, the rollup jobs, materialized views, the export pipeline, and caching. No scheduled aggregation runs yet.
 
 Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard reads from an "as-of-now" hourly rollup + a live tail.
 
@@ -142,7 +147,7 @@ The "active employees right now" widget is computed entirely from Redis presence
 2. Worker streams via Postgres cursor (no `OFFSET`, no full materialization).
 3. For CSV: write directly to a temp file with `csv-stringify` in stream mode.
 4. For XLSX: `exceljs` with the streaming writer.
-5. Upload to `s3://trackflow-exports/{org}/{export_id}.csv` with `expires` tag → 7-day S3 lifecycle.
+5. Upload to `s3://timepro-exports/{org}/{export_id}.csv` with `expires` tag → 7-day S3 lifecycle.
 6. Email user a signed URL (60-minute TTL on the link itself; lifecycle handles eventual deletion).
 
 A typical 6-month export of 50 users × ~150 entries/month: ~45k rows, ~5 MB CSV — completes in ~6 seconds end-to-end.

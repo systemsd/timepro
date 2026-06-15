@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { withTenant, getDb } from '@trackflow/db';
+import { withTenant, getDb, type DB } from '@timepro/db';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -9,9 +9,10 @@ declare module 'fastify' {
     userId?: string;
     /**
      * Helper that runs `fn` inside a tenant-bound DB transaction using the
-     * org from this request. Throws 401 if no org is attached.
+     * org from this request. The return type is inferred from `fn`.
+     * Throws 401 if no org is attached.
      */
-    withTenantDb<T>(fn: Parameters<typeof withTenant>[1]): Promise<T>;
+    withTenantDb<T>(fn: (tx: DB) => Promise<T>): Promise<T>;
   }
 }
 
@@ -44,7 +45,7 @@ export const tenantPlugin = fp(async (app) => {
  * Real auth flow attaches `req.userId` + `req.organizationId` from JWT.
  *
  * Placeholder dev shim: if `x-dev-org` + `x-dev-user` are set, accept them.
- * Replace once `@trackflow/auth` JWT plugin lands.
+ * Replace once `@timepro/auth` JWT plugin lands.
  */
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
   if (req.organizationId && req.userId) return;
@@ -58,7 +59,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
   }
 
   reply.code(401).type('application/problem+json').send({
-    type: 'https://api.trackflow.app/errors/unauthenticated',
+    type: 'https://api.timepro.app/errors/unauthenticated',
     title: 'Authentication required',
     status: 401,
     code: 'unauthenticated',

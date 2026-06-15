@@ -1,0 +1,270 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { ipc } from '../ipc';
+import type { Project, ScreenshotUploadEvent, Session, TimerView } from '../types';
+import { ChevronDown, GearIcon, KebabIcon, PlayIcon, StopIcon } from '../icons';
+
+interface Props {
+  session: Session;
+  onLogout: () => Promise<void>;
+  onOpenSettings: () => void;
+}
+
+const LS_TASK = 'tf_task';
+const LS_PROJECT = 'tf_project';
+const LS_AUTOSTART = 'tf_autostart';
+
+export function Timer({ session, onLogout, onOpenSettings }: Props) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string | null>(
+    () => localStorage.getItem(LS_PROJECT) || null,
+  );
+  const [task, setTask] = useState(() => localStorage.getItem(LS_TASK) || '');
+  const [timer, setTimer] = useState<TimerView | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [projMenuOpen, setProjMenuOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | null>(null);
+  const autoStartTried = useRef(false);
+
+  const running = !!timer;
+
+  const project = useMemo(
+    () => projects.find((p) => p.id === selectedProject) ?? null,
+    [projects, selectedProject],
+  );
+
+  // initial load
+  useEffect(() => {
+    (async () => {
+      try {
+        const [ps, cur] = await Promise.all([ipc.listProjects(), ipc.timerCurrent()]);
+        setProjects(ps);
+        if (cur) {
+          setTimer(cur);
+          if (cur.project_id) setSelectedProject(cur.project_id);
+        }
+      } catch (err) {
+        setError(asMessage(err));
+      }
+    })();
+  }, []);
+
+  // reflect tracking state in the native window title
+  useEffect(() => {
+    getCurrentWindow()
+      .setTitle(running ? 'Tracking — TimePro' : 'Stopped — TimePro')
+      .catch(() => {});
+  }, [running]);
+
+  // elapsed ticker
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (timer) {
+        const startedMs = Date.parse(timer.started_at);
+        setElapsed(Math.max(0, Math.floor((Date.now() - startedMs) / 1000)));
+      } else {
+        setElapsed(0);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timer]);
+
+  // auto-capture notifications from the Rust capture loop
+  useEffect(() => {
+    let unlisten = () => {};
+    (async () => {
+      unlisten = await listen<ScreenshotUploadEvent>('screenshot:uploaded', () => {
+        showToast('Screenshot taken');
+      });
+    })();
+    return () => unlisten();
+  }, []);
+
+  // persist task + project selection
+  useEffect(() => {
+    localStorage.setItem(LS_TASK, task);
+  }, [task]);
+  useEffect(() => {
+    if (selectedProject) localStorage.setItem(LS_PROJECT, selectedProject);
+    else localStorage.removeItem(LS_PROJECT);
+  }, [selectedProject]);
+
+  // auto-start tracking on launch when the user opted in
+  useEffect(() => {
+    if (autoStartTried.current) return;
+    if (projects.length === 0) return; // wait for load
+    autoStartTried.current = true;
+    const wants = localStorage.getItem(LS_AUTOSTART) === '1';
+    if (wants && !timer) {
+      void start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects]);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
+  }
+
+  const start = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const t = await ipc.timerStart(selectedProject, task.trim() || null);
+      setTimer(t);
+    } catch (err) {
+      setError(asMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stop = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await ipc.timerStop();
+      setTimer(null);
+    } catch (err) {
+      setError(asMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const viewOnline = async () => {
+    setError(null);
+    try {
+      await ipc.viewOnline();
+      showToast('Opening dashboard in your browser…');
+    } catch (err) {
+      setError(asMessage(err));
+    }
+  };
+
+  const now = new Date();
+  const weekday = now.toLocaleDateString(undefined, { weekday: 'long' });
+  const dateStr = now.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const { hours, minutes } = splitHM(elapsed);
+
+  return (
+    <div className="app" onClick={() => { setMenuOpen(false); setProjMenuOpen(false); }}>
+      <header className="app-header">
+        <div className="user">
+          <span className="user-name">{session.display_name}</span>
+          <span className="org">{session.organization_name}</span>
+          <button className="chev" aria-label="account"><ChevronDown /></button>
+        </div>
+        <div className="header-actions">
+          <button className="icon-btn" aria-label="settings" onClick={onOpenSettings}>
+            <GearIcon />
+          </button>
+          <div className="menu-wrap" onClick={(e) => e.stopPropagation()}>
+            <button className="icon-btn" aria-label="menu" onClick={() => setMenuOpen((v) => !v)}>
+              <KebabIcon />
+            </button>
+            {menuOpen && (
+              <div className="menu">
+                <button onClick={onOpenSettings}>Settings</button>
+                <button onClick={onLogout}>Sign out</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="control-band" onClick={(e) => e.stopPropagation()}>
+        <div className="task-field">
+          <input
+            className="task-input"
+            placeholder="What are you working on?"
+            value={task}
+            onChange={(e) => setTask(e.target.value)}
+            disabled={busy}
+          />
+          <button
+            className={`project-chip ${project ? '' : 'empty'}`}
+            style={project ? { background: project.color } : undefined}
+            onClick={() => setProjMenuOpen((v) => !v)}
+          >
+            {project ? project.name : 'Select project'}
+          </button>
+        </div>
+
+        <button
+          className="round-btn play"
+          aria-label="start"
+          onClick={start}
+          disabled={running || busy}
+        >
+          <PlayIcon />
+        </button>
+        <button
+          className="round-btn stop"
+          aria-label="stop"
+          onClick={stop}
+          disabled={!running || busy}
+        >
+          <StopIcon />
+        </button>
+
+        {projMenuOpen && (
+          <div className="proj-menu">
+            <button onClick={() => { setSelectedProject(null); setProjMenuOpen(false); }}>
+              <span className="dot" style={{ background: '#c4c8cd' }} />
+              No project
+            </button>
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => { setSelectedProject(p.id); setProjMenuOpen(false); }}
+              >
+                <span className="dot" style={{ background: p.color }} />
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <main className="today">
+        <div className="today-left">
+          <div className="today-label">TODAY</div>
+          <div className={`today-time ${running ? 'running' : ''}`}>
+            <span>{hours}</span>
+            <span className="colon">:</span>
+            <span>{minutes}</span>
+          </div>
+          <button className="view-online" onClick={viewOnline}>view online</button>
+        </div>
+        <div className="today-right">
+          <div className="weekday">{weekday}</div>
+          <div className="date">{dateStr}</div>
+        </div>
+      </main>
+
+      {error && <div className="error" style={{ margin: '0 22px 16px' }}>{error}</div>}
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+function splitHM(totalSeconds: number): { hours: number; minutes: string } {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return { hours, minutes: String(minutes).padStart(2, '0') };
+}
+
+function asMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}

@@ -1,4 +1,10 @@
-# TrackFlow — Security Design
+# TimePro — Security Design
+
+> **Implementation status** — ✅ built · 🟡 partial · ⛔ planned. This document is the target
+> posture; the MVP is **not yet hardened to it**. Do not treat the current build as production-secure.
+>
+> - 🟡 RBAC is enforced on `team` endpoints (owner/admin gates); tenant isolation relies on application-level `organization_id` filtering.
+> - ⛔ **Not yet built:** real authentication (only email dev-login — no passwords/JWT/refresh/MFA), Postgres RLS policies (none applied), at-rest encryption, audit-log writes (table exists, unused), device trust/registration, session management, rate limiting, WAF, SSO. The one-time handoff code (desktop→web) is the one security mechanism implemented as designed.
 
 ## 1. Threat Model (abbreviated)
 
@@ -8,7 +14,7 @@
 | Cross-tenant attacker   | Has a valid user in *another* org                     | RLS, tenant-bound JWT, tenant-scoped DB context                |
 | Malicious employee      | Has valid agent + web session in their org            | RBAC, audit log, screenshot self-delete gated by settings      |
 | Stolen device           | Has the agent's local DB + tokens                     | SQLCipher, OS-keyring tokens, refresh-token rotation w/ family detection, server-side revoke |
-| Insider (TrackFlow ops) | DB access                                             | KMS-managed encryption for sensitive cols, audit access, just-in-time prod access |
+| Insider (TimePro ops) | DB access                                             | KMS-managed encryption for sensitive cols, audit access, just-in-time prod access |
 | Compromised dependency  | Supply chain                                          | SLSA-3 build, dependency review, lockfile signing              |
 
 ---
