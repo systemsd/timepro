@@ -22,21 +22,19 @@ Monorepo: Turborepo + pnpm, Node 20. Apps: `api`, `web`, `desktop`. Packages: `d
 | **Phase 0** — quick wins | ✅ | role-aware My Home roster, employee Timeline, Projects/Clients pages, Download page, ☰ menu, RBAC scoping (C1) |
 | **Phase 1** — Settings engine (B6) | ✅ | catalog registry + resolver (org default ← user override), Settings page, Team per-user overrides, agent consumes `/settings/effective` |
 | **Phase 2** — Presence (B3) | ✅ | agent heartbeat → in-memory store → 3-state dots (offline/connected/tracking) + "N online" |
-| **Phase 4** — Activity + App tracking (B4/B5) | ✅ | agent activity aggregator (idle-derived) + app polling → ingest; Timeline activity %/per-slot app; roster last-app |
-| **Phase 3** — OpsCore (B1/B2) | ✅ web + desktop | handoff-JWT login + Bearer service-API sync (employees/projects/clients). **Desktop OpsCore login done** (loopback flow via the web `/desktop-auth` bridge). |
+| **Phase 4** — Activity + App + URL tracking (B4/B5) | ✅ | agent activity aggregator (idle-derived) + app polling → ingest; Timeline activity %/per-slot app; roster last-app; **URL** ingest + Reports "Apps & URLs" + browser extension (`apps/extension`) |
+| **Phase 3** — OpsCore (B1/B2) | ✅ web + desktop | handoff-JWT login + Bearer service-API sync. **Desktop OpsCore login done** (loopback flow via the web `/desktop-auth` bridge). |
+| **Phase 5** — Reports + realtime (B7/B10) | ✅ | Reports console (query API, UI, saved reports, CSV/PDF), **weekly-limit enforcement**, realtime presence WS. (B8 rollups deferred; absences cut.) |
 
 **Original MVP (pre-OpsCore) also done:** time tracking, automatic screenshot capture → API → disk,
 web/desktop login, desktop→web "view online" handoff, Team management.
 
-### 🔴 Pending / not built
-- ~~Desktop OpsCore login~~ — **done** (loopback flow; `commands::opscore_login` + web `/desktop-auth` bridge). Needs `TIMEPRO_WEB_URL` set in dev. Email dev-login remains as a non-prod shim.
-- ~~Browser extension for URL tracking~~ — **built** (`apps/extension`, MV3 no-build). Ingest (`/v1/ingest/url-usage`) + Reports "Apps & URLs" tab live; the extension itself is **unverified in a real browser** (load unpacked per `apps/extension/README.md`).
-- **Phase 5** — Reports tab + time-per-client report + weekly-limit enforcement; rollups + scheduler; realtime WS (presence is polling now).
-- **Phase 6** — build/sign/host pipeline for real installer downloads (Download links are placeholders).
-- **Native screenshot-notification toast** (the `screenshots.notify` value resolves but isn't shown as an OS toast).
-- **Real password auth / JWT / MFA** — still the `x-dev-org`/`x-dev-user` dev shim + email dev-login (+ OpsCore handoff for web).
-- **RLS policies, table partitioning** — not applied (tenant isolation is app-level `organization_id` filtering only).
-- Worker/scheduler/realtime services, S3 storage, billing — planned (see docs).
+### 🔴 Pending — phased (full detail in [docs/13 §3](13-opscore-feature-roadmap.md))
+- **Phase 6 — Multi-tenancy & real auth** *(next; agreed direction)*: one shared DB, many orgs. 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO (config moves off global env) · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX. *Folds in the old "real auth / MFA" and "RLS / partitioning" items.*
+- **Phase 7 — Ship pipeline (B9)**: cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs. *Credential-gated.*
+- **Phase 8 — Scale & storage**: 8.1 reporting rollups + scheduler (B8) · 8.2 S3 storage + thumbnails · 8.3 worker/realtime services + Redis-backed presence.
+- **Phase 9 — Billing & plans**.
+- **Phase P — Polish & UX** *(small, anytime)*: ✅ native screenshot-notification toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links. *(Both ✅ compile via `cargo check`; not yet run in the GUI.)*
 
 ---
 
@@ -144,13 +142,15 @@ C8 break-glass local owner · C9 screenshot self-delete admin-configurable defau
 
 ---
 
-## 9. Recommended next steps (pick one)
+## 9. Recommended next steps
 
-1. **Desktop OpsCore login** — finish Phase 3: agent opens system browser → OpsCore handoff → captures the token (loopback or deep link) → TimePro device session.
-2. **Phase 5 — Reports** — a real Reports tab (the nav tab is disabled) + time-per-client report (uses `project.client_id`) + weekly-limit enforcement.
-3. **Browser extension** — finish URL tracking (`url_usage` is ready).
-4. **Commit + clean up** — the working tree is large and uncommitted.
-5. **Phase 6 — installer pipeline** — sign/notarize/host so the Download page links work.
+Phases 0–5 are done. The remaining work is phased in [docs/13 §3](13-opscore-feature-roadmap.md):
 
-Everything verified this session is reproducible via the commands in §3. The dev environment is currently
-**running** (web :3000, API :4001, OpsCore :3001).
+1. **Phase 6 — Multi-tenancy & real auth** *(recommended next)* — start with **6.1 real auth** (Argon2 + JWT, retire the `x-dev-*` shim); it's the foundation for everything multi-tenant. Open sub-decisions: multi-org membership vs single-org, public signup vs invite-only.
+2. **Phase P — Polish** — quick, parallelizable wins (screenshot toast, desktop weekly-limit 409 message).
+3. **Phase 7 — Ship pipeline** — installer sign/notarize/host (needs signing creds + hosting).
+4. **Phase 8 / 9** — scale & storage, then billing.
+
+> **DB note:** all `public` tables were **truncated** (schema + migration journal intact) for a clean multi-tenant start.
+
+Everything verified this session is reproducible via the commands in §3.

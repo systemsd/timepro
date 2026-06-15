@@ -144,9 +144,8 @@ impl AppState {
         self.inner.read().app_url_tracking
     }
 
-    // Resolved from settings; consumed when native screenshot notifications
-    // are wired (the value already round-trips correctly end-to-end).
-    #[allow(dead_code)]
+    /// Whether to show a native OS toast on each screenshot capture
+    /// (resolved from the `screenshots.notify` setting).
     pub fn notify_on_screenshot(&self) -> bool {
         self.inner.read().notify_on_screenshot
     }

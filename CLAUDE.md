@@ -160,12 +160,12 @@ assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (
 loopback flow: agent opens system browser → web `/desktop-auth` bridge → OpsCore handoff → token to the
 agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`commands::opscore_login`).
 - ✅ **Phase 5** Reports (B7) + realtime presence (B10) — see [docs/06-reporting.md §0](docs/06-reporting.md). Rollups (B8) deferred, absences cut.
-- 🔴 Phase 6 build/sign/host (B9) · browser extension (URL tracking) · real JWT/password auth · RLS/partitioning.
 
-**Still stubbed / not built:** real password auth + MFA + JWT (email-only dev login + `x-dev-*` shim),
-OpsCore integration, presence/heartbeat (online dots are grey), activity + app/URL tracking
-(Timeline activity strip + roster app/URL column absent), settings engine (Settings page is a stub),
-S3 storage + thumbnails, BullMQ workers/scheduler/realtime, reporting rollups, Reports tab, billing,
-installer signing/hosting (Download links are placeholders).
+**Pending — phased (full detail in [docs/13 §3](docs/13-opscore-feature-roadmap.md)):**
+- 🔴 **Phase 6 — Multi-tenancy & real auth** *(next)* — one shared DB, many orgs: 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX.
+- 🔴 **Phase 7 — Ship pipeline (B9)** — cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs (credential-gated).
+- 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
+- 🔴 **Phase 9 — Billing & plans**.
+- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
 
 See also [docs/11-roadmap.md](docs/11-roadmap.md) (original MVP/P2/P3) and the per-doc status banners.

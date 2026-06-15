@@ -14,6 +14,7 @@ use std::{sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -163,6 +164,15 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 state.record_screenshot(now);
                 // Notify the UI so it can refresh the "last screenshot" widget.
                 let _ = app.emit("screenshot:uploaded", &resp);
+                // Native OS toast, gated by the `screenshots.notify` setting (C-policy).
+                if state.notify_on_screenshot() {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("TimePro")
+                        .body("Screenshot captured")
+                        .show();
+                }
             }
             Err(err) => {
                 warn!(error = ?err, "screenshot upload failed; will retry next tick");

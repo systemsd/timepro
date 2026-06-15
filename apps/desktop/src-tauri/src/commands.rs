@@ -11,13 +11,24 @@ use tauri::State;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::api::{ApiClient, Project, TimerSnapshot};
+use crate::api::{ApiClient, ApiError, Project, TimerSnapshot};
 use crate::capture::{idle, screenshot};
 use crate::state::{AppState, RunningTimer, Session};
 
 type Result<T> = std::result::Result<T, String>;
 
 fn map_err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
+
+/// Turn a timer-start failure into a user-facing message. The API returns
+/// 409 `weekly_limit_reached` when the user is at/over their weekly cap.
+fn map_start_err(e: ApiError) -> String {
+    if let ApiError::Server { status: 409, body } = &e {
+        if body.contains("weekly_limit_reached") {
+            return "You've reached your weekly time limit — tracking is blocked until next week.".to_string();
+        }
+    }
     e.to_string()
 }
 
@@ -243,7 +254,7 @@ pub async fn timer_start(
             &Uuid::new_v4().to_string(),
         )
         .await
-        .map_err(map_err)?;
+        .map_err(map_start_err)?;
 
     state.set_timer(RunningTimer {
         time_entry_id: snap.id.clone(),

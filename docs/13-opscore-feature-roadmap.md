@@ -107,8 +107,32 @@ Ordered by dependency and value. Each phase is shippable.
 
 **Phase 5 is complete** for the agreed scope (B7 + B10; B8 deferred, absences cut).
 
-### Phase 6 — Ship pipeline (B9)
-- Cross-platform CI builds (mac arm64/x64, Windows, Linux), code-signing + notarization, host artifacts, wire Download URLs.
+### Phase 6 — Multi-tenancy & real auth 🔴 (next; agreed direction)
+One shared DB, many companies (orgs). TimePro-native onboarding + real auth; OpsCore demoted to an
+optional per-org SSO connector; fail-closed RLS. Replaces the `x-dev-*` shim and the single-`OPSCORE_ORG_SLUG`
+assumption. Sub-phases:
+- **6.1 — Real auth** — Argon2 passwords, `POST /v1/auth/login` → signed **JWT** (httpOnly cookie + bearer for desktop); `requireAuth` reads org/user from verified claims; dev shim becomes non-prod-only. Web login form + desktop password login.
+- **6.2 — Org onboarding** — `POST /v1/auth/signup` creates an **org + first owner** atomically; real invite flow adds users to that org. (Decide: single-org vs multi-org membership + switcher; public signup vs invite-only.)
+- **6.3 — Per-org OpsCore SSO** — move OpsCore config (handoff secret, sync URL, API key, slug) from global env → **per-org**, encrypted; handoff + sync route by org. Removes the global single-org assumption.
+- **6.4 — RLS hardening** — `ENABLE`+`FORCE ROW LEVEL SECURITY` on tenant tables (policy on `app.organization_id` GUC); split DB roles — app role (RLS-enforced) vs `asPlatform` BYPASSRLS role for login/cross-org lookups.
+- **6.5 — Tenant audit & UX** — sweep every route for raw `getDb()` without `withTenant`; org context/switcher in the UI; cross-tenant isolation tests.
+
+### Phase 7 — Ship pipeline (B9) 🔴
+- Cross-platform CI builds (mac arm64/x64, Windows, Linux), code-signing + notarization, host artifacts, wire the Download-page URLs. **Credential-gated** (Apple Developer ID + notarization creds, Windows signing cert, artifact hosting).
+
+### Phase 8 — Scale & storage 🔴
+- **8.1 — Reporting rollups + scheduler (B8)** — `reports_hourly/daily/...` tables + jobs; switch hot reads to rollups; recurring OpsCore sync cron. *(Deferred until report latency demands it.)*
+- **8.2 — Object storage** — S3 storage driver (per [docs/07-storage.md](07-storage.md)) + screenshot thumbnails; replace local-disk `STORAGE_DIR`.
+- **8.3 — Background services** — worker/scheduler/realtime apps; Redis-backed presence pub/sub (replaces the in-process store so the realtime WS scales past one API instance).
+
+### Phase 9 — Billing & plans 🔴
+- Plan/seat enforcement, usage metering, invoicing. (`organizations.plan` exists; nothing enforced.)
+
+### Phase P — Polish & UX 🟡 (small, parallelizable; pick up anytime)
+- ✅ **Native screenshot-notification toast** — on each upload the agent shows an OS toast when `screenshots.notify` is on (`tauri-plugin-notification`; `capture/mod.rs` consumes `state.notify_on_screenshot()`). *Compiles; not run in the GUI.*
+- ✅ **Desktop weekly-limit message** — `timer/start` 409 `weekly_limit_reached` now maps to "You've reached your weekly time limit — tracking is blocked until next week." in the agent (`commands::map_start_err`), shown in the Timer error area.
+- 🔴 Keyboard/mouse event counts in activity (needs low-level input hooks; today's score is active/idle ratio).
+- 🔴 Reports: shareable public links (5C deferred); per-vendor browser label in the extension.
 
 ---
 

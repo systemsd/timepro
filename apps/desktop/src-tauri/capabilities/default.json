@@ -9,6 +9,7 @@
     "core:window:allow-set-title",
     "core:event:default",
     "dialog:default",
-    "store:default"
+    "store:default",
+    "notification:default"
   ]
 }
