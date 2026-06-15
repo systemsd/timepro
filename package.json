@@ -22,7 +22,6 @@
     "db:generate": "pnpm --env-file=.env --filter @timepro/db db:generate",
     "db:migrate": "pnpm --env-file=.env --filter @timepro/db db:migrate",
     "db:studio": "pnpm --env-file=.env --filter @timepro/db db:studio",
-    "db:seed": "pnpm --env-file=.env --filter @timepro/db db:seed",
     "gen:openapi": "pnpm --env-file=.env --filter @timepro/api gen:openapi"
   },
   "devDependencies": {

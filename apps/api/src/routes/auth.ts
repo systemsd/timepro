@@ -117,16 +117,26 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
       }
 
       const db = getDb();
-      const orgSlug = loadConfig().OPSCORE_ORG_SLUG;
-      const [org] = await db
+      const cfg = loadConfig();
+      const orgSlug = cfg.OPSCORE_ORG_SLUG;
+      // The org is provisioned at runtime (no seed) — JIT-create it on the first
+      // OpsCore login, keyed to OPSCORE_ORG_SLUG. Everything else (employees,
+      // projects, clients) flows in from the OpsCore directory sync.
+      let [org] = await db
         .select()
         .from(schema.organizations)
         .where(eq(schema.organizations.slug, orgSlug))
         .limit(1);
       if (!org) {
-        throw Object.assign(new Error(`No TimePro org for slug "${orgSlug}"`), {
+        [org] = await db
+          .insert(schema.organizations)
+          .values({ name: cfg.OPSCORE_ORG_NAME, slug: orgSlug, plan: 'business' })
+          .returning();
+      }
+      if (!org) {
+        throw Object.assign(new Error('Failed to provision TimePro org'), {
           statusCode: 500,
-          code: 'org_missing',
+          code: 'org_provision_failed',
         });
       }
 
@@ -159,8 +169,9 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(eq(schema.users.id, user.id));
       }
 
-      // Ensure membership with the mapped role (OpsCore authoritative — but
-      // never demote the org owner / break-glass account).
+      // Ensure membership with the mapped role (OpsCore authoritative). The
+      // `owner` guard below is defensive only — TimePro no longer mints a local
+      // owner, but if one exists we won't let a sync demote it.
       const role = mapOpsCoreRole(claims.role);
       const [existing] = await db
         .select()

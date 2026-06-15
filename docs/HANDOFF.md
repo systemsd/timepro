@@ -70,9 +70,9 @@ TIMEPRO_API_URL=http://localhost:4001 pnpm --filter @timepro/desktop tauri:dev
 ```
 
 ### Test logins
-- **Web/desktop email dev-login:** `owner@timepro.local` (the local break-glass **owner**; keeps password login even with OpsCore).
-- **Sign in with OpsCore:** the button on `/login` → OpsCore handoff → back to TimePro. OpsCore admin login: `admin@systemsd.co`.
-- **Sync OpsCore directory:** Team page → "⟳ Sync from OpsCore" (admin only).
+- **Sign in with OpsCore (only real path):** the button on `/login` → OpsCore handoff → back to TimePro. OpsCore admin login: `admin@systemsd.co`. The **first** OpsCore login JIT-creates the org (`OPSCORE_ORG_SLUG`/`OPSCORE_ORG_NAME`). **No `db:seed`, no local break-glass owner** (C8 superseded).
+- **Email dev-login (`/v1/auth/dev-login`):** non-prod shim — works for any **already-synced** user's email (no `owner@timepro.local` seed anymore).
+- **Sync OpsCore directory:** Team page → "⟳ Sync from OpsCore" (admin only) pulls employees/projects/clients.
 
 ---
 

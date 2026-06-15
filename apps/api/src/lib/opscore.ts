@@ -31,7 +31,11 @@ export async function verifyHandoffToken(token: string): Promise<OpsCoreHandoffC
   };
 }
 
-/** Map an OpsCore ACL role name → TimePro role. Owner stays local (break-glass). */
+/**
+ * Map an OpsCore ACL role name → TimePro role. OpsCore is the only auth source
+ * (no local break-glass owner): an OpsCore ADMIN maps to `admin`, which has full
+ * access — TimePro no longer mints a local `owner`.
+ */
 export function mapOpsCoreRole(opscoreRole: string | null): 'admin' | 'manager' | 'employee' {
   if (!opscoreRole) return 'employee';
   const r = opscoreRole.toUpperCase();

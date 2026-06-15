@@ -59,7 +59,7 @@ docker compose -f infra/compose/docker-compose.dev.yml up -d
 cp .env.example .env          # then edit DATABASE_URL / DATABASE_ADMIN_URL
 pnpm db:generate              # first run only: produce the initial migration
 pnpm db:migrate               # apply migrations (auto-creates citext + pgcrypto)
-pnpm db:seed                  # demo org + owner + team + projects
+# No seed: the org is JIT-created on the first OpsCore login; employees/projects/clients sync from OpsCore.
 
 # 4. run the API and web (separate terminals)
 pnpm --filter @timepro/api dev      # → http://localhost:3001
@@ -70,7 +70,8 @@ source "$HOME/.cargo/env"
 TIMEPRO_API_URL=http://localhost:3001 pnpm --filter @timepro/desktop tauri:dev
 ```
 
-Sign in (web or desktop) with **`owner@timepro.local`** (email-only MVP login).
+Sign in via **"Sign in with OpsCore"** — the first login JIT-creates the org and your
+membership, then run the Team page's **Sync from OpsCore** to pull employees/projects/clients.
 
 Local services when using the Compose stack:
 
@@ -86,7 +87,6 @@ pnpm build                     # turbo build across workspaces
 pnpm typecheck                 # tsc --noEmit across workspaces
 pnpm db:generate               # drizzle-kit: schema diff → migration SQL
 pnpm db:migrate                # apply pending migrations
-pnpm db:seed                   # seed demo data
 pnpm db:studio                 # drizzle studio
 pnpm gen:openapi               # emit OpenAPI from API route schemas
 ```

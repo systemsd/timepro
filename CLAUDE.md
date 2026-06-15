@@ -57,8 +57,9 @@ docker compose -f infra/compose/docker-compose.dev.yml up -d
 # database (reads DATABASE_URL / DATABASE_ADMIN_URL from root .env)
 pnpm db:generate     # drizzle-kit: schema → SQL migration
 pnpm db:migrate      # apply migrations (also bootstraps citext + pgcrypto extensions)
-pnpm db:seed         # demo org, owner Hamid Ali (owner@timepro.local), 10 members, 9 projects
 pnpm db:studio       # drizzle studio
+# No seed: the org is JIT-created on the first OpsCore login (slug OPSCORE_ORG_SLUG,
+# name OPSCORE_ORG_NAME); employees/projects/clients come from the OpsCore directory sync.
 
 # run services
 pnpm --filter @timepro/api dev      # API on :4001 (tsx watch)
@@ -86,7 +87,9 @@ cd apps/desktop/src-tauri && cargo check
 - **Web → API**: client-side `fetch` in `apps/web/src/lib/api.ts`.
 - **Auth (MVP)**: there is no real JWT yet. The API's `requireAuth` accepts dev headers
   `x-dev-org` + `x-dev-user` (non-production only). `POST /v1/auth/dev-login` maps an email →
-  these IDs. Seed login: **`owner@timepro.local`**.
+  these IDs (works for any OpsCore-synced user in non-prod). **OpsCore is the only real auth
+  path** — "Sign in with OpsCore" JIT-creates the org + your membership; there is **no local
+  break-glass owner** anymore (an OpsCore outage means no logins — accepted trade-off).
 - **Desktop → web auto-login ("view online")**: one-time handoff code.
   `POST /v1/auth/handoff` (desktop, authed) mints a single-use, 60s code →
   browser opens `/auth/handoff?code=…` → `POST /v1/auth/handoff/exchange` redeems it →

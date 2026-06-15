@@ -26,6 +26,8 @@ const Schema = z.object({
   OPSCORE_HANDOFF_SECRET: z.string().default('opscore-timepro-shared-handoff-secret-dev'),
   OPSCORE_API_KEY: z.string().default('opscore-timepro-service-api-key-dev'),
   OPSCORE_ORG_SLUG: z.string().default('demo'),
+  /** Name for the TimePro org JIT-created on the first OpsCore login (slug = OPSCORE_ORG_SLUG). */
+  OPSCORE_ORG_NAME: z.string().default('Systemsd'),
 
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),

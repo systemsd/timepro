@@ -470,8 +470,8 @@ DATABASE_URL=...
 db:generate    drizzle-kit generate
 db:migrate     drizzle-kit migrate
 db:studio      drizzle-kit studio
-db:seed        tsx src/seeds/dev.ts
 ```
+(No `db:seed` — data comes from OpsCore at runtime: the org is JIT-created on first OpsCore login, the rest via the directory sync.)
 
 ### 3.2 `packages/shared`
 

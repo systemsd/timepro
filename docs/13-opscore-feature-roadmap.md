@@ -86,7 +86,7 @@ Ordered by dependency and value. Each phase is shippable.
 >   keyed on `opscore_*_id`, mapping OpsCore roles (ADMIN→admin, *_MANAGER→manager, else employee) and
 >   OpsCore's project↔business-partner link (C3). Verified: 10 employees / 18 partners / 19 projects.
 >   "Sync from OpsCore" button on the Team page.
-> - ✅ **C8 break-glass** — the local `owner@timepro.local` keeps password login; OpsCore never demotes the owner.
+> - ⛔ **C8 break-glass — SUPERSEDED.** Decision reversed: **no local break-glass owner**. OpsCore is the only auth source; the TimePro org is **JIT-created on the first OpsCore login** (`OPSCORE_ORG_SLUG` / `OPSCORE_ORG_NAME`) and all users/projects/clients flow from the OpsCore sync. The `db:seed` script was removed. Trade-off: an OpsCore outage means no one can sign in.
 > - Code: OpsCore `lib/timepro.ts` + `app/api/timepro/*`; TimePro `lib/opscore.ts`, `routes/auth.ts` (exchange), `routes/admin.ts` (sync).
 > - ⚙️ **Port note:** OpsCore owns `:3001`, so the **TimePro API moved to `:4001`** (web stays `:3000`).
 
