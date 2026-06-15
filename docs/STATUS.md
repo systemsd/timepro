@@ -12,8 +12,9 @@ _Snapshot: 2026-06-15. Living docs: [HANDOFF](HANDOFF.md) (run/resume), [docs/13
 - **API** (Fastify + Drizzle/Postgres) — all endpoints; org-scoped via `withTenant`.
 
 Identity comes from **OpsCore** (a separate per-company system) via a **handoff-JWT login** (not OIDC) +
-a Bearer service-API directory sync. Monorepo: Turborepo + pnpm, Node 20. Ports: web **3000**, API **4001**,
-OpsCore **3001**.
+a Bearer service-API directory sync. Monorepo: Turborepo + pnpm, Node 20. Ports: web **3005** (off 3000 to avoid
+the prod-OpsCore nginx rewriting the handoff redirect), API **4001**. Sign-in is wired to **production OpsCore**
+(`https://opscore.systemsd.co`) and verified working.
 
 ## Status at a glance
 
@@ -62,23 +63,24 @@ directory. No seed script.
 
 ## ⚠️ Verification gaps
 
-Built and typecheck/`cargo check`-clean, but **not exercised in a live runtime this session** (no connected
-browser / Tauri GUI / Chrome):
+**Verified live:** web OpsCore sign-in against **production** OpsCore (full browser flow → `/dashboard`),
+the handoff-token exchange + **JIT org creation** (`Systemsd` org, `Hamid` admin), `/v1/me/profile`, CORS for `:3005`.
 
-- Reports console, realtime presence dots, weekly-limit UI (API paths verified by curl).
-- My Account page + avatar dropdown + line icons (typecheck-clean, `/account` 200, `/v1/me/profile` verified live; layout/hover not eyeballed).
+Built and typecheck/`cargo check`-clean but **not exercised in a live runtime this session** (no Tauri GUI / Chrome):
+
+- Reports console, realtime presence dots, weekly-limit UI, day/month calendar strip (API paths verified by curl).
+- My Account page + avatar dropdown + line icons (`/account` 200, `/v1/me/profile` verified; layout not eyeballed).
 - Desktop OpsCore loopback login + the two Phase P items (compile + API proven; round-trip not run).
 - Browser extension (manifest/JS valid; not loaded in Chrome).
-- JIT org creation (typecheck-verified; not live-run — didn't disturb existing data).
 
 ## Run (dev)
 
 ```bash
 ulimit -n 10240
 pnpm --filter @timepro/api dev    # :4001
-pnpm --filter @timepro/web dev    # :3000
+pnpm --filter @timepro/web dev    # :3005
 # desktop (needs Rust): TIMEPRO_API_URL + TIMEPRO_WEB_URL for OpsCore login
 source "$HOME/.cargo/env"
-TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3000 \
+TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3005 \
   pnpm --filter @timepro/desktop tauri:dev
 ```

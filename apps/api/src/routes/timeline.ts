@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, asc, eq, gte, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lt, or } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, visibleUsers } from '../lib/access';
@@ -203,6 +203,80 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           activity_score: dayScore,
           slots,
         };
+      });
+    },
+  );
+
+  // Per-day tracked seconds for one user across a month — drives the calendar
+  // strip's activity dots on the Timeline page.
+  app.get(
+    '/timeline/:userId/activity',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        params: z.object({ userId: z.string().uuid() }),
+        querystring: z.object({
+          month: z.string().regex(/^\d{4}-\d{2}$/),
+          tzOffsetMinutes: z.coerce.number().default(0),
+        }),
+        response: {
+          200: z.object({ days: z.array(z.object({ date: z.string(), seconds: z.number() })) }),
+        },
+        tags: ['timeline'],
+      },
+    },
+    async (req) => {
+      const visible = await visibleUsers(req);
+      if (!canView(visible, req.params.userId)) forbid('Not allowed to view this timeline');
+
+      const [yy, mm] = req.query.month.split('-').map(Number) as [number, number];
+      const tz = req.query.tzOffsetMinutes;
+      const lm = (y: number, m: number, d: number) => Date.UTC(y, m, d) + tz * 60_000;
+      const monthStart = lm(yy, mm - 1, 1);
+      const monthEnd = lm(yy, mm, 1);
+      const now = Date.now();
+      const windowEnd = Math.min(monthEnd, now);
+      const toLocalDate = (ms: number) => {
+        const s = new Date(ms - tz * 60_000);
+        return `${s.getUTCFullYear()}-${String(s.getUTCMonth() + 1).padStart(2, '0')}-${String(s.getUTCDate()).padStart(2, '0')}`;
+      };
+
+      return req.withTenantDb(async (tx) => {
+        const entries = await tx
+          .select({ startedAt: schema.timeEntries.startedAt, endedAt: schema.timeEntries.endedAt })
+          .from(schema.timeEntries)
+          .where(
+            and(
+              eq(schema.timeEntries.organizationId, req.organizationId!),
+              eq(schema.timeEntries.userId, req.params.userId),
+              isNull(schema.timeEntries.deletedAt),
+              lt(schema.timeEntries.startedAt, new Date(monthEnd)),
+              or(
+                isNull(schema.timeEntries.endedAt),
+                gte(schema.timeEntries.endedAt, new Date(monthStart)),
+              ),
+            ),
+          );
+
+        const buckets = new Map<string, number>();
+        for (const e of entries) {
+          let cursor = Math.max(e.startedAt.getTime(), monthStart);
+          const end = Math.min(e.endedAt ? e.endedAt.getTime() : now, windowEnd);
+          while (cursor < end) {
+            const day = toLocalDate(cursor);
+            const [dy, dm, dd] = day.split('-').map(Number) as [number, number, number];
+            const dayEnd = lm(dy, dm - 1, dd) + 86_400_000;
+            const slice = Math.min(end, dayEnd) - cursor;
+            if (slice > 0) buckets.set(day, (buckets.get(day) ?? 0) + Math.floor(slice / 1000));
+            cursor = dayEnd;
+          }
+        }
+
+        const days = Array.from(buckets.entries())
+          .filter(([, s]) => s > 0)
+          .map(([date, seconds]) => ({ date, seconds }))
+          .sort((a, b) => (a.date < b.date ? -1 : 1));
+        return { days };
       });
     },
   );

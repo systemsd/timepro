@@ -42,14 +42,14 @@ web/desktop login, desktop→web "view online" handoff, Team management.
 
 | App | Port | Notes |
 | --- | ---- | ----- |
-| TimePro **web** | **3000** | Next.js |
+| TimePro **web** | **3005** | Next.js — **moved off 3000** so the prod-OpsCore nginx doesn't rewrite the handoff redirect |
 | TimePro **API** | **4001** | Fastify — **moved off 3001** because OpsCore owns it |
 | **OpsCore** | **3001** | separate app, `/Users/macos/Code/systemsd/OpsCore` (it's a `next dev` — don't `pkill -f "next dev"` blindly) |
 | Postgres (TimePro) | 5432 / db `timepro` | user `postgres`/`123456` (per `.env`) |
 | Postgres (OpsCore) | 5432 / db `opscore` | OpsCore's own Prisma DB |
 
 > ⚠️ **Don't `pkill -f "next dev"`** — that kills OpsCore too (it's a Next dev server). Kill by port instead:
-> `lsof -ti tcp:3000 | xargs kill -9`.
+> `lsof -ti tcp:3005 | xargs kill -9` (web) / `lsof -ti tcp:4001 | xargs kill -9` (API).
 
 ### Run everything
 ```bash
@@ -62,14 +62,16 @@ cd /Users/macos/Code/systemsd/OpsCore && PORT=3001 npm run dev   # uses package-
 # TimePro (this repo)
 cd /Users/macos/Code/systemsd/TimePro
 pnpm --filter @timepro/api dev        # → http://localhost:4001
-pnpm --filter @timepro/web dev        # → http://localhost:3000
+pnpm --filter @timepro/web dev        # → http://localhost:3005
 # desktop agent (needs Rust toolchain: source "$HOME/.cargo/env")
-TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3000 pnpm --filter @timepro/desktop tauri:dev
+TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3005 pnpm --filter @timepro/desktop tauri:dev
 ```
 
 ### Test logins
-- **Sign in with OpsCore (only real path):** the button on `/login` → OpsCore handoff → back to TimePro. OpsCore admin login: `admin@systemsd.co`. The **first** OpsCore login JIT-creates the org (`OPSCORE_ORG_SLUG`/`OPSCORE_ORG_NAME`). **No `db:seed`, no local break-glass owner** (C8 superseded).
-- **Email dev-login (`/v1/auth/dev-login`):** non-prod shim — works for any **already-synced** user's email (no `owner@timepro.local` seed anymore).
+- **Sign in with OpsCore (only real path; login is OpsCore-only — email/password fields removed):** the button on `/login` → OpsCore handoff → back to TimePro. **✅ Wired to PRODUCTION OpsCore (`https://opscore.systemsd.co`) and verified working** (signs in as `Hamid`, admin, org `Systemsd`). The **first** OpsCore login JIT-creates the org (`OPSCORE_ORG_SLUG=demo`/`OPSCORE_ORG_NAME=Systemsd`). **No `db:seed`, no local break-glass owner** (C8 superseded).
+  - Web's OpsCore target: `apps/web/.env.local` → `NEXT_PUBLIC_OPSCORE_URL=https://opscore.systemsd.co`. Shared `OPSCORE_HANDOFF_SECRET`/`OPSCORE_API_KEY` (root `.env`) match prod OpsCore's `TIMEPRO_HANDOFF_SECRET`/`TIMEPRO_API_KEY`.
+  - **OpsCore side must set `TIMEPRO_URL=http://localhost:3005`** (the TimePro web port) + restart — else nginx rewrites the redirect (see §7 gotcha).
+- **Email dev-login (`/v1/auth/dev-login`):** non-prod shim, **UI removed** but route kept — works for any **already-synced** user's email.
 - **Sync OpsCore directory:** Team page → "⟳ Sync from OpsCore" (admin only) pulls employees/projects/clients.
 
 ---
@@ -129,6 +131,13 @@ C8 break-glass local owner · C9 screenshot self-delete admin-configurable defau
 - **Desktop API base is baked at build** (`apps/desktop/src-tauri/src/state.rs` → `PRODUCTION_API_BASE`); change before building installers.
 - **Sandbox quirk:** raw `sed -i`/in-place writes from a shell *loop* sometimes get blocked here — single `perl -pi` over all files works. Use `dangerouslyDisableSandbox` for DB/psql/file-write shell ops.
 - **psql path:** `/opt/homebrew/bin/psql` (not always on PATH in the sandbox).
+- **Web is :3005 because of the prod-OpsCore nginx.** Prod OpsCore is behind nginx with its own app on `:3000`;
+  nginx rewrites `Location: http://localhost:3000/…` (its upstream) to `https://opscore.systemsd.co`. If TimePro
+  web were on 3000, the OpsCore→TimePro handoff redirect gets clobbered → lands on OpsCore's domain → 404. Fix:
+  web on **3005**, OpsCore `TIMEPRO_URL=http://localhost:3005`, `API_CORS_ORIGINS` includes `:3005`. Diagnose a
+  recurrence with `curl -sI <opscore>/api/timepro/handoff -b <cookie> | grep -i location`.
+- **Web env lives in `apps/web/.env.local`, not root `.env`.** Next reads env from `apps/web/`; root `.env`
+  `NEXT_PUBLIC_*` lines are ignored by the web. `NEXT_PUBLIC_*` are inlined at startup → restart `next dev` after edits.
 
 ---
 

@@ -201,16 +201,6 @@ export async function getRoster(opts?: { period?: RosterPeriod; date?: string })
   return res.json();
 }
 
-/** Per-day team tracked seconds for a month (YYYY-MM) — calendar-strip dots. */
-export async function getRosterActivity(month: string): Promise<{ days: Array<{ date: string; seconds: number }> }> {
-  const tz = new Date().getTimezoneOffset();
-  const res = await fetch(`${API_BASE}/v1/roster/activity?month=${month}&tzOffsetMinutes=${tz}`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) return asError(res);
-  return res.json();
-}
-
 // ---- timeline ----
 
 export interface TimelineSlot {
@@ -235,6 +225,20 @@ export async function getTimeline(userId: string, date: string): Promise<Timelin
   const tz = new Date().getTimezoneOffset();
   const res = await fetch(
     `${API_BASE}/v1/timeline/${userId}?date=${date}&tzOffsetMinutes=${tz}`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+/** Per-day tracked seconds for one user across a month (YYYY-MM) — Timeline calendar dots. */
+export async function getTimelineActivity(
+  userId: string,
+  month: string,
+): Promise<{ days: Array<{ date: string; seconds: number }> }> {
+  const tz = new Date().getTimezoneOffset();
+  const res = await fetch(
+    `${API_BASE}/v1/timeline/${userId}/activity?month=${month}&tzOffsetMinutes=${tz}`,
     { headers: authHeaders() },
   );
   if (!res.ok) return asError(res);

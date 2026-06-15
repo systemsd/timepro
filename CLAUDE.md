@@ -22,7 +22,7 @@ Turborepo + pnpm workspaces. Node 20, pnpm 9.
 | Package             | Stack                | Status | Notes |
 | ------------------- | -------------------- | ------ | ----- |
 | `@timepro/api`    | Fastify + Drizzle    | live   | All REST endpoints. Port **4001** (OpsCore owns :3001 locally). |
-| `@timepro/web`    | Next.js 14 (App dir) | live   | Dashboard + Team + login. Port **3000**. |
+| `@timepro/web`    | Next.js 14 (App dir) | live   | Dashboard + Team + login. Port **3005** (moved off 3000 — see OpsCore-prod gotcha). |
 
 > **OpsCore** (separate Next.js app at `/Users/macos/Code/systemsd/OpsCore`, runs on **:3001**) is the
 > upstream identity + directory system. TimePro integrates via a **handoff-JWT login** (OpsCore is *not*
@@ -64,10 +64,10 @@ pnpm db:studio       # drizzle studio
 
 # run services
 pnpm --filter @timepro/api dev      # API on :4001 (tsx watch)
-pnpm --filter @timepro/web dev      # web on :3000 (next dev)
+pnpm --filter @timepro/web dev      # web on :3005 (next dev)
 source "$HOME/.cargo/env"
 # TIMEPRO_WEB_URL lets "Sign in with OpsCore" open the local web bridge (/desktop-auth)
-TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3000 \
+TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3005 \
   pnpm --filter @timepro/desktop tauri:dev
 
 # quality gates
@@ -134,6 +134,13 @@ cd apps/desktop/src-tauri && cargo check
 - **Screenshot capture cadence** is `screenshot_interval_sec` in `state.rs` (currently `300` = 12/hr,
   matching the Settings team policy). Capture only runs while a timer is active.
 - **Migrations are expand-only / forward-only.** Never roll back the DB; write a new migration.
+- **Web is on :3005, not :3000 — prod-OpsCore/nginx collision.** Prod OpsCore (`https://opscore.systemsd.co`)
+  runs behind nginx with its own app on `:3000`; nginx rewrites any `Location: http://localhost:3000/…` (its
+  upstream) to the public host. The OpsCore→TimePro handoff redirect (`${TIMEPRO_URL}/auth/opscore?token=…`)
+  would get clobbered if TimePro were on 3000. So **web runs on 3005**, OpsCore `TIMEPRO_URL=http://localhost:3005`,
+  and `API_CORS_ORIGINS` includes `:3005`. The web's OpsCore target is `apps/web/.env.local`
+  (`NEXT_PUBLIC_OPSCORE_URL`); Next reads env from `apps/web/`, **not** the root `.env`. **Login is OpsCore-only**
+  (email/password fields removed; dev-login plumbing kept for later).
 - **Commit messages**: Conventional Commits. Branch before committing on `main`. Only commit/push when asked.
 
 ---
