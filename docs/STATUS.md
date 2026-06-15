@@ -1,6 +1,6 @@
 # TimePro — Project Brief & Status
 
-_Snapshot: 2026-06-15. Living docs: [HANDOFF](HANDOFF.md) (run/resume), [docs/13](13-opscore-feature-roadmap.md) (roadmap)._
+_Snapshot: 2026-06-16. Living docs: [HANDOFF](HANDOFF.md) (run/resume), [docs/13](13-opscore-feature-roadmap.md) (roadmap), [feature-matrix](feature-matrix.md) (per-role)._
 
 ## Brief
 
@@ -19,11 +19,19 @@ the prod-OpsCore nginx rewriting the handoff redirect), API **4001**. Sign-in is
 ## Status at a glance
 
 **Phases 0–5 complete.** Core product works end-to-end: tracking, screenshots (native OS toast gated by
-`screenshots.notify`), role-aware home + roster, Timeline, Settings engine, presence (realtime), activity/app/URL
-tracking, OpsCore login (web + desktop), the Reports console (saved reports, CSV/PDF, weekly-limit enforcement),
-and a per-user **My Account** page (`/account`) reached from the avatar dropdown (Dashboard · My Account · Log out).
-The UI uses line icons, no emojis. **All earlier spec conflicts (C1–C9) are resolved** — C7 settled by the two
-distinct surfaces: `/account` (per-user) vs `/settings` (org-scoped, admin).
+`screenshots.notify`), Settings engine, realtime presence, activity/app/URL tracking, the Reports console
+(saved reports, CSV/PDF, weekly-limit enforcement), and **OpsCore sign-in wired to production and verified**.
+
+Recent UI shape:
+- **Manager dashboard** = 4-column team roster overview (today/yesterday/week/month).
+- **Employee dashboard** = company-row table (org name + role badge + last-active + period totals), powered by the now self-scoped `/v1/roster`.
+- **Timeline** carries the **calendar day-strip** date nav (per-user activity dots).
+- **Reports**: Clients/Projects filter dropdowns hidden for employees.
+- **My Account** (`/account`) via the avatar dropdown (Dashboard · My Account · Log out).
+- UI uses line icons, no emojis. Login is OpsCore-only.
+
+**All earlier spec conflicts (C1–C9) are resolved** — C7 settled by the two distinct surfaces:
+`/account` (per-user) vs `/settings` (org-scoped, admin).
 
 | Phase | Scope | Status |
 | ----- | ----- | ------ |
@@ -56,21 +64,21 @@ _Deferred/cut: B8 rollups → Phase 8.1; absence model cut (only needed for the 
 
 ## Database
 
-All `public` tables **truncated** (0 rows) for a clean multi-tenant start; schema and Drizzle migration
-journal intact (latest migration `0004_saved_reports`). New companies populate at runtime: first OpsCore
-login JIT-creates the org (`OPSCORE_ORG_SLUG`/`OPSCORE_ORG_NAME`), then Team → Sync from OpsCore pulls the
-directory. No seed script.
+No seed script — data populates at runtime from OpsCore. The first production OpsCore sign-in already
+**JIT-created the `Systemsd` org + the `Hamid` admin**; run Team → **Sync from OpsCore** to pull the rest of
+the directory (employees/projects/clients). Latest migration `0004_saved_reports`. (Earlier in the session
+all `public` tables were truncated for a clean multi-tenant start; the prod login has since seeded the one org.)
 
 ## ⚠️ Verification gaps
 
 **Verified live:** web OpsCore sign-in against **production** OpsCore (full browser flow → `/dashboard`),
 the handoff-token exchange + **JIT org creation** (`Systemsd` org, `Hamid` admin), `/v1/me/profile`, CORS for `:3005`.
 
-Built and typecheck/`cargo check`-clean but **not exercised in a live runtime this session** (no Tauri GUI / Chrome):
+Built and typecheck/`cargo check`-clean but **layout not eyeballed in a browser this session** (API paths verified by curl):
 
-- Reports console, realtime presence dots, weekly-limit UI, day/month calendar strip (API paths verified by curl).
-- My Account page + avatar dropdown + line icons (`/account` 200, `/v1/me/profile` verified; layout not eyeballed).
-- Desktop OpsCore loopback login + the two Phase P items (compile + API proven; round-trip not run).
+- Manager 4-column roster, **employee company-row dashboard**, Timeline **calendar strip** (+ dots), Reports employee gating.
+- Reports console, realtime presence dots, weekly-limit UI, My Account page + avatar dropdown + line icons.
+- Desktop OpsCore loopback login + the two Phase P items (compile + API proven; round-trip needs the Tauri GUI).
 - Browser extension (manifest/JS valid; not loaded in Chrome).
 
 ## Run (dev)

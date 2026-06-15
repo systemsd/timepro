@@ -1,6 +1,6 @@
 # TimePro — Feature Matrix (Managers & Employees)
 
-_What works today vs what's stubbed, by role. Snapshot: 2026-06-15._
+_What works today vs what's stubbed, by role. Snapshot: 2026-06-16._
 
 Roles (RBAC in `apps/api/src/lib/access.ts`): **owner/admin** see all org users; **manager** sees their own
 team (`teams.manager_user_id` → `team_members`) + self; **employee** sees only themselves.
@@ -11,19 +11,19 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 
 | Feature | Status | Notes |
 | ------- | ------ | ----- |
-| **My Home → team roster** | ✅ | Per-employee today/yesterday/week/month totals, last app, last screenshot. Manager = own team; admin = all. |
+| **My Home → team roster** | ✅ | 4-column overview (today/yesterday/week/month) per visible employee + last app + last screenshot. Manager = own team; admin = all. |
 | **Realtime presence dots** | ✅ | Live offline/connected/tracking via websocket (`/v1/realtime/presence`); "N online" headline. |
-| **Employee Timeline** | ✅ | Screenshot slots + activity % + per-slot app + day total + day nav, for any visible employee (avatar/Timeline dropdown). |
+| **Employee Timeline + calendar strip** | ✅ | Per-user day view (screenshot slots + activity % + per-slot app + day total). Date nav is a **calendar day-strip** (‹ Month Year › + Today, day cells with green activity dots via `/v1/timeline/:userId/activity`). For any visible employee (Timeline dropdown). |
 | **Reports console** | ✅ | Summary / Detailed / Weekly; filters RBAC-scoped (manager → team only); daily chart; Employees/Projects/Clients/Notes/Apps&URLs tabs. |
 | **Saved reports + CSV/PDF export** | ✅ | Per-user saved configs (+ org-shared); CSV (Excel) + browser-print PDF. |
-| **Weekly-limit visibility + enforcement** | ✅ | Roster shows `week / limit` (⚠ over); timer start blocked at the cap. |
+| **Weekly-limit visibility + enforcement** | ✅ | Roster "This week" cell shows `week / limit` (red when over); timer start blocked at the cap. |
 | **Team page** | 🟡 | Roles, project toggles, invite/pause/archive/delete — RBAC-scoped (C1: manager = own team). **Invites don't send real email; no real auth behind them.** |
 | **Projects page** | 🟡 | Member assignment works. Catalog is **OpsCore-managed (C2)** — local create/archive is being retired. Admin-only (☰ menu). |
 | **Clients page** | 🟡 | Lists clients (= OpsCore business partners); project↔client mapping syncs from OpsCore (C3). Admin-only. |
 | **Settings** | ✅ | Org defaults + per-user overrides (Settings engine). Admin-only (☰ menu). |
-| **OpsCore directory sync** | ✅ | Team → "Sync from OpsCore" pulls employees/projects/clients (admin). Pointed at **local** OpsCore today. |
+| **OpsCore directory sync** | ✅ | Team → "Sync from OpsCore" pulls employees/projects/clients (admin). |
+| **OpsCore sign-in** | ✅ | Wired to **production** OpsCore (`https://opscore.systemsd.co`) and verified end-to-end. Login is OpsCore-only (no email/password). |
 | **My Account** | 🟡 | Profile (name/org/email/role/tz) ✅; profile/security/API-token actions 🔴 (Phase 6 auth). |
-| **Day / Month roster switch** | ✅ | **Calendar day-strip** on the dashboard: ‹ Month Year › + Today, a row of all days (weekday letter + number, weekend-styled, green dot on days with team activity via `/v1/roster/activity`), pick a day → roster shows that day (`/v1/roster?period=day&date=`). Over-weekly-limit badge on the name. _(Typecheck-clean; not live-run — API was down.)_ |
 | **Reports shareable links** | 🔴 | Deferred (org-shared saved reports exist; public links don't). |
 | **Real login (password/JWT/MFA)** | 🔴 | Dev `x-dev-*` shim + OpsCore handoff only. Phase 6. |
 | **Org onboarding / multi-tenant switch** | 🔴 | Single global OpsCore org today; multi-tenant is Phase 6. |
@@ -36,9 +36,9 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 | **Desktop time tracking** | ✅ | Start/stop timer; idempotent; weekly-limit 409 surfaces a clear message. |
 | **Automatic screenshot capture** | ✅ | On a cadence while tracking → API → disk; native OS toast when `screenshots.notify` is on. |
 | **Activity + app + URL capture** | ✅ | Idle-derived activity %, active-app intervals; URL via the browser extension (built, unverified in Chrome). |
-| **My Home (personal)** | ✅ | Tracked today, this-week vs weekly limit (+ over-limit banner), screenshots, session count. |
-| **Own Timeline** | ✅ | Direct link to own day timeline (screenshots + activity). |
-| **Reports (self)** | ✅ | Reports console scoped to own data only. |
+| **Employee Dashboard** | ✅ | Company-row table: one row per org the employee tracks for (org name + role badge + last-active screenshot + today/yesterday/week/month + weekly-limit). Powered by the now self-scoped `/v1/roster`. (Replaced the old stat-cards "My Home".) |
+| **Own Timeline + calendar strip** | ✅ | Own day timeline (screenshots + activity), navigated by the calendar day-strip (dots = own tracked days). |
+| **Reports (self)** | ✅ | Reports console scoped to own data only; **Clients/Projects filter dropdowns hidden** for employees (server returns empty + UI hides them). |
 | **My Account** | 🟡 | Own profile ✅; edit/change-password/2FA/delete/API-token 🔴 (Phase 6). |
 | **Desktop OpsCore login** | ✅ | Loopback flow (browser → OpsCore → agent). Email dev-login also available (non-prod). |
 | **Desktop → web "view online" handoff** | ✅ | One-time code opens the web dashboard already signed in. |

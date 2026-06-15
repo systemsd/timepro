@@ -29,6 +29,12 @@ Monorepo: Turborepo + pnpm, Node 20. Apps: `api`, `web`, `desktop`. Packages: `d
 **Original MVP (pre-OpsCore) also done:** time tracking, automatic screenshot capture → API → disk,
 web/desktop login, desktop→web "view online" handoff, Team management.
 
+**Recent UI (this session):** **Manager dashboard** = 4-column team roster overview · **Employee dashboard** =
+company-row table (org + role badge + last-active + period totals; `/v1/roster` is now self-scoped for employees) ·
+**Timeline** date nav is a **calendar day-strip** (per-user activity dots) · **My Account** page (`/account`) +
+avatar dropdown (Dashboard · My Account · Log out) · **Reports** hides Clients/Projects dropdowns for employees ·
+login is **OpsCore-only** (email/password removed) · line icons, no emojis.
+
 ### 🔴 Pending — phased (full detail in [docs/13 §3](13-opscore-feature-roadmap.md))
 - **Phase 6 — Multi-tenancy & real auth** *(next; agreed direction)*: one shared DB, many orgs. 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO (config moves off global env) · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX. *Folds in the old "real auth / MFA" and "RLS / partitioning" items.*
 - **Phase 7 — Ship pipeline (B9)**: cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs. *Credential-gated.*
@@ -94,19 +100,25 @@ Verified counts: **10 active employees, 18 business partners, 19 projects**.
 - OpsCore: `lib/timepro.ts`, `app/api/timepro/handoff/route.ts`, `app/api/timepro/sync/{employees,projects,business-partners}/route.ts`; edited `lib/auth.config.ts` (allowlist `/api/timepro/sync`); `.env` + `.env.example` (`TIMEPRO_URL`, `TIMEPRO_HANDOFF_SECRET`, `TIMEPRO_API_KEY`).
 - TimePro: `apps/api/src/lib/opscore.ts`, `routes/auth.ts` (exchange), `routes/admin.ts` (sync); web `app/auth/opscore/page.tsx`, login button, Team sync button; `opscore_employee_id`/`opscore_project_id` columns (migration `0003`).
 
-**Shared secrets (dev — must match across both `.env`s):**
+**Shared secrets (must match across both `.env`s):**
 - `OPSCORE_HANDOFF_SECRET` (TimePro) == `TIMEPRO_HANDOFF_SECRET` (OpsCore) = `opscore-timepro-shared-handoff-secret-dev`
 - `OPSCORE_API_KEY` (TimePro) == `TIMEPRO_API_KEY` (OpsCore) = `opscore-timepro-service-api-key-dev`
-- TimePro `OPSCORE_ORG_SLUG=demo` (which TimePro org OpsCore users land in).
+- TimePro `OPSCORE_ORG_SLUG=demo`, `OPSCORE_ORG_NAME=Systemsd` (the org JIT-created on first login).
+
+**✅ Production wiring (verified):** web `apps/web/.env.local` → `NEXT_PUBLIC_OPSCORE_URL=https://opscore.systemsd.co`;
+prod OpsCore `.env` → `TIMEPRO_URL=http://localhost:3005` (the TimePro web port — **must not be 3000**, see §7 nginx gotcha)
++ the two shared secrets above. First prod login JIT-created the `Systemsd` org + `Hamid` (admin). The handoff token
+verifies locally (signature only) — sign-in does **not** call `OPSCORE_API_URL`; that's only for the directory sync.
 
 ---
 
 ## 5. API route inventory (`apps/api/src/routes/`)
 
-`auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today) ·
+`auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today, profile) ·
 `projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw) · `team` · `timer` ·
-`roster` · `timeline` · `clients` · `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) ·
-`ingest` (activity, app-usage, url-usage) · `admin` (opscore/sync) · `reports` (filters, run, saved CRUD) · `realtime` (ws presence).
+`roster` (self-scoped for employees) · `timeline` (+ :userId/activity for the calendar dots) · `clients` ·
+`settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) · `ingest` (activity, app-usage, url-usage) ·
+`admin` (opscore/sync) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
 
 **Auth shim:** `requireAuth` accepts `x-dev-org` + `x-dev-user` headers (non-prod). RBAC scoping (admin=all /
 manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/access.ts`.

@@ -56,7 +56,7 @@ Ordered by dependency and value. Each phase is shippable.
 - ✅ **S5** Team tab gated to admin/manager (C1: manager = own team); RBAC scoping helper (`lib/access.ts`).
 - ✅ **S8 (shell)** ☰ menu — Projects/Clients/Settings (admin) + Download (all), role-filtered.
 - ✅ **S12 (page)** Download page with OS detection + placeholder URLs.
-- ✅ **S2** Role-aware My Home — admin/manager → roster (`/v1/roster`, today/yesterday/week/month + last screenshot, viewer-tz); employee → personal dashboard. *(Online dot grey until B3.)*
+- ✅ **S2** Role-aware home — admin/manager → 4-column team roster (`/v1/roster`, today/yesterday/week/month + last screenshot, viewer-tz, realtime dots); **employee → company-row dashboard** (org + role badge + last-active + period totals; `/v1/roster` self-scoped). The day/month calendar strip lives on the **Timeline**.
 - ✅ **S3** Employee Timeline (`/timeline/[userId]`, `/v1/timeline/:id`) — 10-min screenshot slots + day total + day nav. *(Activity strip waits on B4.)*
 - ✅ **S4** Timeline nav dropdown listing employees. *(Dots grey until B3.)*
 - ✅ **S9** Projects page + project-members assignment (`/v1/projects/manage`, `/:id/members`). Catalog read-only per C2.
