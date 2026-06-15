@@ -17,7 +17,7 @@ export const errorMapperPlugin = fp(async (app) => {
         .status(422)
         .type('application/problem+json')
         .send({
-          type: 'https://api.trackflow.app/errors/validation',
+          type: 'https://api.timepro.app/errors/validation',
           title: 'Validation failed',
           status: 422,
           code: 'validation_failed',
@@ -47,7 +47,7 @@ export const errorMapperPlugin = fp(async (app) => {
       .status(statusCode)
       .type('application/problem+json')
       .send({
-        type: `https://api.trackflow.app/errors/${code}`,
+        type: `https://api.timepro.app/errors/${code}`,
         title: message,
         status: statusCode,
         code,
@@ -61,7 +61,7 @@ export const errorMapperPlugin = fp(async (app) => {
 
   app.setNotFoundHandler((req, reply) => {
     reply.status(404).type('application/problem+json').send({
-      type: 'https://api.trackflow.app/errors/not_found',
+      type: 'https://api.timepro.app/errors/not_found',
       title: 'Not Found',
       status: 404,
       code: 'not_found',

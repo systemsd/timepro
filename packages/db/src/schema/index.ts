@@ -1,4 +1,4 @@
-// Re-export every table so callers can `import * as schema from '@trackflow/db/schema'`.
+// Re-export every table so callers can `import * as schema from '@timepro/db/schema'`.
 // Add new schema files here as the data model grows.
 
 export * from './organizations';

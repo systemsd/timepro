@@ -1,5 +1,5 @@
 {
-  "name": "@trackflow/db",
+  "name": "@timepro/db",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "./client": "./src/client.ts"
   },
   "scripts": {
-    "lint": "echo '[db] lint stub — wire @trackflow/eslint-config later' && exit 0",
+    "lint": "echo '[db] lint stub — wire @timepro/eslint-config later' && exit 0",
     "typecheck": "tsc --noEmit",
     "build": "echo '[db] no build step (source-only package)' && exit 0",
     "db:generate": "drizzle-kit generate",
@@ -27,8 +27,8 @@
     "uuid": "^10.0.0"
   },
   "devDependencies": {
-    "@trackflow/eslint-config": "workspace:*",
-    "@trackflow/tsconfig": "workspace:*",
+    "@timepro/eslint-config": "workspace:*",
+    "@timepro/tsconfig": "workspace:*",
     "@types/node": "^20.16.0",
     "@types/pg": "^8.11.10",
     "@types/uuid": "^10.0.0",

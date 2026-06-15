@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { sql } from 'drizzle-orm';
-import { getDb } from '@trackflow/db';
+import { getDb } from '@timepro/db';
 
 const HealthResponse = z.object({
   status: z.enum(['ok', 'degraded']),

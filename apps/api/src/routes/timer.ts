@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { and, eq, isNull } from 'drizzle-orm';
-import { schema } from '@trackflow/db';
+import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 
 const StartBody = z.object({

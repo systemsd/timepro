@@ -1,4 +1,4 @@
-name: trackflow-dev
+name: timepro-dev
 
 services:
   postgres:
@@ -6,9 +6,9 @@ services:
     container_name: tf-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: trackflow
-      POSTGRES_PASSWORD: trackflow
-      POSTGRES_DB: trackflow
+      POSTGRES_USER: timepro
+      POSTGRES_PASSWORD: timepro
+      POSTGRES_DB: timepro
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
       - "5432:5432"
@@ -16,7 +16,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trackflow -d trackflow"]
+      test: ["CMD-SHELL", "pg_isready -U timepro -d timepro"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -83,10 +83,10 @@ services:
     entrypoint: >
       sh -c "
       mc alias set local http://minio:9000 minio minio123 &&
-      mc mb --ignore-existing local/trackflow-screenshots &&
-      mc mb --ignore-existing local/trackflow-exports &&
-      mc mb --ignore-existing local/trackflow-agent-updates &&
-      mc anonymous set download local/trackflow-agent-updates &&
+      mc mb --ignore-existing local/timepro-screenshots &&
+      mc mb --ignore-existing local/timepro-exports &&
+      mc mb --ignore-existing local/timepro-agent-updates &&
+      mc anonymous set download local/timepro-agent-updates &&
       exit 0
       "
 

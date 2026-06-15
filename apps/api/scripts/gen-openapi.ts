@@ -22,7 +22,7 @@ async function main() {
     ? swagger()
     : {
         openapi: '3.1.0',
-        info: { title: 'TrackFlow API', version: '0.1.0' },
+        info: { title: 'TimePro API', version: '0.1.0' },
         paths: {},
       };
 
