@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 import { clearSession, type WebSession } from '@/lib/session';
 import { getTeamMembers, type Presence, type TeamMember } from '@/lib/api';
 import { useRealtimePresence } from '@/lib/useRealtimePresence';
+import { HomeIcon, LogOutIcon, SettingsIcon } from '@/components/icons';
 
 interface Props {
   session: WebSession;
-  active: 'home' | 'timeline' | 'reports' | 'team' | 'projects' | 'clients' | 'settings' | 'download';
+  active: 'home' | 'timeline' | 'reports' | 'team' | 'projects' | 'clients' | 'settings' | 'download' | 'account';
 }
 
 const isAdmin = (r: string) => r === 'owner' || r === 'admin';
@@ -27,9 +28,23 @@ export function TopNav({ session, active }: Props) {
 
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const closeTimer = useRef<number | null>(null);
+  const accountTimer = useRef<number | null>(null);
   const live = useRealtimePresence(); // realtime dots (B10 / 5E)
+
+  const openAccount = () => {
+    if (accountTimer.current) window.clearTimeout(accountTimer.current);
+    setAccountOpen(true);
+  };
+  const scheduleAccountClose = () => {
+    accountTimer.current = window.setTimeout(() => setAccountOpen(false), 180);
+  };
+  const logout = () => {
+    clearSession();
+    router.replace('/login');
+  };
 
   // lazily load employees for the Timeline dropdown (admin/manager only)
   useEffect(() => {
@@ -64,16 +79,45 @@ export function TopNav({ session, active }: Props) {
         </div>
         <div className="account">
           <span className="hello">Hello, {firstName}</span>
-          <button
-            className="avatar"
-            title="Sign out"
-            onClick={() => {
-              clearSession();
-              router.replace('/login');
-            }}
+          <div
+            className="account-wrap"
+            onMouseEnter={openAccount}
+            onMouseLeave={scheduleAccountClose}
           >
-            {initials}
-          </button>
+            <button
+              className="avatar"
+              aria-label="Account menu"
+              onClick={() => setAccountOpen((v) => !v)}
+            >
+              {initials}
+            </button>
+            {accountOpen && (
+              <div className="nav-menu account-menu" onMouseEnter={openAccount} onMouseLeave={scheduleAccountClose}>
+                <button
+                  className="nav-menu-item"
+                  onClick={() => {
+                    setAccountOpen(false);
+                    router.push('/dashboard');
+                  }}
+                >
+                  <HomeIcon /> Dashboard
+                </button>
+                <button
+                  className="nav-menu-item"
+                  onClick={() => {
+                    setAccountOpen(false);
+                    router.push('/account');
+                  }}
+                >
+                  <SettingsIcon /> My Account
+                </button>
+                <div className="nav-menu-sep" />
+                <button className="nav-menu-item" onClick={logout}>
+                  <LogOutIcon /> Log out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

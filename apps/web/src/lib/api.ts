@@ -372,6 +372,19 @@ export async function getToday(): Promise<TodaySummary> {
   return res.json();
 }
 
+export interface Profile {
+  display_name: string;
+  email: string;
+  organization_name: string;
+  role: string;
+}
+
+export async function getProfile(): Promise<Profile> {
+  const res = await fetch(`${API_BASE}/v1/me/profile`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
 // ---- reports (B7 / Phase 5) ----
 
 export type ReportType = 'summary' | 'detailed' | 'weekly';

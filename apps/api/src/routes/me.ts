@@ -100,4 +100,50 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       });
     },
   );
+
+  // The requester's profile for the My Account page.
+  app.get(
+    '/me/profile',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        response: {
+          200: z.object({
+            display_name: z.string(),
+            email: z.string(),
+            organization_name: z.string(),
+            role: z.string(),
+          }),
+        },
+        tags: ['me'],
+      },
+    },
+    async (req) => {
+      return req.withTenantDb(async (tx) => {
+        const [row] = await tx
+          .select({
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+            orgName: schema.organizations.name,
+            role: schema.memberships.role,
+          })
+          .from(schema.memberships)
+          .innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
+          .innerJoin(schema.organizations, eq(schema.organizations.id, schema.memberships.organizationId))
+          .where(
+            and(
+              eq(schema.memberships.organizationId, req.organizationId!),
+              eq(schema.memberships.userId, req.userId!),
+            ),
+          )
+          .limit(1);
+        return {
+          display_name: row?.displayName ?? '',
+          email: row?.email ?? '',
+          organization_name: row?.orgName ?? '',
+          role: row?.role ?? 'employee',
+        };
+      });
+    },
+  );
 };
