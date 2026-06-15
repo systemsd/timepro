@@ -4,16 +4,37 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
-import { getScreenshotObjectUrl, getTimeline, type Timeline } from '@/lib/api';
+import { getScreenshotObjectUrl, getTimeline, getTimelineActivity, type Timeline } from '@/lib/api';
+
+// ---- calendar-strip helpers (viewer-local) ----
+const pad = (n: number) => String(n).padStart(2, '0');
+const DOW = 'SMTWTFS'; // index 0=Sun … 6=Sat
 
 function todayLocal(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-function shiftDate(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const dt = new Date(y, m - 1, d + days);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+function monthOf(date: string): string {
+  return date.slice(0, 7);
+}
+function shiftMonth(ym: string, n: number): string {
+  const [y, m] = ym.split('-').map(Number) as [number, number];
+  const dt = new Date(y, m - 1 + n, 1);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`;
+}
+function monthYearLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number) as [number, number];
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+function monthDays(ym: string): Array<{ date: string; day: number; dow: string; weekend: boolean }> {
+  const [y, m] = ym.split('-').map(Number) as [number, number];
+  const count = new Date(y, m, 0).getDate();
+  const cells = [];
+  for (let d = 1; d <= count; d++) {
+    const dow = new Date(y, m - 1, d).getDay();
+    cells.push({ date: `${y}-${pad(m)}-${pad(d)}`, day: d, dow: DOW[dow]!, weekend: dow === 0 || dow === 6 });
+  }
+  return cells;
 }
 
 export default function TimelinePage() {
@@ -21,6 +42,8 @@ export default function TimelinePage() {
   const params = useParams();
   const userId = params.userId as string;
   const [date, setDate] = useState(todayLocal());
+  const [viewMonth, setViewMonth] = useState(monthOf(todayLocal()));
+  const [activeDays, setActiveDays] = useState<Set<string>>(new Set());
   const [data, setData] = useState<Timeline | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,7 +57,20 @@ export default function TimelinePage() {
       .finally(() => setLoading(false));
   }, [checked, session, userId, date]);
 
+  useEffect(() => {
+    if (!checked || !session) return;
+    getTimelineActivity(userId, viewMonth)
+      .then((r) => setActiveDays(new Set(r.days.filter((d) => d.seconds > 0).map((d) => d.date))))
+      .catch(() => setActiveDays(new Set()));
+  }, [checked, session, userId, viewMonth]);
+
   if (!checked || !session) return <div className="center muted">Loading…</div>;
+
+  const today = todayLocal();
+  const goToday = () => {
+    setDate(today);
+    setViewMonth(monthOf(today));
+  };
 
   const pretty = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -43,12 +79,34 @@ export default function TimelinePage() {
   return (
     <div className="page">
       <TopNav session={session} active="timeline" />
-      <div className="tl-band">
-        <div className="tl-nav">
-          <button onClick={() => setDate(shiftDate(date, -1))}>‹</button>
-          <input type="date" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} />
-          <button onClick={() => setDate(shiftDate(date, 1))} disabled={date >= todayLocal()}>›</button>
+
+      <div className="cal">
+        <div className="cal-head">
+          <button className="cal-nav" onClick={() => setViewMonth(shiftMonth(viewMonth, -1))} aria-label="Previous month">‹</button>
+          <span className="cal-month">{monthYearLabel(viewMonth)}</span>
+          <button className="cal-nav" onClick={() => setViewMonth(shiftMonth(viewMonth, 1))} aria-label="Next month">›</button>
+          <button className="cal-today" onClick={goToday}>Today</button>
         </div>
+        <div className="cal-strip">
+          {monthDays(viewMonth).map((c) => {
+            const future = c.date > today;
+            return (
+              <button
+                key={c.date}
+                className={`cal-day${c.date === date ? ' selected' : ''}${c.date === today ? ' today' : ''}${c.weekend ? ' weekend' : ''}${future ? ' future' : ''}`}
+                onClick={() => !future && setDate(c.date)}
+                disabled={future}
+              >
+                <span className="cal-dow">{c.dow}</span>
+                <span className="cal-num">{c.day}</span>
+                <span className={`cal-dot${activeDays.has(c.date) ? ' on' : ''}`} />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="tl-band">
         <div className="tl-head">
           <span className="tl-who">{data?.display_name ?? '…'}</span>
           <span className="tl-date">{pretty}</span>

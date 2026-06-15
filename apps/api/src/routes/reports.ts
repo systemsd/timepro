@@ -252,6 +252,12 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(memberScope)
           .orderBy(asc(schema.users.displayName));
 
+        // Employees don't filter by client/project (and shouldn't see the org
+        // catalog) — only managers/admins get those lists.
+        if (visible.role === 'employee') {
+          return { employees, clients: [], projects: [] };
+        }
+
         const clients = await tx
           .select({ id: schema.clients.id, name: schema.clients.name })
           .from(schema.clients)

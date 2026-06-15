@@ -1,9 +1,9 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
-import { forbid, visibleUsers } from '../lib/access';
+import { visibleUsers } from '../lib/access';
 import { getPresence } from '../lib/presence';
 import { resolveWeeklyLimitHours } from '../lib/limits';
 
@@ -121,8 +121,9 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (req) => {
+      // Admin/owner → whole org; manager → their team; employee → just themselves
+      // (their own row drives the Employee Dashboard). `visibleUsers` scopes it.
       const visible = await visibleUsers(req);
-      if (visible.role === 'employee') forbid('Not allowed to view the roster');
 
       const b = periodBounds(req.query.tzOffsetMinutes);
       // Selected day/month window (S2 day/month switch). `now` clips the future.
@@ -280,92 +281,6 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
         );
 
         return { rows, totals, period: periodMeta };
-      });
-    },
-  );
-
-  // Per-day team tracked seconds for a month — drives the calendar-strip
-  // activity dots on the manager dashboard (S2 day/month switch).
-  app.get(
-    '/roster/activity',
-    {
-      preHandler: [requireAuth],
-      schema: {
-        querystring: z.object({
-          month: z.string().regex(/^\d{4}-\d{2}$/),
-          tzOffsetMinutes: z.coerce.number().default(0),
-        }),
-        response: {
-          200: z.object({ days: z.array(z.object({ date: z.string(), seconds: z.number() })) }),
-        },
-        tags: ['roster'],
-      },
-    },
-    async (req) => {
-      const visible = await visibleUsers(req);
-      if (visible.role === 'employee') forbid('Not allowed to view the roster');
-
-      const [yy, mm] = req.query.month.split('-').map(Number) as [number, number];
-      const tz = req.query.tzOffsetMinutes;
-      const lm = (y: number, m: number, d: number) => Date.UTC(y, m, d) + tz * 60_000;
-      const monthStart = lm(yy, mm - 1, 1);
-      const monthEnd = lm(yy, mm, 1);
-      const now = Date.now();
-      const windowEnd = Math.min(monthEnd, now);
-      const toLocalDate = (ms: number) => {
-        const s = new Date(ms - tz * 60_000);
-        return `${s.getUTCFullYear()}-${String(s.getUTCMonth() + 1).padStart(2, '0')}-${String(s.getUTCDate()).padStart(2, '0')}`;
-      };
-
-      return req.withTenantDb(async (tx) => {
-        const memberScope =
-          visible.userIds === 'all'
-            ? eq(schema.memberships.organizationId, req.organizationId!)
-            : and(
-                eq(schema.memberships.organizationId, req.organizationId!),
-                inArray(schema.memberships.userId, visible.userIds),
-              );
-        const members = await tx
-          .select({ userId: schema.memberships.userId })
-          .from(schema.memberships)
-          .where(memberScope);
-        const userIds = members.map((m) => m.userId);
-        if (userIds.length === 0) return { days: [] };
-
-        const entries = await tx
-          .select({ startedAt: schema.timeEntries.startedAt, endedAt: schema.timeEntries.endedAt })
-          .from(schema.timeEntries)
-          .where(
-            and(
-              eq(schema.timeEntries.organizationId, req.organizationId!),
-              inArray(schema.timeEntries.userId, userIds),
-              isNull(schema.timeEntries.deletedAt),
-              lt(schema.timeEntries.startedAt, new Date(monthEnd)),
-              or(
-                isNull(schema.timeEntries.endedAt),
-                gte(schema.timeEntries.endedAt, new Date(monthStart)),
-              ),
-            ),
-          );
-
-        const buckets = new Map<string, number>();
-        for (const e of entries) {
-          let cursor = Math.max(e.startedAt.getTime(), monthStart);
-          const end = Math.min(e.endedAt ? e.endedAt.getTime() : now, windowEnd);
-          while (cursor < end) {
-            const day = toLocalDate(cursor);
-            const [dy, dm, dd] = day.split('-').map(Number) as [number, number, number];
-            const dayEnd = lm(dy, dm - 1, dd) + 86_400_000;
-            buckets.set(day, (buckets.get(day) ?? 0) + overlapSeconds(cursor, end, cursor, dayEnd));
-            cursor = dayEnd;
-          }
-        }
-
-        const days = Array.from(buckets.entries())
-          .filter(([, s]) => s > 0)
-          .map(([date, seconds]) => ({ date, seconds }))
-          .sort((a, b) => (a.date < b.date ? -1 : 1));
-        return { days };
       });
     },
   );

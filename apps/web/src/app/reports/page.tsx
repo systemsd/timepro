@@ -390,11 +390,15 @@ export default function ReportsPage() {
             <div className="rep-tz" title="Report timezone (viewer)">Report times are {tzLabel}</div>
           </div>
 
-          {/* row 2: filters */}
+          {/* row 2: filters — clients/projects are manager/admin only */}
           <div className="rep-row rep-filters">
             <MultiSelect placeholder="Select employees and groups" options={filters?.employees ?? []} selected={userIds} onChange={setUserIds} />
-            <MultiSelect placeholder="Select clients" options={filters?.clients ?? []} selected={clientIds} onChange={setClientIds} />
-            <MultiSelect placeholder="Select projects" options={(filters?.projects ?? []).map((p) => ({ id: p.id, name: p.name }))} selected={projectIds} onChange={setProjectIds} />
+            {session.role !== 'employee' && (
+              <>
+                <MultiSelect placeholder="Select clients" options={filters?.clients ?? []} selected={clientIds} onChange={setClientIds} />
+                <MultiSelect placeholder="Select projects" options={(filters?.projects ?? []).map((p) => ({ id: p.id, name: p.name }))} selected={projectIds} onChange={setProjectIds} />
+              </>
+            )}
             <input className="rep-note" placeholder="Note contains text" value={noteContains} onChange={(e) => setNoteContains(e.target.value)} />
           </div>
 
