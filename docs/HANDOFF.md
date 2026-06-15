@@ -23,13 +23,13 @@ Monorepo: Turborepo + pnpm, Node 20. Apps: `api`, `web`, `desktop`. Packages: `d
 | **Phase 1** — Settings engine (B6) | ✅ | catalog registry + resolver (org default ← user override), Settings page, Team per-user overrides, agent consumes `/settings/effective` |
 | **Phase 2** — Presence (B3) | ✅ | agent heartbeat → in-memory store → 3-state dots (offline/connected/tracking) + "N online" |
 | **Phase 4** — Activity + App tracking (B4/B5) | ✅ | agent activity aggregator (idle-derived) + app polling → ingest; Timeline activity %/per-slot app; roster last-app |
-| **Phase 3** — OpsCore (B1/B2) | ✅ web | handoff-JWT login + Bearer service-API sync (employees/projects/clients). **Desktop OpsCore login deferred.** |
+| **Phase 3** — OpsCore (B1/B2) | ✅ web + desktop | handoff-JWT login + Bearer service-API sync (employees/projects/clients). **Desktop OpsCore login done** (loopback flow via the web `/desktop-auth` bridge). |
 
 **Original MVP (pre-OpsCore) also done:** time tracking, automatic screenshot capture → API → disk,
 web/desktop login, desktop→web "view online" handoff, Team management.
 
 ### 🔴 Pending / not built
-- **Desktop OpsCore login** (web is done; desktop still uses email dev-login).
+- ~~Desktop OpsCore login~~ — **done** (loopback flow; `commands::opscore_login` + web `/desktop-auth` bridge). Needs `TIMEPRO_WEB_URL` set in dev. Email dev-login remains as a non-prod shim.
 - **Browser extension** for URL tracking (`url_usage` table + ingest ready; capture needs the WebExtension).
 - **Phase 5** — Reports tab + time-per-client report + weekly-limit enforcement; rollups + scheduler; realtime WS (presence is polling now).
 - **Phase 6** — build/sign/host pipeline for real installer downloads (Download links are placeholders).
@@ -66,7 +66,7 @@ cd /Users/macos/Code/systemsd/TimePro
 pnpm --filter @timepro/api dev        # → http://localhost:4001
 pnpm --filter @timepro/web dev        # → http://localhost:3000
 # desktop agent (needs Rust toolchain: source "$HOME/.cargo/env")
-TIMEPRO_API_URL=http://localhost:4001 pnpm --filter @timepro/desktop tauri:dev
+TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3000 pnpm --filter @timepro/desktop tauri:dev
 ```
 
 ### Test logins

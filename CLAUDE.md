@@ -65,7 +65,9 @@ pnpm db:studio       # drizzle studio
 pnpm --filter @timepro/api dev      # API on :4001 (tsx watch)
 pnpm --filter @timepro/web dev      # web on :3000 (next dev)
 source "$HOME/.cargo/env"
-TIMEPRO_API_URL=http://localhost:4001 pnpm --filter @timepro/desktop tauri:dev
+# TIMEPRO_WEB_URL lets "Sign in with OpsCore" open the local web bridge (/desktop-auth)
+TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3000 \
+  pnpm --filter @timepro/desktop tauri:dev
 
 # quality gates
 pnpm typecheck       # tsc --noEmit across workspaces
@@ -151,8 +153,11 @@ assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (
   `/v1/ingest/activity` + `/ingest/app-usage`; Timeline activity %/per-slot app; roster last-app;
   settings gate the agent). **URL tracking still needs the browser extension.**
 - ✅ **Phase 3 — OpsCore integration (B1/B2)** — done for **web** (handoff-JWT login — OpsCore is *not*
-  OIDC — + Bearer service-API sync of employees/projects/business-partners). Desktop OpsCore login deferred.
-- 🔴 Phase 5 reports/rollups/realtime (B7/B8/B10) · Phase 6 build/sign/host (B9) · desktop OpsCore login · browser extension (URL tracking).
+  OIDC — + Bearer service-API sync of employees/projects/business-partners). **Desktop OpsCore login done** —
+loopback flow: agent opens system browser → web `/desktop-auth` bridge → OpsCore handoff → token to the
+agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`commands::opscore_login`).
+- ✅ **Phase 5** Reports (B7) + realtime presence (B10) — see [docs/06-reporting.md §0](docs/06-reporting.md). Rollups (B8) deferred, absences cut.
+- 🔴 Phase 6 build/sign/host (B9) · browser extension (URL tracking) · real JWT/password auth · RLS/partitioning.
 
 **Still stubbed / not built:** real password auth + MFA + JWT (email-only dev login + `x-dev-*` shim),
 OpsCore integration, presence/heartbeat (online dots are grey), activity + app/URL tracking

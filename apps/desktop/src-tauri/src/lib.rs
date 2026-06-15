@@ -25,6 +25,7 @@ pub fn run() {
         .manage(Arc::new(AppState::new()))
         .invoke_handler(tauri::generate_handler![
             commands::dev_login,
+            commands::opscore_login,
             commands::logout,
             commands::current_session,
             commands::list_projects,

@@ -44,6 +44,147 @@ pub async fn dev_login(state: State<'_, Arc<AppState>>, email: String) -> Result
     Ok(session)
 }
 
+/// Sign in via OpsCore from the desktop agent (Phase 3 — desktop).
+///
+/// Loopback flow — the agent never relies on a fixed redirect it can't see:
+///   1. bind a localhost server on a random port,
+///   2. open the system browser at the web `/desktop-auth` bridge (carrying the
+///      port + a one-time `state` nonce),
+///   3. the browser runs the OpsCore handoff and lands the token on our
+///      loopback `/callback`,
+///   4. exchange the token for a TimePro device session.
+#[tauri::command]
+pub async fn opscore_login(state: State<'_, Arc<AppState>>) -> Result<Session> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("failed to start loopback server: {e}"))?;
+    let port = listener.local_addr().map_err(map_err)?.port();
+    let nonce = Uuid::new_v4().to_string();
+
+    let url = format!(
+        "{}/desktop-auth?port={}&state={}",
+        state.web_base().trim_end_matches('/'),
+        port,
+        nonce
+    );
+    open::that(&url).map_err(|e| format!("failed to open browser: {e}"))?;
+    info!(%port, "waiting for OpsCore loopback callback");
+
+    let token = tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        await_loopback_token(listener, &nonce),
+    )
+    .await
+    .map_err(|_| "timed out waiting for OpsCore sign-in".to_string())??;
+
+    let api = client(&state)?;
+    let resp = api.opscore_exchange(&token).await.map_err(map_err)?;
+    let session = Session {
+        user_id: resp.user_id,
+        organization_id: resp.organization_id,
+        organization_name: resp.organization_name,
+        display_name: resp.display_name,
+        role: resp.role,
+    };
+    state.set_session(session.clone());
+    info!(user = %session.user_id, org = %session.organization_id, "opscore login");
+    Ok(session)
+}
+
+/// Accept connections until one hits `/callback` with the expected `state`,
+/// returning the captured token. Other paths (favicon, etc.) get a 404.
+async fn await_loopback_token(
+    listener: tokio::net::TcpListener,
+    expected_state: &str,
+) -> Result<String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    loop {
+        let (mut socket, _) = listener.accept().await.map_err(map_err)?;
+        let mut buf = [0u8; 8192];
+        let n = socket.read(&mut buf).await.map_err(map_err)?;
+        let req = String::from_utf8_lossy(&buf[..n]);
+        let path = req
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .unwrap_or("");
+
+        if !path.starts_with("/callback") {
+            let _ = socket
+                .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await;
+            continue;
+        }
+
+        let query = path.split('?').nth(1).unwrap_or("");
+        let mut token: Option<String> = None;
+        let mut got_state: Option<String> = None;
+        for pair in query.split('&') {
+            let mut it = pair.splitn(2, '=');
+            match (it.next(), it.next()) {
+                (Some("token"), Some(v)) => token = Some(percent_decode(v)),
+                (Some("state"), Some(v)) => got_state = Some(percent_decode(v)),
+                _ => {}
+            }
+        }
+
+        let ok = matches!((&token, &got_state), (Some(_), Some(s)) if s == expected_state);
+        let body = if ok {
+            "<h2>Signed in to TimePro</h2><p>You can close this tab and return to the app.</p>"
+        } else {
+            "<h2>Sign-in failed</h2><p>Invalid or expired request. Try again from the app.</p>"
+        };
+        let html = format!(
+            "<!doctype html><html><body style=\"font-family:system-ui;text-align:center;padding-top:64px;color:#2f2f2f\">{body}</body></html>"
+        );
+        let resp = format!(
+            "HTTP/1.1 {}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            if ok { "200 OK" } else { "400 Bad Request" },
+            html.len(),
+            html
+        );
+        let _ = socket.write_all(resp.as_bytes()).await;
+        let _ = socket.flush().await;
+
+        if ok {
+            return Ok(token.unwrap());
+        }
+        return Err("invalid or expired OpsCore callback".to_string());
+    }
+}
+
+/// Minimal percent-decoder for query values (`%XX` + `+`→space).
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hi = (bytes[i + 1] as char).to_digit(16);
+                let lo = (bytes[i + 2] as char).to_digit(16);
+                if let (Some(h), Some(l)) = (hi, lo) {
+                    out.push((h * 16 + l) as u8);
+                    i += 3;
+                    continue;
+                }
+                out.push(b'%');
+                i += 1;
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            c => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[tauri::command]
 pub fn logout(state: State<'_, Arc<AppState>>) -> Result<()> {
     state.clear_session();

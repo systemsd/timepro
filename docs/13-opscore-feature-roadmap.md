@@ -80,7 +80,11 @@ Ordered by dependency and value. Each phase is shippable.
 > - ✅ **B2 (web)** — OpsCore mints a 60s HS256 handoff JWT (`/api/timepro/handoff`) → redirects to
 >   TimePro `/auth/opscore` → `POST /v1/auth/opscore/exchange` verifies it (shared secret) → JIT-creates
 >   the user + membership (role-mapped) → TimePro session. "Sign in with OpsCore" button on `/login`.
->   Desktop OpsCore login is the deferred follow-up.
+> - ✅ **B2 (desktop)** — loopback flow: the agent (`commands::opscore_login`) binds a localhost server,
+>   opens the browser at the web `/desktop-auth` bridge (carrying the port + a one-time `state`), which runs
+>   the OpsCore handoff and lands the token on the agent's `/callback`; the agent then calls
+>   `/v1/auth/opscore/exchange` for a device session. No further OpsCore changes (the bridge carries the
+>   loopback port across the round-trip via sessionStorage). `TIMEPRO_WEB_URL` points the agent at the bridge.
 > - ✅ **B1 sync engine** — OpsCore exposes Bearer-authed service routes (`/api/timepro/sync/{employees,projects,business-partners}`);
 >   TimePro's `POST /v1/admin/opscore/sync` (admin) pulls + upserts users/memberships/clients/projects
 >   keyed on `opscore_*_id`, mapping OpsCore roles (ADMIN→admin, *_MANAGER→manager, else employee) and

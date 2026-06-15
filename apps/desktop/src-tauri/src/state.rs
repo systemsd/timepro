@@ -51,6 +51,24 @@ fn default_api_base() -> String {
     PRODUCTION_API_BASE.to_string()
 }
 
+/// Production web base — where the OpsCore login bridge (`/desktop-auth`) lives.
+/// Change before release. Same resolution order as the API base.
+const PRODUCTION_WEB_BASE: &str = "https://app.timepro.app";
+
+fn default_web_base() -> String {
+    if let Ok(v) = std::env::var("TIMEPRO_WEB_URL") {
+        if !v.is_empty() {
+            return v;
+        }
+    }
+    if let Some(v) = option_env!("TIMEPRO_WEB_URL") {
+        if !v.is_empty() {
+            return v.to_string();
+        }
+    }
+    PRODUCTION_WEB_BASE.to_string()
+}
+
 #[derive(Debug, Default)]
 pub struct AppState {
     inner: RwLock<Inner>,
@@ -59,6 +77,7 @@ pub struct AppState {
 #[derive(Debug, Default)]
 struct Inner {
     api_base: Option<String>,
+    web_base: Option<String>,
     session: Option<Session>,
     timer: Option<RunningTimer>,
     /// Capture cadence — resolved from `/v1/settings/effective`
@@ -77,6 +96,7 @@ impl AppState {
         Self {
             inner: RwLock::new(Inner {
                 api_base: Some(default_api_base()),
+                web_base: Some(default_web_base()),
                 session: None,
                 timer: None,
                 screenshot_interval_sec: 300, // fallback until settings load
@@ -145,6 +165,15 @@ impl AppState {
 
     pub fn set_api_base(&self, url: String) {
         self.inner.write().api_base = Some(url);
+    }
+
+    /// Web base used for the OpsCore login bridge (`/desktop-auth`).
+    pub fn web_base(&self) -> String {
+        self.inner
+            .read()
+            .web_base
+            .clone()
+            .unwrap_or_else(default_web_base)
     }
 
     pub fn session(&self) -> Option<Session> {

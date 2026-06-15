@@ -7,6 +7,7 @@ import type { Project, Session, TimerView } from './types';
 
 export const ipc = {
   devLogin: (email: string) => invoke<Session>('dev_login', { email }),
+  opscoreLogin: () => invoke<Session>('opscore_login'),
   logout: () => invoke<void>('logout'),
   currentSession: () => invoke<Session | null>('current_session'),
 

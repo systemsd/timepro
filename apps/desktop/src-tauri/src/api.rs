@@ -73,6 +73,18 @@ impl ApiClient {
         Self::parse(resp).await
     }
 
+    /// Exchange an OpsCore handoff JWT (captured via the loopback flow) for a
+    /// TimePro device session. Same response shape as `dev_login`.
+    pub async fn opscore_exchange(&self, token: &str) -> ApiResult<DevLoginResponse> {
+        let resp = self
+            .http
+            .post(self.url("/v1/auth/opscore/exchange"))
+            .json(&serde_json::json!({ "token": token }))
+            .send()
+            .await?;
+        Self::parse(resp).await
+    }
+
     // ---- projects ----
 
     pub async fn list_projects(&self) -> ApiResult<ProjectsResponse> {
