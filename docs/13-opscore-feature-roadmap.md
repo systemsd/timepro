@@ -96,9 +96,12 @@ Ordered by dependency and value. Each phase is shippable.
 - 🔴 **URL tracking** still needs the **browser extension** (S12 extension download) — `url_usage` table + ingest path are ready for it.
 
 ### Phase 5 — Reports & scale (B7 + B8 + B10)
-- ✅ **B7** Reports (5A query API · 5B console UI · 5C saved reports + exports). Weekly-limit enforcement pending in 5F. **UI/feature spec:** [docs/06-reporting.md §0](06-reporting.md#0-reports-console--ui--feature-spec) — Reports console with the Summary / Detailed / Weekly Report / Saved Report dropdown, filter bar, and tabbed result area.
-- 🔴 **B8** Rollups + scheduler (5D — scale S2/S3; recurring OpsCore sync).
+- ✅ **B7** Reports (5A query API · 5B console UI · 5C saved reports + exports · **weekly-limit enforcement** at timer start + roster/My-Home visibility). **UI/feature spec:** [docs/06-reporting.md §0](06-reporting.md#0-reports-console--ui--feature-spec).
+- ⏸️ **B8** Rollups + scheduler — **deferred** (scale optimization; on-the-fly compute is fine at current scale, revisit on report latency). Recurring OpsCore sync can land as a lightweight cron separately.
 - ✅ **B10** Realtime presence (5E) — websocket presence channel replaces the dashboard/nav presence poll. Roster-total realtime + Redis-backed pub/sub still come with B8 scale-out.
+- ⏸️ **Absence model — cut** (only needed for the optional Weekly "Include absences" toggle).
+
+**Phase 5 is complete** for the agreed scope (B7 + B10; B8 deferred, absences cut).
 
 ### Phase 6 — Ship pipeline (B9)
 - Cross-platform CI builds (mac arm64/x64, Windows, Linux), code-signing + notarization, host artifacts, wire Download URLs.

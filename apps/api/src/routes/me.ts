@@ -3,11 +3,15 @@ import { z } from 'zod';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
+import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
 
 const TodayResponse = z.object({
   tracked_seconds: z.number(),
   is_running: z.boolean(),
   screenshot_count: z.number(),
+  week_seconds: z.number(),
+  weekly_limit_hours: z.number(), // effective limit; 0 = unlimited
+  over_limit: z.boolean(),
   entries: z.array(
     z.object({
       id: z.string(),
@@ -77,10 +81,20 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
             ),
           );
 
+        // weekly usage vs effective limit (B7)
+        const now = Date.now();
+        const weekStart = mondayWeekStartMs(0, now); // UTC week (matches /me/today's UTC day basis)
+        const weekSeconds = await weeklyTrackedSeconds(tx, req.organizationId!, req.userId!, weekStart, now);
+        const limits = await resolveWeeklyLimitHours(tx, req.organizationId!, [req.userId!]);
+        const limitHours = limits.get(req.userId!) ?? 0;
+
         return {
           tracked_seconds: tracked,
           is_running: running,
           screenshot_count: counts[0]?.count ?? 0,
+          week_seconds: weekSeconds,
+          weekly_limit_hours: limitHours,
+          over_limit: limitHours > 0 && weekSeconds > limitHours * 3600,
           entries: out,
         };
       });

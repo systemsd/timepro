@@ -126,7 +126,14 @@ function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Pr
       </td>
       <td className={row.today_seconds ? 'val' : 'dash'}>{fmt(row.today_seconds)}</td>
       <td className={row.yesterday_seconds ? 'val' : 'dash'}>{fmt(row.yesterday_seconds)}</td>
-      <td className={row.week_seconds ? 'val' : 'dash'}>{fmt(row.week_seconds)}</td>
+      <td className={row.over_limit ? 'val over-limit' : row.week_seconds ? 'val' : 'dash'}>
+        {fmt(row.week_seconds)}
+        {row.weekly_limit_hours > 0 && (
+          <span className="limit-cap" title={`Weekly limit ${row.weekly_limit_hours}h`}>
+            {' / '}{row.weekly_limit_hours}h{row.over_limit ? ' ⚠' : ''}
+          </span>
+        )}
+      </td>
       <td className={row.month_seconds ? 'val' : 'dash'}>{fmt(row.month_seconds)}</td>
     </tr>
   );
@@ -174,11 +181,24 @@ function EmployeeHome() {
       <main className="content">
         <h1 className="title">My Home</h1>
         {error && <div className="error">{error}</div>}
+        {today?.over_limit && (
+          <div className="limit-banner">
+            ⚠ You&apos;ve passed your weekly time limit of {today.weekly_limit_hours}h
+            ({hm(today.week_seconds)} tracked). New timers are blocked until next week.
+          </div>
+        )}
         <div className="stats">
           <Stat label="Tracked today" value={hm(today?.tracked_seconds ?? 0)} />
+          <Stat
+            label="This week"
+            value={
+              hm(today?.week_seconds ?? 0) +
+              ((today?.weekly_limit_hours ?? 0) > 0 ? ` / ${today!.weekly_limit_hours}h` : '')
+            }
+            tone={today?.over_limit ? 'red' : undefined}
+          />
           <Stat label="Status" value={today?.is_running ? 'Tracking' : 'Stopped'} tone={today?.is_running ? 'green' : 'muted'} />
           <Stat label="Screenshots today" value={String(today?.screenshot_count ?? 0)} />
-          <Stat label="Sessions today" value={String(today?.entries.length ?? 0)} />
         </div>
         <section className="block">
           <h2 className="block-title">Recent screenshots</h2>
@@ -193,7 +213,7 @@ function EmployeeHome() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'green' | 'muted' }) {
+function Stat({ label, value, tone }: { label: string; value: string; tone?: 'green' | 'muted' | 'red' }) {
   return (
     <div className="stat">
       <div className="stat-label">{label}</div>

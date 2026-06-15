@@ -169,6 +169,8 @@ export interface RosterRow {
   yesterday_seconds: number;
   week_seconds: number;
   month_seconds: number;
+  weekly_limit_hours: number;
+  over_limit: boolean;
   last_active: string | null;
   last_screenshot_id: string | null;
 }
@@ -351,6 +353,9 @@ export interface TodaySummary {
   tracked_seconds: number;
   is_running: boolean;
   screenshot_count: number;
+  week_seconds: number;
+  weekly_limit_hours: number;
+  over_limit: boolean;
   entries: Array<{
     id: string;
     project_id: string | null;

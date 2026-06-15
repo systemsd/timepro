@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { and, eq, isNull } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
+import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
 
 const StartBody = z.object({
   project_id: z.string().uuid().optional(),
@@ -10,6 +11,7 @@ const StartBody = z.object({
   description: z.string().max(500).optional(),
   client_event_id: z.string().min(8).max(128),
   source: z.enum(['desktop', 'web', 'mobile']).default('desktop'),
+  tz_offset_minutes: z.number().default(0),
 });
 
 const StopBody = z.object({
@@ -66,6 +68,22 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
             started_at: r.startedAt.toISOString(),
             description: r.description ?? null,
           };
+        }
+
+        // Weekly-limit enforcement (B7): refuse to start a new timer once the
+        // user is at/over their effective weekly cap (0 = unlimited).
+        const limits = await resolveWeeklyLimitHours(tx, req.organizationId!, [req.userId!]);
+        const limitHours = limits.get(req.userId!) ?? 0;
+        if (limitHours > 0) {
+          const now = Date.now();
+          const weekStart = mondayWeekStartMs(body.tz_offset_minutes, now);
+          const used = await weeklyTrackedSeconds(tx, req.organizationId!, req.userId!, weekStart, now);
+          if (used >= limitHours * 3600) {
+            throw Object.assign(
+              new Error(`Weekly time limit of ${limitHours}h reached`),
+              { statusCode: 409, code: 'weekly_limit_reached' },
+            );
+          }
         }
 
         const [inserted] = await tx

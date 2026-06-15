@@ -17,7 +17,8 @@ Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard r
 > - ✅ **5B — console UI**: `apps/web/src/app/reports/page.tsx` — filter bar, Summary/Detailed/Weekly/Saved dropdown, daily-totals chart (red weekends), result tabs, expand/collapse group tables.
 > - ✅ **5C — saved reports + exports**: `saved_reports` table (migration `0004`, per-user + `is_shared` org-visible), CRUD at `/v1/reports/saved`; "Saved Report" dropdown lists/loads/deletes; **Excel** = client-side CSV, **PDF** = browser print (`@media print`). **Shareable public links deferred** (use `is_shared` for org-visibility).
 > - ✅ **5E — realtime presence (B10)**: websocket `GET /v1/realtime/presence` (snapshot + live `update` frames from the in-process presence pub/sub); web `useRealtimePresence` (shared socket, role-gated) overlays live dots on the dashboard roster + Timeline nav, replacing the 30s presence poll (totals poll now 60s). `apps/api/src/routes/realtime.ts`, `lib/presence.ts`.
-> - ⛔ **5D** rollups/scheduler · **5F** weekly-limits + absences.
+> - ✅ **Weekly-limit enforcement**: effective `limits.weekly_hours` (org default ← per-user override) vs current-week tracked time (`apps/api/src/lib/limits.ts`). Enforced at **timer start** (409 `weekly_limit_reached` at/over the cap); surfaced on the manager roster (`week / limit ⚠`) and My Home (week stat + over-limit banner). `0` = unlimited.
+> - ⛔ **Dropped/cut:** **5D** rollups + scheduler (scale optimization — on-the-fly is fine at current scale; revisit on latency) · **absence model** (only needed for the optional "Include absences" toggle). **Phase 5 / B7 is otherwise complete.**
 >
 > Open questions are flagged inline with **⚠️**.
 

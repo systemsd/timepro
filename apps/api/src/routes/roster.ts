@@ -5,6 +5,7 @@ import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, visibleUsers } from '../lib/access';
 import { getPresence } from '../lib/presence';
+import { resolveWeeklyLimitHours } from '../lib/limits';
 
 /**
  * Manager/Admin "My Home" roster (S2). One row per visible employee with
@@ -27,6 +28,8 @@ const RosterRow = z.object({
   yesterday_seconds: z.number(),
   week_seconds: z.number(),
   month_seconds: z.number(),
+  weekly_limit_hours: z.number(), // effective limit; 0 = unlimited
+  over_limit: z.boolean(),
   last_active: z.string().nullable(),
   last_screenshot_id: z.string().nullable(),
 });
@@ -166,6 +169,9 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
         const lastApp = new Map<string, string>();
         for (const a of appRows) if (!lastApp.has(a.userId)) lastApp.set(a.userId, a.appName);
 
+        // effective weekly limits (B7) — for the over-cap indicator
+        const weeklyLimits = await resolveWeeklyLimitHours(tx, req.organizationId!, userIds);
+
         type Acc = { today: number; yesterday: number; week: number; month: number; lastActive: number };
         const acc = new Map<string, Acc>();
         for (const id of userIds) acc.set(id, { today: 0, yesterday: 0, week: 0, month: 0, lastActive: 0 });
@@ -186,6 +192,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
           const a = acc.get(m.userId)!;
           const ls = lastShot.get(m.userId);
           const lastActiveMs = Math.max(a.lastActive, ls?.at ?? 0);
+          const limitHours = weeklyLimits.get(m.userId) ?? 0;
           return {
             user_id: m.userId,
             display_name: m.displayName,
@@ -199,6 +206,8 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             yesterday_seconds: a.yesterday,
             week_seconds: a.week,
             month_seconds: a.month,
+            weekly_limit_hours: limitHours,
+            over_limit: limitHours > 0 && a.week > limitHours * 3600,
             last_active: lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null,
             last_screenshot_id: ls?.id ?? null,
           };
