@@ -140,11 +140,16 @@ cd apps/desktop/src-tauri && cargo check
 
 ## What's real vs stubbed
 
-**Working end-to-end:** desktop time tracking + automatic screenshot capture → API → DB + disk;
-web login + desktop→web handoff; **role-aware My Home** (admin/manager → team roster, employee →
-personal); **employee Timeline** (screenshot slots + day total + day nav); **Team** page (roles,
-project toggles, invite/pause/archive/delete, RBAC-scoped per C1); **Projects** page (member
-assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (role-filtered).
+**Working end-to-end:** desktop time tracking + automatic screenshot capture → API → DB + disk
+(native OS toast gated by `screenshots.notify`); web + desktop OpsCore login + desktop→web handoff;
+**role-aware My Home** (admin/manager → team roster with realtime presence dots, employee → personal +
+weekly-limit banner); **employee Timeline** (screenshot slots + activity % + day total + day nav);
+**Reports** console (Summary/Detailed/Weekly, saved reports, CSV/PDF export, Apps & URLs); **Team** page
+(roles, project toggles, invite/pause/archive/delete, RBAC-scoped per C1); **Projects** + **Clients** pages;
+**Settings** (org defaults + per-user overrides); **My Account** page (`/account`, per-user profile via
+`/v1/me/profile`) reached from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page
+(placeholder links); ☰ menu (role-filtered). Weekly-limit enforcement blocks `timer/start` at the cap.
+UI uses line icons (`apps/web/src/components/icons.tsx`), no emojis.
 
 **Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
 - ✅ **Phase 0** (quick wins) — done.

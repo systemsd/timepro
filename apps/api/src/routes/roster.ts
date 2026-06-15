@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, visibleUsers } from '../lib/access';
@@ -28,6 +28,7 @@ const RosterRow = z.object({
   yesterday_seconds: z.number(),
   week_seconds: z.number(),
   month_seconds: z.number(),
+  period_seconds: z.number(), // tracked time in the selected day/month (S2 day/month switch)
   weekly_limit_hours: z.number(), // effective limit; 0 = unlimited
   over_limit: z.boolean(),
   last_active: z.string().nullable(),
@@ -41,7 +42,12 @@ const RosterResponse = z.object({
     yesterday_seconds: z.number(),
     week_seconds: z.number(),
     month_seconds: z.number(),
+    period_seconds: z.number(),
     online: z.number(),
+  }),
+  period: z.object({
+    type: z.enum(['day', 'month']),
+    date: z.string(), // the selected local date (YYYY-MM-DD), anchor of the window
   }),
 });
 
@@ -69,13 +75,47 @@ function overlapSeconds(start: number, end: number, winStart: number, winEnd: nu
   return e > s ? Math.floor((e - s) / 1000) : 0;
 }
 
+/** UTC-ms window for the selected day or month (viewer-local), + the anchor date. */
+function selectedWindow(
+  period: 'day' | 'month',
+  date: string | undefined,
+  tzOffsetMinutes: number,
+  now: number,
+): { start: number; end: number; date: string } {
+  let y: number, m: number, d: number;
+  if (date) {
+    const p = date.split('-');
+    y = Number(p[0]);
+    m = Number(p[1]) - 1;
+    d = Number(p[2]);
+  } else {
+    const s = new Date(now - tzOffsetMinutes * 60_000);
+    y = s.getUTCFullYear();
+    m = s.getUTCMonth();
+    d = s.getUTCDate();
+  }
+  const localMidnight = (yy: number, mm: number, dd: number) =>
+    Date.UTC(yy, mm, dd) + tzOffsetMinutes * 60_000;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const anchor = `${y}-${pad(m + 1)}-${pad(d)}`;
+  if (period === 'month') {
+    return { start: localMidnight(y, m, 1), end: localMidnight(y, m + 1, 1), date: anchor };
+  }
+  const start = localMidnight(y, m, d);
+  return { start, end: start + 86_400_000, date: anchor };
+}
+
 export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get(
     '/roster',
     {
       preHandler: [requireAuth],
       schema: {
-        querystring: z.object({ tzOffsetMinutes: z.coerce.number().default(0) }),
+        querystring: z.object({
+          tzOffsetMinutes: z.coerce.number().default(0),
+          period: z.enum(['day', 'month']).default('day'),
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        }),
         response: { 200: RosterResponse },
         tags: ['roster'],
       },
@@ -85,7 +125,11 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
       if (visible.role === 'employee') forbid('Not allowed to view the roster');
 
       const b = periodBounds(req.query.tzOffsetMinutes);
-      const monthStart = new Date(b.monthStart);
+      // Selected day/month window (S2 day/month switch). `now` clips the future.
+      const win = selectedWindow(req.query.period, req.query.date, req.query.tzOffsetMinutes, b.now);
+      const winEnd = Math.min(win.end, b.now);
+      // Fetch from the earlier of the month-to-date start and the selected window.
+      const fetchFrom = new Date(Math.min(b.monthStart, win.start));
 
       return req.withTenantDb(async (tx) => {
         // members in scope
@@ -109,11 +153,16 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(memberScope);
 
         const userIds = members.map((m) => m.userId);
+        const periodMeta = { type: req.query.period, date: win.date };
         if (userIds.length === 0) {
-          return { rows: [], totals: { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0, online: 0 } };
+          return {
+            rows: [],
+            totals: { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0, period_seconds: 0, online: 0 },
+            period: periodMeta,
+          };
         }
 
-        // time entries since month start (covers all four windows)
+        // time entries since the earlier of month-start / selected-window-start
         const entries = await tx
           .select({
             userId: schema.timeEntries.userId,
@@ -125,7 +174,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             and(
               eq(schema.timeEntries.organizationId, req.organizationId!),
               inArray(schema.timeEntries.userId, userIds),
-              gte(schema.timeEntries.startedAt, monthStart),
+              gte(schema.timeEntries.startedAt, fetchFrom),
             ),
           );
 
@@ -162,7 +211,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             and(
               eq(schema.appUsage.organizationId, req.organizationId!),
               inArray(schema.appUsage.userId, userIds),
-              gte(schema.appUsage.startedAt, monthStart),
+              gte(schema.appUsage.startedAt, new Date(b.monthStart)),
             ),
           )
           .orderBy(desc(schema.appUsage.startedAt));
@@ -172,9 +221,9 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
         // effective weekly limits (B7) — for the over-cap indicator
         const weeklyLimits = await resolveWeeklyLimitHours(tx, req.organizationId!, userIds);
 
-        type Acc = { today: number; yesterday: number; week: number; month: number; lastActive: number };
+        type Acc = { today: number; yesterday: number; week: number; month: number; period: number; lastActive: number };
         const acc = new Map<string, Acc>();
-        for (const id of userIds) acc.set(id, { today: 0, yesterday: 0, week: 0, month: 0, lastActive: 0 });
+        for (const id of userIds) acc.set(id, { today: 0, yesterday: 0, week: 0, month: 0, period: 0, lastActive: 0 });
 
         for (const e of entries) {
           const a = acc.get(e.userId);
@@ -185,6 +234,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
           a.yesterday += overlapSeconds(start, end, b.yesterdayStart, b.todayStart);
           a.week += overlapSeconds(start, end, b.weekStart, b.now);
           a.month += overlapSeconds(start, end, b.monthStart, b.now);
+          a.period += overlapSeconds(start, end, win.start, winEnd);
           a.lastActive = Math.max(a.lastActive, end);
         }
 
@@ -206,6 +256,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             yesterday_seconds: a.yesterday,
             week_seconds: a.week,
             month_seconds: a.month,
+            period_seconds: a.period,
             weekly_limit_hours: limitHours,
             over_limit: limitHours > 0 && a.week > limitHours * 3600,
             last_active: lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null,
@@ -222,12 +273,99 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             yesterday_seconds: t.yesterday_seconds + r.yesterday_seconds,
             week_seconds: t.week_seconds + r.week_seconds,
             month_seconds: t.month_seconds + r.month_seconds,
+            period_seconds: t.period_seconds + r.period_seconds,
             online: t.online + (r.presence !== 'offline' ? 1 : 0),
           }),
-          { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0, online: 0 },
+          { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0, period_seconds: 0, online: 0 },
         );
 
-        return { rows, totals };
+        return { rows, totals, period: periodMeta };
+      });
+    },
+  );
+
+  // Per-day team tracked seconds for a month — drives the calendar-strip
+  // activity dots on the manager dashboard (S2 day/month switch).
+  app.get(
+    '/roster/activity',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        querystring: z.object({
+          month: z.string().regex(/^\d{4}-\d{2}$/),
+          tzOffsetMinutes: z.coerce.number().default(0),
+        }),
+        response: {
+          200: z.object({ days: z.array(z.object({ date: z.string(), seconds: z.number() })) }),
+        },
+        tags: ['roster'],
+      },
+    },
+    async (req) => {
+      const visible = await visibleUsers(req);
+      if (visible.role === 'employee') forbid('Not allowed to view the roster');
+
+      const [yy, mm] = req.query.month.split('-').map(Number) as [number, number];
+      const tz = req.query.tzOffsetMinutes;
+      const lm = (y: number, m: number, d: number) => Date.UTC(y, m, d) + tz * 60_000;
+      const monthStart = lm(yy, mm - 1, 1);
+      const monthEnd = lm(yy, mm, 1);
+      const now = Date.now();
+      const windowEnd = Math.min(monthEnd, now);
+      const toLocalDate = (ms: number) => {
+        const s = new Date(ms - tz * 60_000);
+        return `${s.getUTCFullYear()}-${String(s.getUTCMonth() + 1).padStart(2, '0')}-${String(s.getUTCDate()).padStart(2, '0')}`;
+      };
+
+      return req.withTenantDb(async (tx) => {
+        const memberScope =
+          visible.userIds === 'all'
+            ? eq(schema.memberships.organizationId, req.organizationId!)
+            : and(
+                eq(schema.memberships.organizationId, req.organizationId!),
+                inArray(schema.memberships.userId, visible.userIds),
+              );
+        const members = await tx
+          .select({ userId: schema.memberships.userId })
+          .from(schema.memberships)
+          .where(memberScope);
+        const userIds = members.map((m) => m.userId);
+        if (userIds.length === 0) return { days: [] };
+
+        const entries = await tx
+          .select({ startedAt: schema.timeEntries.startedAt, endedAt: schema.timeEntries.endedAt })
+          .from(schema.timeEntries)
+          .where(
+            and(
+              eq(schema.timeEntries.organizationId, req.organizationId!),
+              inArray(schema.timeEntries.userId, userIds),
+              isNull(schema.timeEntries.deletedAt),
+              lt(schema.timeEntries.startedAt, new Date(monthEnd)),
+              or(
+                isNull(schema.timeEntries.endedAt),
+                gte(schema.timeEntries.endedAt, new Date(monthStart)),
+              ),
+            ),
+          );
+
+        const buckets = new Map<string, number>();
+        for (const e of entries) {
+          let cursor = Math.max(e.startedAt.getTime(), monthStart);
+          const end = Math.min(e.endedAt ? e.endedAt.getTime() : now, windowEnd);
+          while (cursor < end) {
+            const day = toLocalDate(cursor);
+            const [dy, dm, dd] = day.split('-').map(Number) as [number, number, number];
+            const dayEnd = lm(dy, dm - 1, dd) + 86_400_000;
+            buckets.set(day, (buckets.get(day) ?? 0) + overlapSeconds(cursor, end, cursor, dayEnd));
+            cursor = dayEnd;
+          }
+        }
+
+        const days = Array.from(buckets.entries())
+          .filter(([, s]) => s > 0)
+          .map(([date, seconds]) => ({ date, seconds }))
+          .sort((a, b) => (a.date < b.date ? -1 : 1));
+        return { days };
       });
     },
   );

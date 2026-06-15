@@ -169,11 +169,14 @@ export interface RosterRow {
   yesterday_seconds: number;
   week_seconds: number;
   month_seconds: number;
+  period_seconds: number;
   weekly_limit_hours: number;
   over_limit: boolean;
   last_active: string | null;
   last_screenshot_id: string | null;
 }
+
+export type RosterPeriod = 'day' | 'month';
 
 export interface Roster {
   rows: RosterRow[];
@@ -182,13 +185,28 @@ export interface Roster {
     yesterday_seconds: number;
     week_seconds: number;
     month_seconds: number;
+    period_seconds: number;
     online: number;
   };
+  period: { type: RosterPeriod; date: string };
 }
 
-export async function getRoster(): Promise<Roster> {
+export async function getRoster(opts?: { period?: RosterPeriod; date?: string }): Promise<Roster> {
   const tz = new Date().getTimezoneOffset();
-  const res = await fetch(`${API_BASE}/v1/roster?tzOffsetMinutes=${tz}`, { headers: authHeaders() });
+  const q = new URLSearchParams({ tzOffsetMinutes: String(tz) });
+  if (opts?.period) q.set('period', opts.period);
+  if (opts?.date) q.set('date', opts.date);
+  const res = await fetch(`${API_BASE}/v1/roster?${q.toString()}`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+/** Per-day team tracked seconds for a month (YYYY-MM) — calendar-strip dots. */
+export async function getRosterActivity(month: string): Promise<{ days: Array<{ date: string; seconds: number }> }> {
+  const tz = new Date().getTimezoneOffset();
+  const res = await fetch(`${API_BASE}/v1/roster/activity?month=${month}&tzOffsetMinutes=${tz}`, {
+    headers: authHeaders(),
+  });
   if (!res.ok) return asError(res);
   return res.json();
 }

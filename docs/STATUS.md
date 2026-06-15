@@ -17,9 +17,12 @@ OpsCore **3001**.
 
 ## Status at a glance
 
-**Phases 0–5 complete.** Core product works end-to-end: tracking, screenshots, role-aware home + roster,
-Timeline, Settings engine, presence, activity/app/URL tracking, OpsCore login (web + desktop), the Reports
-console (saved reports, CSV/PDF, weekly-limit enforcement), and realtime presence.
+**Phases 0–5 complete.** Core product works end-to-end: tracking, screenshots (native OS toast gated by
+`screenshots.notify`), role-aware home + roster, Timeline, Settings engine, presence (realtime), activity/app/URL
+tracking, OpsCore login (web + desktop), the Reports console (saved reports, CSV/PDF, weekly-limit enforcement),
+and a per-user **My Account** page (`/account`) reached from the avatar dropdown (Dashboard · My Account · Log out).
+The UI uses line icons, no emojis. **All earlier spec conflicts (C1–C9) are resolved** — C7 settled by the two
+distinct surfaces: `/account` (per-user) vs `/settings` (org-scoped, admin).
 
 | Phase | Scope | Status |
 | ----- | ----- | ------ |
@@ -63,6 +66,7 @@ Built and typecheck/`cargo check`-clean, but **not exercised in a live runtime t
 browser / Tauri GUI / Chrome):
 
 - Reports console, realtime presence dots, weekly-limit UI (API paths verified by curl).
+- My Account page + avatar dropdown + line icons (typecheck-clean, `/account` 200, `/v1/me/profile` verified live; layout/hover not eyeballed).
 - Desktop OpsCore loopback login + the two Phase P items (compile + API proven; round-trip not run).
 - Browser extension (manifest/JS valid; not loaded in Chrome).
 - JIT org creation (typecheck-verified; not live-run — didn't disturb existing data).

@@ -7,6 +7,7 @@ import { useSession } from '@/lib/useSession';
 import { useRealtimePresence } from '@/lib/useRealtimePresence';
 import {
   getRoster,
+  getRosterActivity,
   getScreenshots,
   getScreenshotObjectUrl,
   getToday,
@@ -36,16 +37,25 @@ function ManagerHome() {
   const router = useRouter();
   const [roster, setRoster] = useState<Roster | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [date, setDate] = useState(todayLocal()); // selected day
+  const [viewMonth, setViewMonth] = useState(monthOf(todayLocal())); // strip month (YYYY-MM)
+  const [activeDays, setActiveDays] = useState<Set<string>>(new Set());
   const live = useRealtimePresence(); // realtime dots (B10 / 5E)
 
   useEffect(() => {
     const fetchRoster = () =>
-      getRoster().then(setRoster).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      getRoster({ period: 'day', date }).then(setRoster).catch((e) => setError(e instanceof Error ? e.message : String(e)));
     void fetchRoster();
-    // presence now arrives over the websocket; the poll only refreshes time totals
+    // presence arrives over the websocket; the poll only refreshes time totals
     const id = setInterval(fetchRoster, 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [date]);
+
+  useEffect(() => {
+    getRosterActivity(viewMonth)
+      .then((r) => setActiveDays(new Set(r.days.filter((d) => d.seconds > 0).map((d) => d.date))))
+      .catch(() => setActiveDays(new Set()));
+  }, [viewMonth]);
 
   if (!session) return null;
   const tzLabel = `UTC${offsetLabel()}`;
@@ -53,20 +63,48 @@ function ManagerHome() {
   const online = roster
     ? roster.rows.reduce((n, r) => (presenceOf(r) !== 'offline' ? n + 1 : n), 0)
     : 0;
-  const workedToday = (roster?.totals.today_seconds ?? 0) > 0;
+  const worked = (roster?.totals.period_seconds ?? 0) > 0;
   const headline =
-    online > 0
-      ? `${online} online${workedToday ? '' : ', no one worked today'}`
-      : workedToday
-        ? 'Team activity today'
-        : 'No one online, no one worked today';
+    online > 0 ? `${online} online` : worked ? 'Team activity' : 'No one online, no time tracked';
+
+  const today = todayLocal();
+  const goToday = () => {
+    setDate(today);
+    setViewMonth(monthOf(today));
+  };
 
   return (
     <div className="page">
       <TopNav session={session} active="home" />
       <div className="mh-band">
         <h1>Manager Dashboard</h1>
-        <span className="tz">All times are {tzLabel} ⚙</span>
+        <span className="tz">All times are {tzLabel}</span>
+      </div>
+
+      <div className="cal">
+        <div className="cal-head">
+          <button className="cal-nav" onClick={() => setViewMonth(shiftMonth(viewMonth, -1))} aria-label="Previous month">‹</button>
+          <span className="cal-month">{monthYearLabel(viewMonth)}</span>
+          <button className="cal-nav" onClick={() => setViewMonth(shiftMonth(viewMonth, 1))} aria-label="Next month">›</button>
+          <button className="cal-today" onClick={goToday}>Today</button>
+        </div>
+        <div className="cal-strip">
+          {monthDays(viewMonth).map((c) => {
+            const future = c.date > today;
+            return (
+              <button
+                key={c.date}
+                className={`cal-day${c.date === date ? ' selected' : ''}${c.date === today ? ' today' : ''}${c.weekend ? ' weekend' : ''}${future ? ' future' : ''}`}
+                onClick={() => !future && setDate(c.date)}
+                disabled={future}
+              >
+                <span className="cal-dow">{c.dow}</span>
+                <span className="cal-num">{c.day}</span>
+                <span className={`cal-dot${activeDays.has(c.date) ? ' on' : ''}`} />
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {error && <div className="error" style={{ margin: '16px 28px' }}>{error}</div>}
@@ -77,19 +115,13 @@ function ManagerHome() {
             <tr>
               <th className="l">Employee</th>
               <th className="l">Last active</th>
-              <th>Today</th>
-              <th>Yesterday</th>
-              <th>This week</th>
-              <th>This month</th>
+              <th>Tracked</th>
             </tr>
           </thead>
           <tbody>
             <tr className="summary">
               <td className="l" colSpan={2}>{headline}</td>
-              <td className="val">{fmt(roster?.totals.today_seconds)}</td>
-              <td className="val">{fmt(roster?.totals.yesterday_seconds)}</td>
-              <td className="val">{fmt(roster?.totals.week_seconds)}</td>
-              <td className="val">{fmt(roster?.totals.month_seconds)}</td>
+              <td className="val">{fmt(roster?.totals.period_seconds)}</td>
             </tr>
             {(roster?.rows ?? []).map((r) => (
               <RosterRowView key={r.user_id} row={r} presence={presenceOf(r)} onOpen={() => router.push(`/timeline/${r.user_id}`)} />
@@ -110,6 +142,9 @@ function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Pr
           <div>
             <button className="emp-name" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'block' }} onClick={onOpen}>
               {row.display_name}
+              {row.over_limit && (
+                <span className="emp-overlimit" title={`Over weekly limit (${row.weekly_limit_hours}h)`}>over limit</span>
+              )}
             </button>
             {row.last_app && <div className="emp-app">{row.last_app}</div>}
           </div>
@@ -124,17 +159,7 @@ function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Pr
           <span className="muted-2">…</span>
         )}
       </td>
-      <td className={row.today_seconds ? 'val' : 'dash'}>{fmt(row.today_seconds)}</td>
-      <td className={row.yesterday_seconds ? 'val' : 'dash'}>{fmt(row.yesterday_seconds)}</td>
-      <td className={row.over_limit ? 'val over-limit' : row.week_seconds ? 'val' : 'dash'}>
-        {fmt(row.week_seconds)}
-        {row.weekly_limit_hours > 0 && (
-          <span className="limit-cap" title={`Weekly limit ${row.weekly_limit_hours}h`}>
-            {' / '}{row.weekly_limit_hours}h{row.over_limit ? ' ⚠' : ''}
-          </span>
-        )}
-      </td>
-      <td className={row.month_seconds ? 'val' : 'dash'}>{fmt(row.month_seconds)}</td>
+      <td className={row.period_seconds ? 'val' : 'dash'}>{fmt(row.period_seconds)}</td>
     </tr>
   );
 }
@@ -265,4 +290,38 @@ function offsetLabel(): string {
 }
 function presenceLabel(p: string): string {
   return p === 'tracking' ? 'Tracking' : p === 'connected' ? 'Online (app open)' : 'Offline';
+}
+
+// ---- calendar-strip helpers (viewer-local) ----
+const pad = (n: number) => String(n).padStart(2, '0');
+const DOW = 'SMTWTFS'; // index 0=Sun … 6=Sat
+
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+/** `YYYY-MM-DD` → `YYYY-MM`. */
+function monthOf(date: string): string {
+  return date.slice(0, 7);
+}
+/** Shift a `YYYY-MM` by n months. */
+function shiftMonth(ym: string, n: number): string {
+  const [y, m] = ym.split('-').map(Number) as [number, number];
+  const dt = new Date(y, m - 1 + n, 1);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`;
+}
+function monthYearLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number) as [number, number];
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+/** Day cells for a `YYYY-MM`. */
+function monthDays(ym: string): Array<{ date: string; day: number; dow: string; weekend: boolean }> {
+  const [y, m] = ym.split('-').map(Number) as [number, number];
+  const count = new Date(y, m, 0).getDate();
+  const cells = [];
+  for (let d = 1; d <= count; d++) {
+    const dow = new Date(y, m - 1, d).getDay();
+    cells.push({ date: `${y}-${pad(m)}-${pad(d)}`, day: d, dow: DOW[dow]!, weekend: dow === 0 || dow === 6 });
+  }
+  return cells;
 }
