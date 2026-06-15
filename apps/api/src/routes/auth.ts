@@ -5,6 +5,7 @@ import { getDb, schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { loadConfig } from '../config';
 import { createHandoff, consumeHandoff } from '../lib/handoff';
+import { mapOpsCoreRole, verifyHandoffToken } from '../lib/opscore';
 
 const DevLoginBody = z.object({
   email: z.string().email(),
@@ -89,6 +90,115 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
         organization_name: membership.orgName,
         display_name: user.displayName,
         role: membership.role,
+      };
+    },
+  );
+
+  // --- OpsCore SSO: exchange the OpsCore handoff JWT for a TimePro session ---
+  app.post(
+    '/auth/opscore/exchange',
+    {
+      schema: {
+        body: z.object({ token: z.string().min(16) }),
+        response: { 200: DevLoginResponse },
+        tags: ['auth'],
+        summary: 'Verify an OpsCore handoff JWT → JIT user + TimePro session.',
+      },
+    },
+    async (req) => {
+      let claims;
+      try {
+        claims = await verifyHandoffToken(req.body.token);
+      } catch (err) {
+        throw Object.assign(new Error(`Invalid OpsCore token: ${(err as Error).message}`), {
+          statusCode: 401,
+          code: 'opscore_token_invalid',
+        });
+      }
+
+      const db = getDb();
+      const orgSlug = loadConfig().OPSCORE_ORG_SLUG;
+      const [org] = await db
+        .select()
+        .from(schema.organizations)
+        .where(eq(schema.organizations.slug, orgSlug))
+        .limit(1);
+      if (!org) {
+        throw Object.assign(new Error(`No TimePro org for slug "${orgSlug}"`), {
+          statusCode: 500,
+          code: 'org_missing',
+        });
+      }
+
+      // Upsert the user — match on OpsCore id first, then email.
+      let [user] = await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.opscoreEmployeeId, claims.sub))
+        .limit(1);
+      if (!user && claims.email) {
+        [user] = await db
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.email, claims.email))
+          .limit(1);
+      }
+      if (!user) {
+        [user] = await db
+          .insert(schema.users)
+          .values({
+            email: claims.email || `${claims.sub}@opscore.local`,
+            displayName: claims.name || claims.email || 'OpsCore user',
+            opscoreEmployeeId: claims.sub,
+          })
+          .returning();
+      } else if (user.opscoreEmployeeId !== claims.sub || user.displayName !== claims.name) {
+        await db
+          .update(schema.users)
+          .set({ opscoreEmployeeId: claims.sub, displayName: claims.name || user.displayName })
+          .where(eq(schema.users.id, user.id));
+      }
+
+      // Ensure membership with the mapped role (OpsCore authoritative — but
+      // never demote the org owner / break-glass account).
+      const role = mapOpsCoreRole(claims.role);
+      const [existing] = await db
+        .select()
+        .from(schema.memberships)
+        .where(
+          and(
+            eq(schema.memberships.organizationId, org.id),
+            eq(schema.memberships.userId, user!.id),
+          ),
+        )
+        .limit(1);
+      if (!existing) {
+        await db.insert(schema.memberships).values({
+          organizationId: org.id,
+          userId: user!.id,
+          role,
+          status: 'active',
+          joinedAt: new Date(),
+        });
+      } else if (existing.role !== 'owner' && existing.role !== role) {
+        await db
+          .update(schema.memberships)
+          .set({ role, status: 'active' })
+          .where(
+            and(
+              eq(schema.memberships.organizationId, org.id),
+              eq(schema.memberships.userId, user!.id),
+            ),
+          );
+      }
+
+      const effectiveRole = existing?.role === 'owner' ? 'owner' : role;
+      return {
+        user_id: user!.id,
+        organization_id: org.id,
+        organization_name: org.name,
+        display_name: claims.name || user!.displayName,
+        role: effectiveRole,
       };
     },
   );

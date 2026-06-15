@@ -8,6 +8,9 @@ Guidance for Claude Code when working in this repository.
 Full architecture lives in [`docs/`](docs/) — **read those, don't restate them here.**
 Start at [docs/00-overview.md](docs/00-overview.md); the index is in [README.md](README.md).
 
+> 📌 **Resuming work?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) — current build status, ports, how to
+> run all three apps, the OpsCore integration, gotchas, and the uncommitted-git warning.
+
 ---
 
 ## Monorepo layout
@@ -18,8 +21,14 @@ Turborepo + pnpm workspaces. Node 20, pnpm 9.
 
 | Package             | Stack                | Status | Notes |
 | ------------------- | -------------------- | ------ | ----- |
-| `@timepro/api`    | Fastify + Drizzle    | live   | All REST endpoints. Port **3001**. |
+| `@timepro/api`    | Fastify + Drizzle    | live   | All REST endpoints. Port **4001** (OpsCore owns :3001 locally). |
 | `@timepro/web`    | Next.js 14 (App dir) | live   | Dashboard + Team + login. Port **3000**. |
+
+> **OpsCore** (separate Next.js app at `/Users/macos/Code/systemsd/OpsCore`, runs on **:3001**) is the
+> upstream identity + directory system. TimePro integrates via a **handoff-JWT login** (OpsCore is *not*
+> an OIDC provider) + a Bearer-authed **service API** TimePro syncs from. Shared secret/API key live in
+> both `.env`s. New code: `apps/api/src/lib/opscore.ts`, `routes/auth.ts` (`/v1/auth/opscore/exchange`),
+> `routes/admin.ts` (`/v1/admin/opscore/sync`); OpsCore side `lib/timepro.ts` + `app/api/timepro/*`.
 | `@timepro/desktop`| Tauri 2 + Rust + React | live | Time tracker + screenshot capture. |
 
 ### Packages (`packages/*`)
@@ -52,10 +61,10 @@ pnpm db:seed         # demo org, owner Hamid Ali (owner@timepro.local), 10 membe
 pnpm db:studio       # drizzle studio
 
 # run services
-pnpm --filter @timepro/api dev      # API on :3001 (tsx watch)
+pnpm --filter @timepro/api dev      # API on :4001 (tsx watch)
 pnpm --filter @timepro/web dev      # web on :3000 (next dev)
 source "$HOME/.cargo/env"
-TIMEPRO_API_URL=http://localhost:3001 pnpm --filter @timepro/desktop tauri:dev
+TIMEPRO_API_URL=http://localhost:4001 pnpm --filter @timepro/desktop tauri:dev
 
 # quality gates
 pnpm typecheck       # tsc --noEmit across workspaces
@@ -135,8 +144,12 @@ assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (
 - ✅ **Phase 0** (quick wins) — done.
 - ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`).
 - ✅ **Phase 2 — Presence (B3)** — done (agent heartbeat → in-memory store → 3-state dots + "N online").
-- 🔴 Phase 3 OpsCore OIDC+sync (B1/B2, **needs real OpsCore details**) · Phase 4 activity + app/URL
-  tracking (B4/B5) · Phase 5 reports/rollups/realtime (B7/B8/B10) · Phase 6 build/sign/host (B9).
+- ✅ **Phase 4 — Activity + App tracking (B4/B5)** — done (agent activity aggregator + app polling →
+  `/v1/ingest/activity` + `/ingest/app-usage`; Timeline activity %/per-slot app; roster last-app;
+  settings gate the agent). **URL tracking still needs the browser extension.**
+- ✅ **Phase 3 — OpsCore integration (B1/B2)** — done for **web** (handoff-JWT login — OpsCore is *not*
+  OIDC — + Bearer service-API sync of employees/projects/business-partners). Desktop OpsCore login deferred.
+- 🔴 Phase 5 reports/rollups/realtime (B7/B8/B10) · Phase 6 build/sign/host (B9) · desktop OpsCore login · browser extension (URL tracking).
 
 **Still stubbed / not built:** real password auth + MFA + JWT (email-only dev login + `x-dev-*` shim),
 OpsCore integration, presence/heartbeat (online dots are grey), activity + app/URL tracking

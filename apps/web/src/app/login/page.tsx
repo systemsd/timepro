@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { login } from '@/lib/api';
+import { login, OPSCORE_URL } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 
 export default function LoginPage() {
@@ -65,6 +65,11 @@ export default function LoginPage() {
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <div className="login-or"><span>or</span></div>
+        <a className="opscore-btn" href={`${OPSCORE_URL}/api/timepro/handoff`}>
+          <span className="opscore-mark">▸</span> Sign in with OpsCore
+        </a>
 
         <p className="hint">
           MVP uses email-only sign-in (password ignored). Real password auth ships in Phase 2.

@@ -28,6 +28,7 @@ export const projects = pgTable(
     defaultRateCents: integer('default_rate_cents'),
     clientName: text('client_name'),
     clientId: uuid('client_id'), // FK to clients; mapping syncs from OpsCore (C3)
+    opscoreProjectId: text('opscore_project_id'), // links to OpsCore Project.id when synced
     budgetHours: decimal('budget_hours', { precision: 10, scale: 2 }),
     budgetCents: bigint('budget_cents', { mode: 'number' }),
     createdBy: uuid('created_by')

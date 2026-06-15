@@ -3,7 +3,8 @@
 > **Implementation status** — ✅ built · 🟡 partial · ⛔ planned.
 >
 > - ✅ 16 core tables exist via Drizzle + migrations + seed: `organizations`, `users`, `memberships`, `teams`, `team_members`, `projects` (+ `client_id`), `project_members`, `clients`, `devices`, `device_tokens`, `time_entries`, `activity_samples`, `screenshots`, `settings_scoped`, `notifications`, `audit_logs`. The `withTenant` helper is implemented.
-> - ⛔ **Not yet built:** table partitioning (all tables are non-partitioned), RLS policies (§8 — none applied), and the `app_usage`, `url_usage`, `project_tasks`, `timesheets`, and `reports_*` tables. `activity_samples` exists but nothing writes to it yet. Retention/archival jobs are not implemented.
+> - ✅ `activity_samples` (written by the agent, B4), `app_usage` (written by the agent, B5), and `url_usage` (ready for the browser extension) now exist and are populated via `/v1/ingest/*`.
+> - ⛔ **Not yet built:** table partitioning (all tables are non-partitioned), RLS policies (§8 — none applied), and the `project_tasks`, `timesheets`, and `reports_*` tables. Retention/archival jobs are not implemented.
 >
 > The DDL below is the target design; the live schema is what `packages/db/src/schema/` defines.
 

@@ -72,14 +72,28 @@ Ordered by dependency and value. Each phase is shippable.
 - ✅ Agent heartbeat (`POST /v1/agent/heartbeat`, every ~45s with `is_tracking`); in-memory presence store (`lib/presence.ts`, 90s TTL, Redis-swappable).
 - ✅ 3-state presence (C4: offline / connected / tracking) on `/v1/roster` + `/v1/team/members`; dots wired in My Home roster + Timeline dropdown; "N online" headline; web polls every 30s.
 
-### Phase 3 — OpsCore integration (B1 + B2)
-- **B2** OIDC login (web → then desktop, RFC 8252). Brings **real JWT auth**, retires the email dev login + `x-dev-*` shim.
-- **B1** Sync engine: users → projects → clients. Sets S1/S6/S9/S10 catalogs to OpsCore-authoritative.
-- Team identity/role becomes read-only ("managed in OpsCore").
+### Phase 3 — OpsCore integration (B1 + B2) — ✅ BUILT (web auth; desktop deferred)
+> **Design change discovered during implementation:** OpsCore is **not an OIDC provider** — it's
+> Auth.js v5 (NextAuth) credentials + JWT. So **B2 uses OpsCore's handoff-JWT pattern** (the same one
+> it already ships for "LandingPro"), not OIDC. This is simpler and matches OpsCore's conventions.
+>
+> - ✅ **B2 (web)** — OpsCore mints a 60s HS256 handoff JWT (`/api/timepro/handoff`) → redirects to
+>   TimePro `/auth/opscore` → `POST /v1/auth/opscore/exchange` verifies it (shared secret) → JIT-creates
+>   the user + membership (role-mapped) → TimePro session. "Sign in with OpsCore" button on `/login`.
+>   Desktop OpsCore login is the deferred follow-up.
+> - ✅ **B1 sync engine** — OpsCore exposes Bearer-authed service routes (`/api/timepro/sync/{employees,projects,business-partners}`);
+>   TimePro's `POST /v1/admin/opscore/sync` (admin) pulls + upserts users/memberships/clients/projects
+>   keyed on `opscore_*_id`, mapping OpsCore roles (ADMIN→admin, *_MANAGER→manager, else employee) and
+>   OpsCore's project↔business-partner link (C3). Verified: 10 employees / 18 partners / 19 projects.
+>   "Sync from OpsCore" button on the Team page.
+> - ✅ **C8 break-glass** — the local `owner@timepro.local` keeps password login; OpsCore never demotes the owner.
+> - Code: OpsCore `lib/timepro.ts` + `app/api/timepro/*`; TimePro `lib/opscore.ts`, `routes/auth.ts` (exchange), `routes/admin.ts` (sync).
+> - ⚙️ **Port note:** OpsCore owns `:3001`, so the **TimePro API moved to `:4001`** (web stays `:3000`).
 
-### Phase 4 — Capture expansion (B4 + B5)
-- **B4** Activity tracking (kbd/mouse → `activity_samples`) → S3 activity strip/%, "Activity Level" setting takes effect, S2 activity.
-- **B5** App & URL tracking (+ browser extension) → S2 last app/URL, S3 per-slot app/URL, "App & URL" setting, S12 extension download.
+### Phase 4 — Capture expansion (B4 + B5) — ✅ BUILT (URL via extension deferred)
+- ✅ **B4** Activity tracking — agent activity aggregator (idle-derived per-minute samples → `activity_samples`, `POST /v1/ingest/activity`); Timeline day + per-slot activity %; roster avg; the "Activity Level" setting now gates the agent. *(Keyboard/mouse event counts need low-level input hooks — a later enhancement; the active/idle ratio gives a real 0–100 score now.)*
+- ✅ **B5** App tracking — agent polls active window (`active-win-pos-rs`) → `app_usage` (`POST /v1/ingest/app-usage`); Timeline per-slot app + roster last-app; the "App & URL" setting gates it.
+- 🔴 **URL tracking** still needs the **browser extension** (S12 extension download) — `url_usage` table + ingest path are ready for it.
 
 ### Phase 5 — Reports & scale (B7 + B8 + B10)
 - **B7** Reports (incl. time-per-client S10, weekly-limit enforcement).

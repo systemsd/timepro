@@ -13,6 +13,7 @@ export const users = pgTable('users', {
   lastLoginAt: tsCol('last_login_at'),
   mfaEnabled: boolean('mfa_enabled').notNull().default(false),
   mfaSecret: text('mfa_secret'), // app-layer encrypted, never returned to clients
+  opscoreEmployeeId: text('opscore_employee_id'), // links to OpsCore Employee.id when synced
   ...timestamps,
   ...softDeletedAt,
 });

@@ -66,6 +66,8 @@ struct Inner {
     screenshot_interval_sec: u64,
     screenshots_enabled: bool,
     notify_on_screenshot: bool,
+    activity_tracking: bool,
+    app_url_tracking: bool,
     last_screenshot_at: Option<DateTime<Utc>>,
     last_settings_fetch: Option<DateTime<Utc>>,
 }
@@ -80,6 +82,8 @@ impl AppState {
                 screenshot_interval_sec: 300, // fallback until settings load
                 screenshots_enabled: true,
                 notify_on_screenshot: false,
+                activity_tracking: true,
+                app_url_tracking: true,
                 last_screenshot_at: None,
                 last_settings_fetch: None,
             }),
@@ -100,10 +104,24 @@ impl AppState {
         if let Some(n) = m.get("screenshots.notify").and_then(|v| v.as_bool()) {
             g.notify_on_screenshot = n;
         }
+        if let Some(a) = m.get("activity.tracking").and_then(|v| v.as_bool()) {
+            g.activity_tracking = a;
+        }
+        if let Some(a) = m.get("app_url.tracking").and_then(|v| v.as_bool()) {
+            g.app_url_tracking = a;
+        }
     }
 
     pub fn screenshots_enabled(&self) -> bool {
         self.inner.read().screenshots_enabled
+    }
+
+    pub fn activity_tracking_enabled(&self) -> bool {
+        self.inner.read().activity_tracking
+    }
+
+    pub fn app_url_tracking_enabled(&self) -> bool {
+        self.inner.read().app_url_tracking
     }
 
     // Resolved from settings; consumed when native screenshot notifications

@@ -22,6 +22,8 @@ import { timelineRoutes } from './routes/timeline';
 import { clientRoutes } from './routes/clients';
 import { settingsRoutes } from './routes/settings';
 import { presenceRoutes } from './routes/presence';
+import { ingestRoutes } from './routes/ingest';
+import { adminRoutes } from './routes/admin';
 
 /**
  * App factory. Used by both `server.ts` and integration tests.
@@ -93,6 +95,8 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(clientRoutes, { prefix: '/v1' });
   await app.register(settingsRoutes, { prefix: '/v1' });
   await app.register(presenceRoutes, { prefix: '/v1' });
+  await app.register(ingestRoutes, { prefix: '/v1' });
+  await app.register(adminRoutes, { prefix: '/v1' });
 
   return app;
 }

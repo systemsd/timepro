@@ -155,6 +155,77 @@ impl ApiClient {
         }
     }
 
+    // ---- capture ingest (B4/B5) ----
+
+    pub async fn ingest_activity(
+        &self,
+        samples: &[crate::capture::activity::ActivitySample],
+        time_entry_id: Option<String>,
+    ) -> ApiResult<()> {
+        let s = self.require_session()?;
+        let payload: Vec<serde_json::Value> = samples
+            .iter()
+            .map(|sa| {
+                serde_json::json!({
+                    "bucket_minute": sa.bucket_minute.to_rfc3339(),
+                    "time_entry_id": time_entry_id,
+                    "keyboard_events": 0,
+                    "mouse_events": 0,
+                    "active_seconds": sa.active_seconds,
+                    "idle_seconds": sa.idle_seconds,
+                    "activity_score": sa.activity_score,
+                })
+            })
+            .collect();
+        let resp = self
+            .http
+            .post(self.url("/v1/ingest/activity"))
+            .header("x-dev-org", &s.organization_id)
+            .header("x-dev-user", &s.user_id)
+            .json(&serde_json::json!({ "samples": payload }))
+            .send()
+            .await?;
+        Self::ok_or_err(resp).await
+    }
+
+    pub async fn ingest_app_usage(
+        &self,
+        app_name: &str,
+        window_title: Option<&str>,
+        started_at: &str,
+        ended_at: &str,
+        time_entry_id: Option<String>,
+    ) -> ApiResult<()> {
+        let s = self.require_session()?;
+        let resp = self
+            .http
+            .post(self.url("/v1/ingest/app-usage"))
+            .header("x-dev-org", &s.organization_id)
+            .header("x-dev-user", &s.user_id)
+            .json(&serde_json::json!({
+                "events": [{
+                    "app_name": app_name,
+                    "window_title": window_title,
+                    "started_at": started_at,
+                    "ended_at": ended_at,
+                    "time_entry_id": time_entry_id,
+                }]
+            }))
+            .send()
+            .await?;
+        Self::ok_or_err(resp).await
+    }
+
+    async fn ok_or_err(resp: reqwest::Response) -> ApiResult<()> {
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            Err(ApiError::Server { status, body })
+        }
+    }
+
     // ---- presence ----
 
     /// Heartbeat so the web shows this user as online (B3). `is_tracking`

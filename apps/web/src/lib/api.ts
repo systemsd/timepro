@@ -2,7 +2,7 @@
 
 import { loadSession } from './session';
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001';
 
 /**
  * MVP auth: the web app forwards the user identity as the dev-shim headers
@@ -42,6 +42,34 @@ export async function login(email: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export const OPSCORE_URL = process.env.NEXT_PUBLIC_OPSCORE_URL ?? 'http://localhost:3001';
+
+/** Exchange an OpsCore handoff JWT for a TimePro session. */
+export async function exchangeOpsCore(token: string) {
+  const res = await fetch(`${API_BASE}/v1/auth/opscore/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+/** Admin: pull users/projects/clients from OpsCore. */
+export async function syncOpsCore(): Promise<{
+  users: number;
+  clients: number;
+  projects: number;
+  assignments: number;
+}> {
+  const res = await fetch(`${API_BASE}/v1/admin/opscore/sync`, {
+    method: 'POST',
+    headers: authHeaders(),
   });
   if (!res.ok) return asError(res);
   return res.json();
@@ -136,6 +164,7 @@ export interface RosterRow {
   is_owner: boolean;
   status: string;
   presence: Presence;
+  last_app: string | null;
   today_seconds: number;
   yesterday_seconds: number;
   week_seconds: number;
@@ -168,6 +197,8 @@ export interface TimelineSlot {
   start: string;
   end: string;
   project_id: string | null;
+  activity_score: number | null;
+  app_name: string | null;
   screenshots: Array<{ id: string; captured_at: string }>;
 }
 
@@ -176,6 +207,7 @@ export interface Timeline {
   display_name: string;
   date: string;
   tracked_seconds: number;
+  activity_score: number | null;
   slots: TimelineSlot[];
 }
 

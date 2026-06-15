@@ -9,6 +9,7 @@ import {
   inviteMember,
   removeMember,
   setMemberProjects,
+  syncOpsCore,
   updateTeamMember,
   type MemberDetail,
   type TeamMember,
@@ -38,6 +39,8 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [savingProjects, setSavingProjects] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const loadMembers = useCallback(async (selectFirst = false) => {
     try {
@@ -158,6 +161,28 @@ export default function TeamPage() {
       <div className="team-layout">
         {/* Left: member list */}
         <aside className="team-list">
+          {session.role !== 'manager' && (
+            <button
+              className="opscore-sync"
+              disabled={syncing}
+              onClick={async () => {
+                setSyncing(true);
+                setError(null);
+                try {
+                  const r = await syncOpsCore();
+                  setSyncMsg(`Synced ${r.users} users · ${r.projects} projects · ${r.clients} clients`);
+                  await loadMembers(true);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+            >
+              {syncing ? 'Syncing…' : '⟳ Sync from OpsCore'}
+            </button>
+          )}
+          {syncMsg && <div className="sync-msg">{syncMsg}</div>}
           <button className="create-group">+ Create user group</button>
 
           <ul>

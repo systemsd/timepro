@@ -5,17 +5,20 @@
 //! on win, xdg-portal on Wayland) come later — for the MVP we use the
 //! portable crates that work everywhere with one code path.
 
+pub mod activity;
+pub mod apps;
 pub mod idle;
 pub mod screenshot;
 
 use std::{sync::Arc, time::Duration};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use tauri::{AppHandle, Emitter};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::api::{ApiClient, ScreenshotMeta};
+use crate::capture::activity::ActivityAggregator;
 use crate::state::AppState;
 
 /// Background loop: when a timer is running, capture a screenshot every
@@ -25,7 +28,10 @@ use crate::state::AppState;
 /// Poisson scheduler from doc 04 (§3.5).
 pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     let tick = Duration::from_secs(5); // wake every 5s and check the schedule
-    let mut last_heartbeat: Option<chrono::DateTime<Utc>> = None;
+    let mut last_heartbeat: Option<DateTime<Utc>> = None;
+    let mut activity = ActivityAggregator::new();
+    // (app_name, window_title, started_at) for the current app interval.
+    let mut current_app: Option<(String, Option<String>, DateTime<Utc>)> = None;
 
     loop {
         tokio::time::sleep(tick).await;
@@ -61,7 +67,59 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Cheap reads to decide whether to capture this tick.
-        let Some(timer) = state.timer() else { continue };
+        let Some(timer) = state.timer() else {
+            // timer stopped — flush any open app interval
+            if let Some((name, title, started)) = current_app.take() {
+                let now = Utc::now();
+                let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+                let _ = client
+                    .ingest_app_usage(&name, title.as_deref(), &started.to_rfc3339(), &now.to_rfc3339(), None)
+                    .await;
+            }
+            continue;
+        };
+
+        let entry_id = timer.time_entry_id.clone();
+        let now_ev = Utc::now();
+
+        // B4 — activity (idle-derived, per-minute samples).
+        if state.activity_tracking_enabled() {
+            let idle = idle::seconds_idle();
+            if let Some(sample) = activity.tick(now_ev, idle, 5) {
+                let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+                let _ = client.ingest_activity(std::slice::from_ref(&sample), Some(entry_id.clone())).await;
+            }
+        }
+
+        // B5 — active app intervals (flush on change or every ~60s for per-slot granularity).
+        if state.app_url_tracking_enabled() {
+            if let Some(app) = apps::active_app() {
+                let should_flush = match &current_app {
+                    None => false,
+                    Some((name, _, started)) => {
+                        *name != app.app_name || (now_ev - *started).num_seconds() >= 60
+                    }
+                };
+                if should_flush {
+                    if let Some((name, title, started)) = current_app.take() {
+                        let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+                        let _ = client
+                            .ingest_app_usage(
+                                &name,
+                                title.as_deref(),
+                                &started.to_rfc3339(),
+                                &now_ev.to_rfc3339(),
+                                Some(entry_id.clone()),
+                            )
+                            .await;
+                    }
+                }
+                if current_app.is_none() {
+                    current_app = Some((app.app_name, app.window_title, now_ev));
+                }
+            }
+        }
+
         if !state.screenshots_enabled() {
             continue; // screenshots disabled by policy
         }

@@ -21,6 +21,7 @@ tauri-plugin-store = "2"
 # capture
 xcap = "0.9"                # cross-platform screen capture (mac/win/linux)
 user-idle = "0.6"           # cross-platform idle detection
+active-win-pos-rs = "0.8"   # active window / app name (mac/win/linux)
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 # sync

@@ -22,6 +22,7 @@ const RosterRow = z.object({
   is_owner: z.boolean(),
   status: z.string(),
   presence: z.enum(['offline', 'connected', 'tracking']),
+  last_app: z.string().nullable(),
   today_seconds: z.number(),
   yesterday_seconds: z.number(),
   week_seconds: z.number(),
@@ -146,6 +147,25 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
           if (!lastShot.has(s.userId)) lastShot.set(s.userId, { id: s.id, at: s.capturedAt.getTime() });
         }
 
+        // most recent app per user (B5)
+        const appRows = await tx
+          .select({
+            userId: schema.appUsage.userId,
+            appName: schema.appUsage.appName,
+            startedAt: schema.appUsage.startedAt,
+          })
+          .from(schema.appUsage)
+          .where(
+            and(
+              eq(schema.appUsage.organizationId, req.organizationId!),
+              inArray(schema.appUsage.userId, userIds),
+              gte(schema.appUsage.startedAt, monthStart),
+            ),
+          )
+          .orderBy(desc(schema.appUsage.startedAt));
+        const lastApp = new Map<string, string>();
+        for (const a of appRows) if (!lastApp.has(a.userId)) lastApp.set(a.userId, a.appName);
+
         type Acc = { today: number; yesterday: number; week: number; month: number; lastActive: number };
         const acc = new Map<string, Acc>();
         for (const id of userIds) acc.set(id, { today: 0, yesterday: 0, week: 0, month: 0, lastActive: 0 });
@@ -174,6 +194,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             is_owner: m.role === 'owner',
             status: m.status,
             presence: getPresence(req.organizationId!, m.userId),
+            last_app: lastApp.get(m.userId) ?? null,
             today_seconds: a.today,
             yesterday_seconds: a.yesterday,
             week_seconds: a.week,

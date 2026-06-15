@@ -21,6 +21,12 @@ const Schema = z.object({
   /** Public URL of the web dashboard — used to build the View-online handoff link. */
   WEB_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
 
+  /** OpsCore integration (Phase 3). */
+  OPSCORE_API_URL: z.string().url().default('http://localhost:3001'),
+  OPSCORE_HANDOFF_SECRET: z.string().default('opscore-timepro-shared-handoff-secret-dev'),
+  OPSCORE_API_KEY: z.string().default('opscore-timepro-service-api-key-dev'),
+  OPSCORE_ORG_SLUG: z.string().default('demo'),
+
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
 

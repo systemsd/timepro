@@ -100,9 +100,12 @@ function RosterRowView({ row, onOpen }: { row: RosterRow; onOpen: () => void }) 
       <td className="l">
         <div className="emp">
           <span className={`presence-dot ${row.presence}`} title={presenceLabel(row.presence)} />
-          <button className="emp-name" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={onOpen}>
-            {row.display_name}
-          </button>
+          <div>
+            <button className="emp-name" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'block' }} onClick={onOpen}>
+              {row.display_name}
+            </button>
+            {row.last_app && <div className="emp-app">{row.last_app}</div>}
+          </div>
         </div>
       </td>
       <td className="l thumb-cell">

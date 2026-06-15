@@ -53,7 +53,15 @@ export default function TimelinePage() {
           <span className="tl-who">{data?.display_name ?? '…'}</span>
           <span className="tl-date">{pretty}</span>
         </div>
-        <div className="tl-total">{hm(data?.tracked_seconds ?? 0)}</div>
+        <div className="tl-totals">
+          <div className="tl-total">{hm(data?.tracked_seconds ?? 0)}</div>
+          {data?.activity_score != null && (
+            <div className="tl-activity" title="Average activity">
+              <span className="tl-act-bar"><span className="tl-act-fill" style={{ width: `${data.activity_score}%`, background: actColor(data.activity_score) }} /></span>
+              <span className="tl-act-pct">{data.activity_score}%</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="tl-body">
@@ -66,7 +74,15 @@ export default function TimelinePage() {
           data.slots.map((slot) => (
             <div className="tl-slot" key={slot.start}>
               <div className="tl-slot-time">
-                {time(slot.start)} – {time(slot.end)}
+                <div>{time(slot.start)} – {time(slot.end)}</div>
+                <div className="tl-slot-meta">
+                  {slot.activity_score != null && (
+                    <span className="tl-slot-act" style={{ color: actColor(slot.activity_score) }}>
+                      ● {slot.activity_score}%
+                    </span>
+                  )}
+                  {slot.app_name && <span className="tl-slot-app">{slot.app_name}</span>}
+                </div>
               </div>
               <div className="tl-shots">
                 {slot.screenshots.map((s) => <TLThumb key={s.id} id={s.id} at={s.captured_at} />)}
@@ -74,7 +90,6 @@ export default function TimelinePage() {
             </div>
           ))
         )}
-        {/* Activity strip + per-slot activity % come with activity tracking (Phase 4). */}
       </div>
     </div>
   );
@@ -102,4 +117,9 @@ function hm(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   return `${h}h ${String(m).padStart(2, '0')}m`;
+}
+function actColor(score: number): string {
+  if (score >= 60) return '#5bbf3a';
+  if (score >= 30) return '#e6a700';
+  return '#e2604f';
 }

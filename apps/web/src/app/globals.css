@@ -180,6 +180,23 @@ body {
 .login-btn:hover:not(:disabled) { background: #63bb37; }
 .login-btn:disabled { opacity: 0.55; }
 .hint { font-size: 12px; color: var(--muted-2); margin: 16px 0 0; }
+.login-or { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; color: var(--muted-2); font-size: 13px; }
+.login-or::before, .login-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.opscore-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  border: 1px solid #d7dadd; border-radius: 9px; padding: 11px; font-size: 14px; font-weight: 600;
+  color: #3a3f45; text-decoration: none; background: #fff;
+}
+.opscore-btn:hover { background: #f6f7f8; }
+.opscore-mark { color: #6fcf3f; font-size: 16px; }
+
+.opscore-sync {
+  width: 100%; background: #eef0f2; border: 1px solid var(--border); color: #4a4f55;
+  border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 8px;
+}
+.opscore-sync:hover:not(:disabled) { background: #e6e9ee; }
+.opscore-sync:disabled { opacity: 0.6; }
+.sync-msg { font-size: 12px; color: var(--green); margin-bottom: 10px; }
 
 /* ───────────── team ───────────── */
 .team-band {
@@ -317,6 +334,7 @@ body {
 .roster tr.summary td { background: #fafbfc; color: var(--muted); font-size: 16px; }
 .roster .emp { display: flex; align-items: center; gap: 12px; }
 .roster .emp-name { color: var(--accent); font-size: 19px; font-weight: 500; }
+.roster .emp-app { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .roster .num { color: var(--muted-2); }
 .roster .thumb-cell img { width: 150px; height: 96px; object-fit: cover; border: 4px solid #d9dce0; border-radius: 4px; background: #eef0f2; }
 .roster .thumb-ph { width: 150px; height: 96px; border: 4px solid #d9dce0; border-radius: 4px; background: #eef0f2; }
@@ -350,6 +368,14 @@ body {
   border: 3px solid #d9dce0; border-radius: 4px; background: #eef0f2; display: block;
 }
 .tl-thumb figcaption { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.tl-totals { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.tl-activity { display: flex; align-items: center; gap: 8px; }
+.tl-act-bar { width: 120px; height: 8px; background: #e3e5e8; border-radius: 5px; overflow: hidden; }
+.tl-act-fill { display: block; height: 100%; border-radius: 5px; }
+.tl-act-pct { font-size: 13px; color: var(--muted); min-width: 34px; }
+.tl-slot-meta { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.tl-slot-act { font-size: 12px; }
+.tl-slot-app { font-size: 12px; color: var(--muted); }
 
 /* ───────────── clients ───────────── */
 .clients-empty {
