@@ -17,6 +17,9 @@ import { projectRoutes } from './routes/projects';
 import { screenshotRoutes } from './routes/screenshots';
 import { meRoutes } from './routes/me';
 import { teamRoutes } from './routes/team';
+import { rosterRoutes } from './routes/roster';
+import { timelineRoutes } from './routes/timeline';
+import { clientRoutes } from './routes/clients';
 
 /**
  * App factory. Used by both `server.ts` and integration tests.
@@ -83,6 +86,9 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(screenshotRoutes, { prefix: '/v1' });
   await app.register(meRoutes, { prefix: '/v1' });
   await app.register(teamRoutes, { prefix: '/v1' });
+  await app.register(rosterRoutes, { prefix: '/v1' });
+  await app.register(timelineRoutes, { prefix: '/v1' });
+  await app.register(clientRoutes, { prefix: '/v1' });
 
   return app;
 }

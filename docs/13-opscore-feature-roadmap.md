@@ -52,15 +52,15 @@ light up together.
 
 Ordered by dependency and value. Each phase is shippable.
 
-### Phase 0 — Quick wins (no external blockers)
-- **S5** Admin-only Team tab (hide nav, gate route, tighten API to owner/admin).
-- **S8 (shell)** ☰ menu with the four items routing to pages (stubs ok).
-- **S12 (page)** Download page UI with placeholder URLs.
-- **S2 (Phase 1)** Role-aware My Home roster — names + time totals + last-screenshot thumbnail, computed on the fly. *(Online dot grey until B3.)*
-- **S3 (Phase 1)** Employee Timeline — screenshot slots + day total + day/month nav. *(Activity strip waits on B4.)*
-- **S4 (Phase 1)** Timeline dropdown listing employees. *(Dots grey until B3.)*
-- **S9 (Phase 1)** Projects page + project-members assignment (local catalog interim).
-- **S10 (Phase 1)** Clients data model + page (local interim).
+### Phase 0 — Quick wins (no external blockers) — ✅ BUILT
+- ✅ **S5** Team tab gated to admin/manager (C1: manager = own team); RBAC scoping helper (`lib/access.ts`).
+- ✅ **S8 (shell)** ☰ menu — Projects/Clients/Settings (admin) + Download (all), role-filtered.
+- ✅ **S12 (page)** Download page with OS detection + placeholder URLs.
+- ✅ **S2** Role-aware My Home — admin/manager → roster (`/v1/roster`, today/yesterday/week/month + last screenshot, viewer-tz); employee → personal dashboard. *(Online dot grey until B3.)*
+- ✅ **S3** Employee Timeline (`/timeline/[userId]`, `/v1/timeline/:id`) — 10-min screenshot slots + day total + day nav. *(Activity strip waits on B4.)*
+- ✅ **S4** Timeline nav dropdown listing employees. *(Dots grey until B3.)*
+- ✅ **S9** Projects page + project-members assignment (`/v1/projects/manage`, `/:id/members`). Catalog read-only per C2.
+- ✅ **S10** Clients table + `project.client_id` + page (`/v1/clients`); interim local create.
 
 ### Phase 1 — Settings engine (B6) — unblocks several specs
 - **S11** Settings catalog, resolution engine (org default ← user override), Settings page, agent fetches effective settings.

@@ -27,6 +27,7 @@ export const projects = pgTable(
     isBillable: boolean('is_billable').notNull().default(true),
     defaultRateCents: integer('default_rate_cents'),
     clientName: text('client_name'),
+    clientId: uuid('client_id'), // FK to clients; mapping syncs from OpsCore (C3)
     budgetHours: decimal('budget_hours', { precision: 10, scale: 2 }),
     budgetCents: bigint('budget_cents', { mode: 'number' }),
     createdBy: uuid('created_by')

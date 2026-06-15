@@ -123,6 +123,126 @@ export async function removeMember(userId: string): Promise<void> {
   if (!res.ok) await asError(res);
 }
 
+// ---- roster (My Home for admins/managers) ----
+
+export interface RosterRow {
+  user_id: string;
+  display_name: string;
+  email: string;
+  role: string;
+  is_owner: boolean;
+  status: string;
+  today_seconds: number;
+  yesterday_seconds: number;
+  week_seconds: number;
+  month_seconds: number;
+  last_active: string | null;
+  last_screenshot_id: string | null;
+}
+
+export interface Roster {
+  rows: RosterRow[];
+  totals: {
+    today_seconds: number;
+    yesterday_seconds: number;
+    week_seconds: number;
+    month_seconds: number;
+  };
+}
+
+export async function getRoster(): Promise<Roster> {
+  const tz = new Date().getTimezoneOffset();
+  const res = await fetch(`${API_BASE}/v1/roster?tzOffsetMinutes=${tz}`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+// ---- timeline ----
+
+export interface TimelineSlot {
+  start: string;
+  end: string;
+  project_id: string | null;
+  screenshots: Array<{ id: string; captured_at: string }>;
+}
+
+export interface Timeline {
+  user_id: string;
+  display_name: string;
+  date: string;
+  tracked_seconds: number;
+  slots: TimelineSlot[];
+}
+
+export async function getTimeline(userId: string, date: string): Promise<Timeline> {
+  const tz = new Date().getTimezoneOffset();
+  const res = await fetch(
+    `${API_BASE}/v1/timeline/${userId}?date=${date}&tzOffsetMinutes=${tz}`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+// ---- projects management ----
+
+export interface ManagedProject {
+  id: string;
+  name: string;
+  color: string;
+  status: string;
+  member_count: number;
+}
+
+export async function getManagedProjects(): Promise<{ total_members: number; projects: ManagedProject[] }> {
+  const res = await fetch(`${API_BASE}/v1/projects/manage`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function getProjectMembers(
+  projectId: string,
+): Promise<{ members: Array<{ user_id: string; display_name: string; enabled: boolean }> }> {
+  const res = await fetch(`${API_BASE}/v1/projects/${projectId}/members`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function setProjectMembers(
+  projectId: string,
+  assignments: Array<{ user_id: string; enabled: boolean }>,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/projects/${projectId}/members`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ assignments }),
+  });
+  if (!res.ok) await asError(res);
+}
+
+// ---- clients ----
+
+export interface ClientRow {
+  id: string;
+  name: string;
+  project_count: number;
+}
+
+export async function getClients(): Promise<{ clients: ClientRow[] }> {
+  const res = await fetch(`${API_BASE}/v1/clients`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function createClient(name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/clients`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) await asError(res);
+}
+
 export interface TodaySummary {
   tracked_seconds: number;
   is_running: boolean;

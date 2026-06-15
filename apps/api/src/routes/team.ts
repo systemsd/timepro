@@ -1,9 +1,9 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
+import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
 
 const MEMBER_SETTINGS_DEFAULTS = {
   screenshots: '3/hr, allow blur',
@@ -39,27 +39,6 @@ const MemberDetail = MemberRow.extend({
   }),
 });
 
-/** Look up the requesting user's role within their org. */
-async function requesterRole(req: FastifyRequest): Promise<string> {
-  return req.withTenantDb(async (tx) => {
-    const [m] = await tx
-      .select({ role: schema.memberships.role })
-      .from(schema.memberships)
-      .where(
-        and(
-          eq(schema.memberships.organizationId, req.organizationId!),
-          eq(schema.memberships.userId, req.userId!),
-        ),
-      )
-      .limit(1);
-    return m?.role ?? 'employee';
-  });
-}
-
-function forbid(message: string): never {
-  throw Object.assign(new Error(message), { statusCode: 403, code: 'forbidden' });
-}
-
 export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
   // List all members of the org.
   app.get(
@@ -69,10 +48,17 @@ export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
       schema: { response: { 200: z.object({ members: z.array(MemberRow) }) }, tags: ['team'] },
     },
     async (req) => {
-      const role = await requesterRole(req);
-      if (!['owner', 'admin', 'manager'].includes(role)) forbid('Not allowed to view the team');
+      const visible = await visibleUsers(req); // C1: admin/owner=all, manager=own team, employee=self
+      if (visible.role === 'employee') forbid('Not allowed to view the team');
 
       return req.withTenantDb(async (tx) => {
+        const scope =
+          visible.userIds === 'all'
+            ? eq(schema.memberships.organizationId, req.organizationId!)
+            : and(
+                eq(schema.memberships.organizationId, req.organizationId!),
+                inArray(schema.memberships.userId, visible.userIds),
+              );
         const rows = await tx
           .select({
             userId: schema.users.id,
@@ -84,7 +70,7 @@ export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
           })
           .from(schema.memberships)
           .innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
-          .where(eq(schema.memberships.organizationId, req.organizationId!))
+          .where(scope)
           .orderBy(asc(schema.memberships.createdAt));
 
         return {
@@ -113,8 +99,9 @@ export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (req) => {
-      const role = await requesterRole(req);
-      if (!['owner', 'admin', 'manager'].includes(role)) forbid('Not allowed to view the team');
+      const visible = await visibleUsers(req);
+      if (visible.role === 'employee') forbid('Not allowed to view the team');
+      if (!canView(visible, req.params.userId)) forbid('Not allowed to view this member');
 
       return req.withTenantDb(async (tx) => {
         const [member] = await tx

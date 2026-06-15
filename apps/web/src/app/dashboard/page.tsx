@@ -1,24 +1,142 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import {
+  getRoster,
   getScreenshots,
   getScreenshotObjectUrl,
   getToday,
+  type Roster,
+  type RosterRow,
   type ScreenshotMeta,
   type TodaySummary,
 } from '@/lib/api';
 
+const isManagerOrAdmin = (r: string) => ['owner', 'admin', 'manager'].includes(r);
+
 export default function DashboardPage() {
   const { session, checked } = useSession();
+  if (!checked || !session) return <div className="center muted">Loading…</div>;
+  return isManagerOrAdmin(session.role) ? (
+    <ManagerHome />
+  ) : (
+    <EmployeeHome />
+  );
+}
+
+/* ─────────── Manager / Admin: team roster (S2) ─────────── */
+
+function ManagerHome() {
+  const { session } = useSession();
+  const router = useRouter();
+  const [roster, setRoster] = useState<Roster | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getRoster().then(setRoster).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  if (!session) return null;
+  const tzLabel = `UTC${offsetLabel()}`;
+  const workedToday = (roster?.totals.today_seconds ?? 0) > 0;
+
+  return (
+    <div className="page">
+      <TopNav session={session} active="home" />
+      <div className="mh-band">
+        <h1>Manager Dashboard</h1>
+        <span className="tz">All times are {tzLabel} ⚙</span>
+      </div>
+
+      {error && <div className="error" style={{ margin: '16px 28px' }}>{error}</div>}
+
+      <div className="roster">
+        <table>
+          <thead>
+            <tr>
+              <th className="l">Employee</th>
+              <th className="l">Last active</th>
+              <th>Today</th>
+              <th>Yesterday</th>
+              <th>This week</th>
+              <th>This month</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="summary">
+              <td className="l" colSpan={2}>
+                {workedToday ? 'Team activity today' : 'No one online, no one worked today'}
+              </td>
+              <td className="val">{fmt(roster?.totals.today_seconds)}</td>
+              <td className="val">{fmt(roster?.totals.yesterday_seconds)}</td>
+              <td className="val">{fmt(roster?.totals.week_seconds)}</td>
+              <td className="val">{fmt(roster?.totals.month_seconds)}</td>
+            </tr>
+            {(roster?.rows ?? []).map((r) => (
+              <RosterRowView key={r.user_id} row={r} onOpen={() => router.push(`/timeline/${r.user_id}`)} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RosterRowView({ row, onOpen }: { row: RosterRow; onOpen: () => void }) {
+  return (
+    <tr>
+      <td className="l">
+        <div className="emp">
+          <span className="presence-dot offline" title="Offline" />
+          <button className="emp-name" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={onOpen}>
+            {row.display_name}
+          </button>
+        </div>
+      </td>
+      <td className="l thumb-cell">
+        {row.last_screenshot_id ? (
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={onOpen}>
+            <RosterThumb id={row.last_screenshot_id} at={row.last_active} />
+          </button>
+        ) : (
+          <span className="muted-2">…</span>
+        )}
+      </td>
+      <td className={row.today_seconds ? 'val' : 'dash'}>{fmt(row.today_seconds)}</td>
+      <td className={row.yesterday_seconds ? 'val' : 'dash'}>{fmt(row.yesterday_seconds)}</td>
+      <td className={row.week_seconds ? 'val' : 'dash'}>{fmt(row.week_seconds)}</td>
+      <td className={row.month_seconds ? 'val' : 'dash'}>{fmt(row.month_seconds)}</td>
+    </tr>
+  );
+}
+
+function RosterThumb({ id, at }: { id: string; at: string | null }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let revoked: string | null = null;
+    getScreenshotObjectUrl(id).then((u) => { revoked = u; setUrl(u); }).catch(() => {});
+    return () => { if (revoked) URL.revokeObjectURL(revoked); };
+  }, [id]);
+  return (
+    <figure style={{ margin: 0, position: 'relative' }}>
+      {url ? <img src={url} alt="" /> : <div className="thumb-ph" />}
+      {at && <figcaption style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{relative(at)}</figcaption>}
+    </figure>
+  );
+}
+
+/* ─────────── Employee: personal dashboard ─────────── */
+
+function EmployeeHome() {
+  const { session } = useSession();
   const [today, setToday] = useState<TodaySummary | null>(null);
   const [shots, setShots] = useState<ScreenshotMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!checked || !session) return;
     (async () => {
       try {
         const [t, sc] = await Promise.all([getToday(), getScreenshots(24)]);
@@ -28,68 +146,27 @@ export default function DashboardPage() {
         setError(e instanceof Error ? e.message : String(e));
       }
     })();
-  }, [checked, session]);
+  }, []);
 
-  if (!checked || !session) return <div className="center muted">Loading…</div>;
-
+  if (!session) return null;
   return (
     <div className="page">
       <TopNav session={session} active="home" />
-
       <main className="content">
         <h1 className="title">My Home</h1>
-
         {error && <div className="error">{error}</div>}
-
         <div className="stats">
-          <Stat label="Tracked today" value={formatHM(today?.tracked_seconds ?? 0)} />
-          <Stat
-            label="Status"
-            value={today?.is_running ? 'Tracking' : 'Stopped'}
-            tone={today?.is_running ? 'green' : 'muted'}
-          />
+          <Stat label="Tracked today" value={hm(today?.tracked_seconds ?? 0)} />
+          <Stat label="Status" value={today?.is_running ? 'Tracking' : 'Stopped'} tone={today?.is_running ? 'green' : 'muted'} />
           <Stat label="Screenshots today" value={String(today?.screenshot_count ?? 0)} />
           <Stat label="Sessions today" value={String(today?.entries.length ?? 0)} />
         </div>
-
         <section className="block">
           <h2 className="block-title">Recent screenshots</h2>
           {shots.length === 0 ? (
             <p className="muted">No screenshots yet. Start the timer in the desktop app.</p>
           ) : (
-            <div className="grid">
-              {shots.map((s) => (
-                <Thumb key={s.id} shot={s} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="block">
-          <h2 className="block-title">Recent activity</h2>
-          {today && today.entries.length > 0 ? (
-            <table className="entries">
-              <thead>
-                <tr>
-                  <th>Started</th>
-                  <th>Ended</th>
-                  <th>Duration</th>
-                  <th>Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {today.entries.map((e) => (
-                  <tr key={e.id}>
-                    <td>{new Date(e.started_at).toLocaleTimeString()}</td>
-                    <td>{e.ended_at ? new Date(e.ended_at).toLocaleTimeString() : '— running —'}</td>
-                    <td>{formatHM(e.duration_seconds)}</td>
-                    <td className="muted">{e.description ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted">No activity recorded today.</p>
+            <div className="grid">{shots.map((s) => <PersonalThumb key={s.id} shot={s} />)}</div>
           )}
         </section>
       </main>
@@ -106,42 +183,44 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'gr
   );
 }
 
-function Thumb({ shot }: { shot: ScreenshotMeta }) {
+function PersonalThumb({ shot }: { shot: ScreenshotMeta }) {
   const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
   useEffect(() => {
     let revoked: string | null = null;
-    (async () => {
-      try {
-        const u = await getScreenshotObjectUrl(shot.id);
-        revoked = u;
-        setUrl(u);
-      } catch {
-        setFailed(true);
-      }
-    })();
-    return () => {
-      if (revoked) URL.revokeObjectURL(revoked);
-    };
+    getScreenshotObjectUrl(shot.id).then((u) => { revoked = u; setUrl(u); }).catch(() => {});
+    return () => { if (revoked) URL.revokeObjectURL(revoked); };
   }, [shot.id]);
-
   return (
     <figure className="thumb">
-      {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={`Screenshot ${shot.id}`} />
-      ) : (
-        <div className={`thumb-ph ${failed ? 'failed' : ''}`}>{failed ? '!' : ''}</div>
-      )}
+      {url ? <img src={url} alt="" /> : <div className="thumb-ph" />}
       <figcaption>{new Date(shot.captured_at).toLocaleTimeString()}</figcaption>
     </figure>
   );
 }
 
-function formatHM(totalSeconds: number): string {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  if (h === 0) return `${m}m`;
-  return `${h}h ${String(m).padStart(2, '0')}m`;
+/* ─────────── helpers ─────────── */
+
+function fmt(seconds?: number): string {
+  if (!seconds) return '-';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h === 0 ? `${m}m` : `${h}h ${String(m).padStart(2, '0')}m`;
+}
+function hm(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h === 0 ? `${m}m` : `${h}h ${String(m).padStart(2, '0')}m`;
+}
+function relative(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  const days = Math.floor(diff / 86_400_000);
+  if (days >= 1) return `${days} day${days > 1 ? 's' : ''} ago`;
+  const hours = Math.floor(diff / 3_600_000);
+  if (hours >= 1) return `${hours}h ago`;
+  const mins = Math.floor(diff / 60_000);
+  return mins >= 1 ? `${mins}m ago` : 'just now';
+}
+function offsetLabel(): string {
+  const off = -new Date().getTimezoneOffset() / 60;
+  return off >= 0 ? `+${off}` : `${off}`;
 }

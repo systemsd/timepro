@@ -12,7 +12,7 @@ loadRootEnv();
 import { and, eq } from 'drizzle-orm';
 import { createDb, closeDb, getDb } from '../client';
 import { asPlatform } from '../tenant';
-import { memberships, organizations, projectMembers, projects, users } from '../schema';
+import { clients, memberships, organizations, projectMembers, projects, users } from '../schema';
 
 const OWNER_EMAIL = 'owner@timepro.local';
 
@@ -151,9 +151,32 @@ async function main() {
       await tx.insert(projectMembers).values({ projectId: pid, userId: arslan }).onConflictDoNothing();
     }
 
+    // --- clients (interim local catalog; OpsCore-managed once sync lands) ---
+    const CLIENTS = ['Acme Corp', 'Globex', 'Initech'];
+    for (let i = 0; i < CLIENTS.length; i++) {
+      const name = CLIENTS[i]!;
+      const existing = await tx
+        .select()
+        .from(clients)
+        .where(and(eq(clients.organizationId, orgId), eq(clients.name, name)))
+        .limit(1);
+      let clientId: string;
+      if (existing.length === 0) {
+        const [c] = await tx.insert(clients).values({ organizationId: orgId, name }).returning();
+        clientId = c!.id;
+      } else {
+        clientId = existing[0]!.id;
+      }
+      // map one project to each client for a populated reports view
+      const pid = projectIds[i];
+      if (pid) {
+        await tx.update(projects).set({ clientId }).where(eq(projects.id, pid));
+      }
+    }
+
     // eslint-disable-next-line no-console
     console.log(
-      `[seed] org=${orgId} owner=${owner!.id} members=${TEAM.length + 1} projects=${PROJECT_NAMES.length}`,
+      `[seed] org=${orgId} owner=${owner!.id} members=${TEAM.length + 1} projects=${PROJECT_NAMES.length} clients=${CLIENTS.length}`,
     );
   }, getDb());
 

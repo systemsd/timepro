@@ -6,6 +6,7 @@ export * from './users';
 export * from './memberships';
 export * from './teams';
 export * from './projects';
+export * from './clients';
 export * from './devices';
 export * from './timeEntries';
 export * from './activitySamples';
