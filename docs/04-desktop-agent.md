@@ -2,8 +2,8 @@
 
 > **Implementation status** — ✅ built · 🟡 partial · ⛔ planned.
 >
-> - ✅ Tauri 2 shell; email login (dev); timer start/stop + project picker; **automatic screenshot capture** (`xcap`, cross-platform); idle detection (`user-idle`); HTTP sync (`reqwest`); Settings screen; "view online" handoff; API base baked at build time.
-> - 🟡 Sync is direct HTTP with no local queue; state is in-memory only.
+> - ✅ Tauri 2 shell; email login (dev); timer start/stop + project picker; **automatic screenshot capture** (`xcap`, cross-platform); idle detection (`user-idle`); HTTP sync (`reqwest`); Settings screen; "view online" handoff; API base baked at build time; **consumes effective settings** from `/v1/settings/effective` (`screenshots.per_hour` → capture cadence, `screenshots.enabled` honored; refreshed ~60s).
+> - 🟡 Sync is direct HTTP with no local queue; state is in-memory only. Native screenshot-notification toast not yet wired (the `screenshots.notify` value resolves but isn't shown as an OS notification).
 > - ⛔ Keyboard/mouse activity hooks, app tracking, URL tracking, offline SQLite outbox, encrypted local storage / OS keyring tokens, WebSocket settings push, auto-update, tray/menu-bar icon, single-instance + supervisor, code-signing/notarization.
 >
 > Live code: `apps/desktop/src-tauri/src/` (`commands.rs`, `api.rs`, `state.rs`, `capture/`).

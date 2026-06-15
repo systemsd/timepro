@@ -61,10 +61,13 @@ struct Inner {
     api_base: Option<String>,
     session: Option<Session>,
     timer: Option<RunningTimer>,
-    /// How often (seconds) the capture loop snapshots when a timer is running.
-    /// MVP: hard-coded; later sourced from `/v1/settings/effective`.
+    /// Capture cadence — resolved from `/v1/settings/effective`
+    /// (`screenshots.per_hour`), with a sensible fallback before first fetch.
     screenshot_interval_sec: u64,
+    screenshots_enabled: bool,
+    notify_on_screenshot: bool,
     last_screenshot_at: Option<DateTime<Utc>>,
+    last_settings_fetch: Option<DateTime<Utc>>,
 }
 
 impl AppState {
@@ -74,13 +77,48 @@ impl AppState {
                 api_base: Some(default_api_base()),
                 session: None,
                 timer: None,
-                // 12 screenshots/hour = one every 300s, matching the team
-                // policy shown in Settings. Capture is automatic while a
-                // timer runs (see capture::run_capture_loop).
-                screenshot_interval_sec: 300,
+                screenshot_interval_sec: 300, // fallback until settings load
+                screenshots_enabled: true,
+                notify_on_screenshot: false,
                 last_screenshot_at: None,
+                last_settings_fetch: None,
             }),
         }
+    }
+
+    /// Apply effective settings fetched from the API (`{key: value}` map).
+    pub fn apply_effective(&self, m: &serde_json::Map<String, serde_json::Value>) {
+        let mut g = self.inner.write();
+        if let Some(ph) = m.get("screenshots.per_hour").and_then(|v| v.as_f64()) {
+            if ph > 0.0 {
+                g.screenshot_interval_sec = (3600.0 / ph).round().max(1.0) as u64;
+            }
+        }
+        if let Some(en) = m.get("screenshots.enabled").and_then(|v| v.as_bool()) {
+            g.screenshots_enabled = en;
+        }
+        if let Some(n) = m.get("screenshots.notify").and_then(|v| v.as_bool()) {
+            g.notify_on_screenshot = n;
+        }
+    }
+
+    pub fn screenshots_enabled(&self) -> bool {
+        self.inner.read().screenshots_enabled
+    }
+
+    // Resolved from settings; consumed when native screenshot notifications
+    // are wired (the value already round-trips correctly end-to-end).
+    #[allow(dead_code)]
+    pub fn notify_on_screenshot(&self) -> bool {
+        self.inner.read().notify_on_screenshot
+    }
+
+    pub fn last_settings_fetch(&self) -> Option<DateTime<Utc>> {
+        self.inner.read().last_settings_fetch
+    }
+
+    pub fn record_settings_fetch(&self, at: DateTime<Utc>) {
+        self.inner.write().last_settings_fetch = Some(at);
     }
 
     pub fn api_base(&self) -> Option<String> {

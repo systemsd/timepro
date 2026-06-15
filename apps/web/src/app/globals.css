@@ -357,3 +357,34 @@ body {
   padding: 48px 24px; text-align: center; margin-bottom: 18px;
 }
 .clients-empty p { margin: 0 0 8px; font-size: 16px; }
+
+/* ───────────── settings ───────────── */
+.set-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 14px; border-radius: 8px; cursor: pointer;
+}
+.set-row:hover { background: #f6f7f8; }
+.set-row.selected { background: #eef0f2; box-shadow: inset 3px 0 0 #6fcf3f; }
+.set-label { color: #3a3f45; font-size: 15px; }
+.set-value { color: var(--muted-2); font-size: 14px; }
+
+.set-h { font-size: 26px; font-weight: 500; color: #3a3f45; margin: 0 0 6px; }
+.set-desc {
+  background: #5a6473; color: #fff; border-radius: 8px; padding: 14px 16px;
+  font-size: 14px; margin: 10px 0 18px; max-width: 640px; line-height: 1.5;
+}
+.set-editor { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.set-input {
+  border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-size: 14px; background: #fff;
+}
+.set-num { display: inline-flex; align-items: center; gap: 6px; }
+.set-unit { color: var(--muted); font-size: 14px; }
+.set-enforce { color: var(--muted-2); font-size: 13px; }
+
+.indiv-list { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; max-width: 680px; }
+.indiv-row {
+  display: flex; align-items: center; gap: 14px; padding: 12px 4px;
+  border-bottom: 1px solid #f0f2f4;
+}
+.indiv-name { font-size: 16px; color: #3a3f45; }
+.indiv-editor { margin-left: auto; }

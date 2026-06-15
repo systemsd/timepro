@@ -62,10 +62,11 @@ Ordered by dependency and value. Each phase is shippable.
 - ✅ **S9** Projects page + project-members assignment (`/v1/projects/manage`, `/:id/members`). Catalog read-only per C2.
 - ✅ **S10** Clients table + `project.client_id` + page (`/v1/clients`); interim local create.
 
-### Phase 1 — Settings engine (B6) — unblocks several specs
-- **S11** Settings catalog, resolution engine (org default ← user override), Settings page, agent fetches effective settings.
-- **S7** Team per-user overrides (same engine).
-- Enforcement wired for settings whose features exist (screenshots/hr, notify, auto-pause, blur).
+### Phase 1 — Settings engine (B6) — ✅ BUILT
+- ✅ **S11** Settings catalog registry (`lib/settings-registry.ts`, 11 settings), resolver (org default ← user override, `lib/settings.ts`), Settings page UI (catalog list + typed editors + "Individual settings" per-user toggles), API (`/v1/settings`, `/settings/user/:id`, `/settings/effective`).
+- ✅ **S7** Team per-user overrides — same engine; Team "effective settings" now resolver-backed.
+- ✅ Agent consumes `/v1/settings/effective` (refresh ~60s): `screenshots.per_hour` → capture interval, `screenshots.enabled` honored. (Native screenshot-notification toast is the one deferred enforcement bit.)
+- 🔴 Settings gated on unbuilt features (activity, app/URL, offline time, weekly-limit) store + resolve correctly but only *act* once those features ship (flagged in the UI).
 
 ### Phase 2 — Presence (B3)
 - Agent heartbeat → `devices.last_seen_at`; presence read; green/grey dots in S2 + S4; "N online" in S2.

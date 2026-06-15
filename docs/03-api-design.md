@@ -2,8 +2,8 @@
 
 > **Implementation status** — ✅ built · 🟡 partial · ⛔ planned.
 >
-> - ✅ Implemented route groups: `auth` (dev-login + handoff/exchange), `health`, `me/today`, `projects`, `screenshots` (multipart ingest + list + raw), `team`, `timer`. RFC 9457 errors. Zod validation.
-> - 🟡 Auth uses a dev shim — `x-dev-org` + `x-dev-user` headers (non-production), not the JWT/cookie scheme described below. RBAC is enforced on `team` routes only.
+> - ✅ Implemented route groups: `auth` (dev-login + handoff/exchange), `health`, `me/today`, `projects` (+ `manage`, `:id/members`), `screenshots` (multipart ingest + list + raw), `team`, `timer`, `roster`, `timeline`, `clients`. RFC 9457 errors. Zod validation.
+> - 🟡 Auth uses a dev shim — `x-dev-org` + `x-dev-user` headers (non-production), not the JWT/cookie scheme described below. RBAC scoping (admin=all / manager=own team / employee=self, C1) is centralized in `apps/api/src/lib/access.ts` and enforced on `team`, `roster`, `timeline`, `projects/manage`, `clients`.
 > - ⛔ JWT/refresh tokens, device registration, rate limiting, idempotency keys, cursor pagination, webhooks, exports, notifications, activity/URL read endpoints, realtime WS, and generated OpenAPI (`gen:openapi` is a stub).
 >
 > The endpoint catalog below is the target surface; only the groups marked ✅ exist today.

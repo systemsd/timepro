@@ -243,6 +243,73 @@ export async function createClient(name: string): Promise<void> {
   if (!res.ok) await asError(res);
 }
 
+// ---- settings ----
+
+export type SettingValue = boolean | number | string;
+
+export interface SettingDef {
+  key: string;
+  label: string;
+  type: 'bool' | 'number' | 'enum';
+  default: SettingValue;
+  options?: Array<{ value: string; label: string }>;
+  min?: number;
+  max?: number;
+  unit?: string;
+  overridable: boolean;
+  description?: string;
+  enforced_by?: string;
+}
+
+export async function getSettingsCatalog(): Promise<{
+  catalog: SettingDef[];
+  org_defaults: Record<string, SettingValue>;
+}> {
+  const res = await fetch(`${API_BASE}/v1/settings`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function setOrgSetting(key: string, value: SettingValue): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ key, value }),
+  });
+  if (!res.ok) await asError(res);
+}
+
+export async function getUserSettings(userId: string): Promise<{
+  effective: Record<string, SettingValue>;
+  overridden: Record<string, boolean>;
+  has_overrides: boolean;
+}> {
+  const res = await fetch(`${API_BASE}/v1/settings/user/${userId}`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function setUserSetting(
+  userId: string,
+  key: string,
+  value: SettingValue,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/settings/user/${userId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ key, value }),
+  });
+  if (!res.ok) await asError(res);
+}
+
+export async function clearUserSetting(userId: string, key: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/settings/user/${userId}/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) await asError(res);
+}
+
 export interface TodaySummary {
   tracked_seconds: number;
   is_running: boolean;

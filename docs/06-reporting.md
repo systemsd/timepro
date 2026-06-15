@@ -2,8 +2,8 @@
 
 > **Implementation status** — ✅ built · ⛔ planned.
 >
-> - ✅ `GET /v1/me/today` computes today's tracked time, status, and screenshot count **on the fly** from `time_entries` + `screenshots`.
-> - ⛔ Everything else here is planned: `reports_hourly/daily/weekly/monthly` rollup tables, the rollup jobs, materialized views, the export pipeline, and caching. No scheduled aggregation runs yet.
+> - ✅ Computed **on the fly** (no rollups yet): `GET /v1/me/today` (today's tracked time/status/screenshots), `GET /v1/roster` (per-employee today/yesterday/week/month totals + last screenshot, viewer-tz), `GET /v1/timeline/:userId` (a day's screenshots in 10-min slots + day total).
+> - ⛔ Still planned: `reports_hourly/daily/weekly/monthly` rollup tables, rollup jobs, materialized views, exports, caching, and the time-per-client report. No scheduled aggregation runs yet — on-the-fly compute is fine at current scale and moves to rollups in Phase 5.
 
 Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard reads from an "as-of-now" hourly rollup + a live tail.
 

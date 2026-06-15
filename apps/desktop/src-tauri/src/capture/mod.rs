@@ -29,10 +29,29 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     loop {
         tokio::time::sleep(tick).await;
 
-        // Cheap reads to decide whether to do anything this tick.
-        let Some(timer) = state.timer() else { continue };
         let Some(session) = state.session() else { continue };
         let Some(api_base) = state.api_base() else { continue };
+
+        // Refresh effective settings ~every 60s (independent of the timer) so
+        // admin changes to screenshots.per_hour / enabled propagate.
+        let refresh_due = match state.last_settings_fetch() {
+            None => true,
+            Some(last) => (Utc::now() - last).num_seconds() >= 60,
+        };
+        if refresh_due {
+            let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+            if let Ok(map) = client.get_effective_settings().await {
+                state.apply_effective(&map);
+                debug!("effective settings refreshed");
+            }
+            state.record_settings_fetch(Utc::now());
+        }
+
+        // Cheap reads to decide whether to capture this tick.
+        let Some(timer) = state.timer() else { continue };
+        if !state.screenshots_enabled() {
+            continue; // screenshots disabled by policy
+        }
 
         let interval_sec = state.screenshot_interval();
         let now = Utc::now();

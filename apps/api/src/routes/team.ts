@@ -4,16 +4,26 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
+import { getEffectiveForUser } from '../lib/settings';
 
-const MEMBER_SETTINGS_DEFAULTS = {
-  screenshots: '3/hr, allow blur',
-  activity_level_tracking: 'Track',
-  app_url_tracking: 'Track',
-  weekly_time_limit: '40 hours',
-  auto_pause_after: '1 minutes',
-  allow_offline_time: 'Disallow',
-  notify_on_screenshot: 'Do not notify',
-};
+type EffMap = Record<string, boolean | number | string>;
+
+/** Format resolved settings into the human-readable strings the Team UI shows. */
+function formatEffective(e: EffMap) {
+  const blur = e['screenshots.blur'];
+  const blurLabel = blur === 'always' ? 'always blur' : blur === 'never' ? 'no blur' : 'allow blur';
+  return {
+    screenshots: e['screenshots.enabled']
+      ? `${e['screenshots.per_hour']}/hr, ${blurLabel}`
+      : 'Off',
+    activity_level_tracking: e['activity.tracking'] ? 'Track' : "Don't track",
+    app_url_tracking: e['app_url.tracking'] ? 'Track' : "Don't track",
+    weekly_time_limit: `${e['limits.weekly_hours']} hours`,
+    auto_pause_after: `${e['tracking.auto_pause_minutes']} minutes`,
+    allow_offline_time: e['time.allow_offline'] ? 'Allow' : 'Disallow',
+    notify_on_screenshot: e['screenshots.notify'] ? 'Notify' : 'Do not notify',
+  };
+}
 
 const MemberRow = z.object({
   user_id: z.string(),
@@ -164,12 +174,9 @@ export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
             color: p.color,
             enabled: assignedSet.has(p.id),
           })),
-          effective_settings: {
-            ...MEMBER_SETTINGS_DEFAULTS,
-            weekly_time_limit: member.weeklyHourLimit
-              ? `${member.weeklyHourLimit} hours`
-              : MEMBER_SETTINGS_DEFAULTS.weekly_time_limit,
-          },
+          effective_settings: formatEffective(
+            (await getEffectiveForUser(tx, req.organizationId!, req.params.userId)).effective,
+          ),
         };
       });
     },

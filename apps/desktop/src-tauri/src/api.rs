@@ -155,6 +155,32 @@ impl ApiClient {
         }
     }
 
+    // ---- settings ----
+
+    /// Effective settings for the logged-in user (`{key: value}` map).
+    pub async fn get_effective_settings(
+        &self,
+    ) -> ApiResult<serde_json::Map<String, serde_json::Value>> {
+        let s = self.require_session()?;
+        let resp = self
+            .http
+            .get(self.url("/v1/settings/effective"))
+            .header("x-dev-org", &s.organization_id)
+            .header("x-dev-user", &s.user_id)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(ApiError::Server { status: status.as_u16(), body });
+        }
+        let v: serde_json::Value = resp.json().await?;
+        Ok(v.get("effective")
+            .and_then(|e| e.as_object())
+            .cloned()
+            .unwrap_or_default())
+    }
+
     // ---- view-online handoff ----
 
     pub async fn create_handoff(&self) -> ApiResult<HandoffResponse> {

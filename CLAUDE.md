@@ -86,8 +86,12 @@ cd apps/desktop/src-tauri && cargo check
   `app.organization_id` Postgres GUC; RLS enforces isolation (fail-closed). Maintenance jobs
   use `asPlatform` (BYPASSRLS role). See [docs/02-database-schema.md](docs/02-database-schema.md) §8.
 
+- **RBAC scoping (C1)**: `apps/api/src/lib/access.ts` resolves the requester's role + visible-user
+  set — admin/owner = all, manager = own team (`teams.manager_user_id` → `team_members`), employee =
+  self. Use `visibleUsers(req)` / `canView()` / `isAdmin()` for any cross-user read.
+
 ### API routes (`apps/api/src/routes/`)
-`auth` · `health` · `me` · `projects` · `screenshots` · `team` · `timer`
+`auth` · `health` · `me` · `projects` · `screenshots` · `team` · `timer` · `roster` · `timeline` · `clients`
 (OpenAPI is generated from the Zod route schemas: `pnpm gen:openapi`.)
 
 ### Desktop Rust modules (`apps/desktop/src-tauri/src/`)
@@ -121,13 +125,23 @@ cd apps/desktop/src-tauri && cargo check
 
 ## What's real vs stubbed
 
-**Working end-to-end:** desktop time tracking, automatic screenshot capture → API → DB + disk,
-web dashboard (today stats + screenshot gallery + activity), web login, desktop→web handoff,
-Team page (roles, project toggles, effective settings, invite/pause/archive/delete).
+**Working end-to-end:** desktop time tracking + automatic screenshot capture → API → DB + disk;
+web login + desktop→web handoff; **role-aware My Home** (admin/manager → team roster, employee →
+personal); **employee Timeline** (screenshot slots + day total + day nav); **Team** page (roles,
+project toggles, invite/pause/archive/delete, RBAC-scoped per C1); **Projects** page (member
+assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (role-filtered).
 
-**Stubbed / not built:** real password auth + MFA (email-only dev login), JWT/refresh tokens,
-S3 storage + thumbnails, BullMQ workers + scheduler + realtime WS, activity/app/URL tracking,
-reporting rollups, billing, code-signing/notarization of installers, the web Timeline/Reports tabs
-(present but disabled), pay-rate editing, user groups.
+**Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
+- ✅ **Phase 0** (quick wins) — done (the list above).
+- 🔜 **Phase 1 — Settings engine (B6)** — in progress / next.
+- 🔴 Phase 2 Presence (B3) · Phase 3 OpsCore OIDC+sync (B1/B2, needs real OpsCore details) ·
+  Phase 4 activity + app/URL tracking (B4/B5) · Phase 5 reports/rollups/realtime (B7/B8/B10) ·
+  Phase 6 build/sign/host pipeline (B9).
 
-See [docs/11-roadmap.md](docs/11-roadmap.md) for the MVP / Phase 2 / Phase 3 breakdown.
+**Still stubbed / not built:** real password auth + MFA + JWT (email-only dev login + `x-dev-*` shim),
+OpsCore integration, presence/heartbeat (online dots are grey), activity + app/URL tracking
+(Timeline activity strip + roster app/URL column absent), settings engine (Settings page is a stub),
+S3 storage + thumbnails, BullMQ workers/scheduler/realtime, reporting rollups, Reports tab, billing,
+installer signing/hosting (Download links are placeholders).
+
+See also [docs/11-roadmap.md](docs/11-roadmap.md) (original MVP/P2/P3) and the per-doc status banners.
