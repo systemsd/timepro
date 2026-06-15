@@ -485,7 +485,7 @@ function ResultArea({ result, tab, setTab }: { result: ReportResult; tab: Tab; s
       {tab === 'projects' && <PivotTable label="Project" rows={result.by_project} />}
       {tab === 'clients' && <PivotTable label="Client" rows={result.by_client} />}
       {tab === 'notes' && <DetailTable rows={result.notes} truncated={false} />}
-      {tab === 'apps' && <div className="rep-placeholder">App &amp; URL report — coming with capture rollups (URL needs the browser extension).</div>}
+      {tab === 'apps' && <AppsUrls apps={result.apps} urls={result.urls} />}
     </div>
   );
 }
@@ -527,6 +527,23 @@ function DetailTable({ rows, truncated }: { rows: ReportResult['detailed']; trun
       </table>
       {truncated && <div className="muted rep-trunc">Showing the first 5000 entries — narrow the range or use an export (5C).</div>}
     </>
+  );
+}
+
+function AppsUrls({ apps, urls }: { apps: ReportResult['apps']; urls: ReportResult['urls'] }) {
+  if (apps.length === 0 && urls.length === 0)
+    return <div className="rep-empty">No app or URL activity in this range. (URLs need the browser extension.)</div>;
+  return (
+    <div className="rep-appsurls">
+      <div>
+        <h3 className="rep-subhead">Applications</h3>
+        {apps.length === 0 ? <div className="rep-empty">No app activity.</div> : <PivotTable label="Application" rows={apps} />}
+      </div>
+      <div>
+        <h3 className="rep-subhead">Websites</h3>
+        {urls.length === 0 ? <div className="rep-empty">No URL activity — the browser extension isn&apos;t reporting yet.</div> : <PivotTable label="Domain" rows={urls} />}
+      </div>
+    </div>
   );
 }
 

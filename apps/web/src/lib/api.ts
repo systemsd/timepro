@@ -423,6 +423,8 @@ export interface ReportResult {
   by_employee: ReportPivot[];
   by_project: ReportPivot[];
   by_client: ReportPivot[];
+  apps: ReportPivot[];
+  urls: ReportPivot[];
   notes: ReportDetailRow[];
 }
 

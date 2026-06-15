@@ -67,7 +67,7 @@ Summary/Detailed.
   - *Timeline* — the chart + the grouped/detailed table for the chosen report type.
   - *Employees / Projects / Clients* — totals pivoted by that dimension.
   - *Notes* — entries that carry a note.
-  - *Apps & URLs* — app/URL usage totals (B5; URL needs the browser extension).
+  - *Apps & URLs* — ✅ live: aggregates `app_usage` + `url_usage` by user+range into top apps / top domains. Apps populate from the desktop agent now; URLs populate once the browser extension reports to `/v1/ingest/url-usage`.
 - Grouped tables support expand/collapse (the `±` / `⊞` affordance on each group row).
 
 ### 0.5 Data sources

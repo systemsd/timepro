@@ -150,8 +150,9 @@ assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (
 - ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`).
 - ✅ **Phase 2 — Presence (B3)** — done (agent heartbeat → in-memory store → 3-state dots + "N online").
 - ✅ **Phase 4 — Activity + App tracking (B4/B5)** — done (agent activity aggregator + app polling →
-  `/v1/ingest/activity` + `/ingest/app-usage`; Timeline activity %/per-slot app; roster last-app;
-  settings gate the agent). **URL tracking still needs the browser extension.**
+  `/v1/ingest/activity` + `/ingest/app-usage` + `/ingest/url-usage`; Timeline activity %/per-slot app; roster last-app;
+  Reports "Apps & URLs" tab aggregates `app_usage`/`url_usage`; settings gate the agent).
+  **URL tracking: ingest + reporting are done; only the browser-extension capture client is missing.**
 - ✅ **Phase 3 — OpsCore integration (B1/B2)** — done for **web** (handoff-JWT login — OpsCore is *not*
   OIDC — + Bearer service-API sync of employees/projects/business-partners). **Desktop OpsCore login done** —
 loopback flow: agent opens system browser → web `/desktop-auth` bridge → OpsCore handoff → token to the

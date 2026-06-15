@@ -106,7 +106,7 @@ Verified counts: **10 active employees, 18 business partners, 19 projects**.
 `auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today) ·
 `projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw) · `team` · `timer` ·
 `roster` · `timeline` · `clients` · `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) ·
-`ingest` (activity, app-usage) · `admin` (opscore/sync).
+`ingest` (activity, app-usage, url-usage) · `admin` (opscore/sync) · `reports` (filters, run, saved CRUD) · `realtime` (ws presence).
 
 **Auth shim:** `requireAuth` accepts `x-dev-org` + `x-dev-user` headers (non-prod). RBAC scoping (admin=all /
 manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/access.ts`.

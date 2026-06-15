@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { exchangeOpsCore } from '@/lib/api';
 import { saveSession } from '@/lib/session';
-import { DESKTOP_AUTH_KEY } from '../../desktop-auth/page';
+import { DESKTOP_AUTH_KEY } from '@/lib/desktopAuth';
 
 function OpsCoreInner() {
   const params = useSearchParams();

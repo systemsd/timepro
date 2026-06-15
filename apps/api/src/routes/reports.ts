@@ -85,6 +85,8 @@ const ReportResponse = z.object({
   by_employee: z.array(Pivot),
   by_project: z.array(Pivot),
   by_client: z.array(Pivot),
+  apps: z.array(Pivot), // top apps by tracked time (B5)
+  urls: z.array(Pivot), // top domains by tracked time (B5; needs the extension)
   notes: z.array(DetailRow), // entries carrying a note
 });
 
@@ -426,6 +428,44 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           .slice(0, DETAIL_CAP)
           .map(toDetail);
 
+        // Apps & URLs: aggregate capture intervals by user + range (not project/
+        // note filtered — those are time-entry concepts). Clip each interval to
+        // the window and sum seconds per app / domain.
+        const userScope = userFilter === 'all' ? undefined : inArray(schema.appUsage.userId, userFilter);
+        const appUsageRows = await tx
+          .select({ key: schema.appUsage.appName, startedAt: schema.appUsage.startedAt, endedAt: schema.appUsage.endedAt })
+          .from(schema.appUsage)
+          .where(
+            and(
+              eq(schema.appUsage.organizationId, req.organizationId!),
+              lt(schema.appUsage.startedAt, new Date(windowEnd)),
+              gte(schema.appUsage.endedAt, new Date(rangeStart)),
+              userScope,
+            ),
+          );
+        const urlScope = userFilter === 'all' ? undefined : inArray(schema.urlUsage.userId, userFilter);
+        const urlUsageRows = await tx
+          .select({ key: schema.urlUsage.domain, startedAt: schema.urlUsage.startedAt, endedAt: schema.urlUsage.endedAt })
+          .from(schema.urlUsage)
+          .where(
+            and(
+              eq(schema.urlUsage.organizationId, req.organizationId!),
+              lt(schema.urlUsage.startedAt, new Date(windowEnd)),
+              gte(schema.urlUsage.endedAt, new Date(rangeStart)),
+              urlScope,
+            ),
+          );
+        const aggIntervals = (rows: Array<{ key: string; startedAt: Date; endedAt: Date }>) => {
+          const m = new Map<string, number>();
+          for (const r of rows) {
+            const secs = overlapSeconds(r.startedAt.getTime(), r.endedAt.getTime(), rangeStart, windowEnd);
+            if (secs > 0) m.set(r.key, (m.get(r.key) ?? 0) + secs);
+          }
+          return Array.from(m.entries())
+            .map(([key, seconds]) => ({ key, label: key, seconds }))
+            .sort((a, b) => b.seconds - a.seconds);
+        };
+
         return {
           range: { from: q.from, to: q.to },
           type: q.type,
@@ -438,6 +478,8 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           by_employee: pivot(flat, 'employee'),
           by_project: pivot(flat, 'project'),
           by_client: pivot(flat, 'client'),
+          apps: aggIntervals(appUsageRows),
+          urls: aggIntervals(urlUsageRows),
           notes,
         };
       });

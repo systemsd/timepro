@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { OPSCORE_URL } from '@/lib/api';
+import { DESKTOP_AUTH_KEY } from '@/lib/desktopAuth';
 
 /**
  * Desktop OpsCore login bridge (Phase 3 — desktop).
@@ -14,8 +15,6 @@ import { OPSCORE_URL } from '@/lib/api';
  * the stashed desktop context — hands the token to the agent's loopback
  * instead of logging the browser in.
  */
-export const DESKTOP_AUTH_KEY = 'tp_desktop_auth';
-
 function Bridge() {
   const params = useSearchParams();
   useEffect(() => {

@@ -93,4 +93,48 @@ export const ingestRoutes: FastifyPluginAsyncZod = async (app) => {
       });
     },
   );
+
+  // Browser URL intervals (B5) — posted by the browser extension.
+  app.post(
+    '/ingest/url-usage',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        body: z.object({
+          events: z.array(
+            z.object({
+              browser: z.string().min(1).max(64),
+              domain: z.string().min(1).max(256),
+              url: z.string().max(2048).nullish(),
+              page_title: z.string().max(512).nullish(),
+              started_at: z.string().datetime({ offset: true }),
+              ended_at: z.string().datetime({ offset: true }),
+              time_entry_id: z.string().uuid().nullish(),
+            }),
+          ).max(500),
+        }),
+        response: { 200: z.object({ accepted: z.number() }) },
+        tags: ['ingest'],
+      },
+    },
+    async (req) => {
+      if (req.body.events.length === 0) return { accepted: 0 };
+      return req.withTenantDb(async (tx) => {
+        const rows = req.body.events.map((e) => ({
+          organizationId: req.organizationId!,
+          userId: req.userId!,
+          deviceId: ZERO_DEVICE,
+          timeEntryId: e.time_entry_id ?? null,
+          browser: e.browser,
+          domain: e.domain,
+          url: e.url ?? null,
+          pageTitle: e.page_title ?? null,
+          startedAt: new Date(e.started_at),
+          endedAt: new Date(e.ended_at),
+        }));
+        await tx.insert(schema.urlUsage).values(rows);
+        return { accepted: rows.length };
+      });
+    },
+  );
 };
