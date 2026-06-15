@@ -30,7 +30,7 @@ web/desktop login, desktop→web "view online" handoff, Team management.
 
 ### 🔴 Pending / not built
 - ~~Desktop OpsCore login~~ — **done** (loopback flow; `commands::opscore_login` + web `/desktop-auth` bridge). Needs `TIMEPRO_WEB_URL` set in dev. Email dev-login remains as a non-prod shim.
-- **Browser extension** for URL tracking (`url_usage` table + ingest ready; capture needs the WebExtension).
+- ~~Browser extension for URL tracking~~ — **built** (`apps/extension`, MV3 no-build). Ingest (`/v1/ingest/url-usage`) + Reports "Apps & URLs" tab live; the extension itself is **unverified in a real browser** (load unpacked per `apps/extension/README.md`).
 - **Phase 5** — Reports tab + time-per-client report + weekly-limit enforcement; rollups + scheduler; realtime WS (presence is polling now).
 - **Phase 6** — build/sign/host pipeline for real installer downloads (Download links are placeholders).
 - **Native screenshot-notification toast** (the `screenshots.notify` value resolves but isn't shown as an OS toast).

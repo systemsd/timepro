@@ -97,7 +97,7 @@ Ordered by dependency and value. Each phase is shippable.
 ### Phase 4 — Capture expansion (B4 + B5) — ✅ BUILT (URL via extension deferred)
 - ✅ **B4** Activity tracking — agent activity aggregator (idle-derived per-minute samples → `activity_samples`, `POST /v1/ingest/activity`); Timeline day + per-slot activity %; roster avg; the "Activity Level" setting now gates the agent. *(Keyboard/mouse event counts need low-level input hooks — a later enhancement; the active/idle ratio gives a real 0–100 score now.)*
 - ✅ **B5** App tracking — agent polls active window (`active-win-pos-rs`) → `app_usage` (`POST /v1/ingest/app-usage`); Timeline per-slot app + roster last-app; the "App & URL" setting gates it.
-- 🔴 **URL tracking** still needs the **browser extension** (S12 extension download) — `url_usage` table + ingest path are ready for it.
+- ✅ **URL tracking** — `POST /v1/ingest/url-usage` + Reports "Apps & URLs" aggregation + the **browser extension** (`apps/extension`, MV3 no-build capture client). Extension unverified in a real browser (load unpacked per its README).
 
 ### Phase 5 — Reports & scale (B7 + B8 + B10)
 - ✅ **B7** Reports (5A query API · 5B console UI · 5C saved reports + exports · **weekly-limit enforcement** at timer start + roster/My-Home visibility). **UI/feature spec:** [docs/06-reporting.md §0](06-reporting.md#0-reports-console--ui--feature-spec).

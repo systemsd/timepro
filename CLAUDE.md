@@ -29,7 +29,8 @@ Turborepo + pnpm workspaces. Node 20, pnpm 9.
 > an OIDC provider) + a Bearer-authed **service API** TimePro syncs from. Shared secret/API key live in
 > both `.env`s. New code: `apps/api/src/lib/opscore.ts`, `routes/auth.ts` (`/v1/auth/opscore/exchange`),
 > `routes/admin.ts` (`/v1/admin/opscore/sync`); OpsCore side `lib/timepro.ts` + `app/api/timepro/*`.
-| `@timepro/desktop`| Tauri 2 + Rust + React | live | Time tracker + screenshot capture. |
+| `@timepro/desktop`| Tauri 2 + Rust + React | live | Time tracker + screenshot capture. Desktop OpsCore login (loopback flow). |
+| `apps/extension`  | MV3 (plain JS, no build) | built | Browser URL-tracker → `/v1/ingest/url-usage`. **Not** a pnpm workspace package (no `package.json`); load unpacked per its README. |
 
 ### Packages (`packages/*`)
 
@@ -152,7 +153,8 @@ assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (
 - ✅ **Phase 4 — Activity + App tracking (B4/B5)** — done (agent activity aggregator + app polling →
   `/v1/ingest/activity` + `/ingest/app-usage` + `/ingest/url-usage`; Timeline activity %/per-slot app; roster last-app;
   Reports "Apps & URLs" tab aggregates `app_usage`/`url_usage`; settings gate the agent).
-  **URL tracking: ingest + reporting are done; only the browser-extension capture client is missing.**
+  **URL tracking: ingest + reporting + the browser-extension capture client (`apps/extension`, MV3, no-build) are
+  built; the extension is unverified in a real browser (load unpacked per its README).**
 - ✅ **Phase 3 — OpsCore integration (B1/B2)** — done for **web** (handoff-JWT login — OpsCore is *not*
   OIDC — + Bearer service-API sync of employees/projects/business-partners). **Desktop OpsCore login done** —
 loopback flow: agent opens system browser → web `/desktop-auth` bridge → OpsCore handoff → token to the
