@@ -115,8 +115,10 @@ export function TopNav({ session, active }: Props) {
                       router.push(`/timeline/${m.user_id}`);
                     }}
                   >
-                    {/* presence dot — grey until heartbeat/presence ships (Phase 2) */}
-                    <span className="presence-dot offline" title="Offline" />
+                    <span
+                      className={`presence-dot ${m.presence}`}
+                      title={m.presence === 'tracking' ? 'Tracking' : m.presence === 'connected' ? 'Online' : 'Offline'}
+                    />
                     {m.display_name || m.email}
                   </button>
                 ))

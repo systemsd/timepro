@@ -25,12 +25,25 @@ use crate::state::AppState;
 /// Poisson scheduler from doc 04 (§3.5).
 pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     let tick = Duration::from_secs(5); // wake every 5s and check the schedule
+    let mut last_heartbeat: Option<chrono::DateTime<Utc>> = None;
 
     loop {
         tokio::time::sleep(tick).await;
 
         let Some(session) = state.session() else { continue };
         let Some(api_base) = state.api_base() else { continue };
+
+        // Heartbeat ~every 45s so the web shows this user online (B3).
+        // `is_tracking` = a timer is running → solid-green; else → connected.
+        let hb_due = match last_heartbeat {
+            None => true,
+            Some(t) => (Utc::now() - t).num_seconds() >= 45,
+        };
+        if hb_due {
+            let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+            let _ = client.heartbeat(state.timer().is_some()).await;
+            last_heartbeat = Some(Utc::now());
+        }
 
         // Refresh effective settings ~every 60s (independent of the timer) so
         // admin changes to screenshots.per_hour / enabled propagate.

@@ -5,6 +5,7 @@ import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
 import { getEffectiveForUser } from '../lib/settings';
+import { getPresence } from '../lib/presence';
 
 type EffMap = Record<string, boolean | number | string>;
 
@@ -32,6 +33,7 @@ const MemberRow = z.object({
   role: z.string(),
   status: z.string(),
   is_owner: z.boolean(),
+  presence: z.enum(['offline', 'connected', 'tracking']),
 });
 
 const MemberDetail = MemberRow.extend({
@@ -91,6 +93,7 @@ export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
             role: r.role,
             status: r.status,
             is_owner: r.role === 'owner',
+            presence: getPresence(req.organizationId!, r.userId),
           })),
         };
       });
@@ -168,6 +171,7 @@ export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
           role: member.role,
           status: member.status,
           is_owner: member.role === 'owner',
+          presence: getPresence(req.organizationId!, member.userId),
           projects: projects.map((p) => ({
             id: p.id,
             name: p.name,

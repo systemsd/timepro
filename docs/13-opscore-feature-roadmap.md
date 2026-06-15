@@ -68,8 +68,9 @@ Ordered by dependency and value. Each phase is shippable.
 - ✅ Agent consumes `/v1/settings/effective` (refresh ~60s): `screenshots.per_hour` → capture interval, `screenshots.enabled` honored. (Native screenshot-notification toast is the one deferred enforcement bit.)
 - 🔴 Settings gated on unbuilt features (activity, app/URL, offline time, weekly-limit) store + resolve correctly but only *act* once those features ship (flagged in the UI).
 
-### Phase 2 — Presence (B3)
-- Agent heartbeat → `devices.last_seen_at`; presence read; green/grey dots in S2 + S4; "N online" in S2.
+### Phase 2 — Presence (B3) — ✅ BUILT
+- ✅ Agent heartbeat (`POST /v1/agent/heartbeat`, every ~45s with `is_tracking`); in-memory presence store (`lib/presence.ts`, 90s TTL, Redis-swappable).
+- ✅ 3-state presence (C4: offline / connected / tracking) on `/v1/roster` + `/v1/team/members`; dots wired in My Home roster + Timeline dropdown; "N online" headline; web polls every 30s.
 
 ### Phase 3 — OpsCore integration (B1 + B2)
 - **B2** OIDC login (web → then desktop, RFC 8252). Brings **real JWT auth**, retires the email dev login + `x-dev-*` shim.

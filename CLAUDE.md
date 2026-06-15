@@ -132,11 +132,11 @@ project toggles, invite/pause/archive/delete, RBAC-scoped per C1); **Projects** 
 assignment); **Clients** page; **Download** page (placeholder links); ☰ menu (role-filtered).
 
 **Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
-- ✅ **Phase 0** (quick wins) — done (the list above).
-- 🔜 **Phase 1 — Settings engine (B6)** — in progress / next.
-- 🔴 Phase 2 Presence (B3) · Phase 3 OpsCore OIDC+sync (B1/B2, needs real OpsCore details) ·
-  Phase 4 activity + app/URL tracking (B4/B5) · Phase 5 reports/rollups/realtime (B7/B8/B10) ·
-  Phase 6 build/sign/host pipeline (B9).
+- ✅ **Phase 0** (quick wins) — done.
+- ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`).
+- ✅ **Phase 2 — Presence (B3)** — done (agent heartbeat → in-memory store → 3-state dots + "N online").
+- 🔴 Phase 3 OpsCore OIDC+sync (B1/B2, **needs real OpsCore details**) · Phase 4 activity + app/URL
+  tracking (B4/B5) · Phase 5 reports/rollups/realtime (B7/B8/B10) · Phase 6 build/sign/host (B9).
 
 **Still stubbed / not built:** real password auth + MFA + JWT (email-only dev login + `x-dev-*` shim),
 OpsCore integration, presence/heartbeat (online dots are grey), activity + app/URL tracking

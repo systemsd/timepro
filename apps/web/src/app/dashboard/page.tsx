@@ -36,12 +36,23 @@ function ManagerHome() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getRoster().then(setRoster).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    const fetchRoster = () =>
+      getRoster().then(setRoster).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    void fetchRoster();
+    const id = setInterval(fetchRoster, 30_000); // refresh presence + totals
+    return () => clearInterval(id);
   }, []);
 
   if (!session) return null;
   const tzLabel = `UTC${offsetLabel()}`;
+  const online = roster?.totals.online ?? 0;
   const workedToday = (roster?.totals.today_seconds ?? 0) > 0;
+  const headline =
+    online > 0
+      ? `${online} online${workedToday ? '' : ', no one worked today'}`
+      : workedToday
+        ? 'Team activity today'
+        : 'No one online, no one worked today';
 
   return (
     <div className="page">
@@ -67,9 +78,7 @@ function ManagerHome() {
           </thead>
           <tbody>
             <tr className="summary">
-              <td className="l" colSpan={2}>
-                {workedToday ? 'Team activity today' : 'No one online, no one worked today'}
-              </td>
+              <td className="l" colSpan={2}>{headline}</td>
               <td className="val">{fmt(roster?.totals.today_seconds)}</td>
               <td className="val">{fmt(roster?.totals.yesterday_seconds)}</td>
               <td className="val">{fmt(roster?.totals.week_seconds)}</td>
@@ -90,7 +99,7 @@ function RosterRowView({ row, onOpen }: { row: RosterRow; onOpen: () => void }) 
     <tr>
       <td className="l">
         <div className="emp">
-          <span className="presence-dot offline" title="Offline" />
+          <span className={`presence-dot ${row.presence}`} title={presenceLabel(row.presence)} />
           <button className="emp-name" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={onOpen}>
             {row.display_name}
           </button>
@@ -223,4 +232,7 @@ function relative(iso: string): string {
 function offsetLabel(): string {
   const off = -new Date().getTimezoneOffset() / 60;
   return off >= 0 ? `+${off}` : `${off}`;
+}
+function presenceLabel(p: string): string {
+  return p === 'tracking' ? 'Tracking' : p === 'connected' ? 'Online (app open)' : 'Offline';
 }

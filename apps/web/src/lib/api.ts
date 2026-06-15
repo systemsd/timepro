@@ -49,6 +49,8 @@ export async function login(email: string) {
 
 // ---- team ----
 
+export type Presence = 'offline' | 'connected' | 'tracking';
+
 export interface TeamMember {
   user_id: string;
   display_name: string;
@@ -56,6 +58,7 @@ export interface TeamMember {
   role: string;
   status: string;
   is_owner: boolean;
+  presence: Presence;
 }
 
 export interface MemberProject {
@@ -132,6 +135,7 @@ export interface RosterRow {
   role: string;
   is_owner: boolean;
   status: string;
+  presence: Presence;
   today_seconds: number;
   yesterday_seconds: number;
   week_seconds: number;
@@ -147,6 +151,7 @@ export interface Roster {
     yesterday_seconds: number;
     week_seconds: number;
     month_seconds: number;
+    online: number;
   };
 }
 

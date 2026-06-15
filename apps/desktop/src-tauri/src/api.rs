@@ -155,6 +155,28 @@ impl ApiClient {
         }
     }
 
+    // ---- presence ----
+
+    /// Heartbeat so the web shows this user as online (B3). `is_tracking`
+    /// reflects whether a timer is currently running.
+    pub async fn heartbeat(&self, is_tracking: bool) -> ApiResult<()> {
+        let s = self.require_session()?;
+        let resp = self
+            .http
+            .post(self.url("/v1/agent/heartbeat"))
+            .header("x-dev-org", &s.organization_id)
+            .header("x-dev-user", &s.user_id)
+            .json(&serde_json::json!({ "is_tracking": is_tracking }))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(ApiError::Server { status, body });
+        }
+        Ok(())
+    }
+
     // ---- settings ----
 
     /// Effective settings for the logged-in user (`{key: value}` map).

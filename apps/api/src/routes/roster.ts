@@ -4,6 +4,7 @@ import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, visibleUsers } from '../lib/access';
+import { getPresence } from '../lib/presence';
 
 /**
  * Manager/Admin "My Home" roster (S2). One row per visible employee with
@@ -20,6 +21,7 @@ const RosterRow = z.object({
   role: z.string(),
   is_owner: z.boolean(),
   status: z.string(),
+  presence: z.enum(['offline', 'connected', 'tracking']),
   today_seconds: z.number(),
   yesterday_seconds: z.number(),
   week_seconds: z.number(),
@@ -35,6 +37,7 @@ const RosterResponse = z.object({
     yesterday_seconds: z.number(),
     week_seconds: z.number(),
     month_seconds: z.number(),
+    online: z.number(),
   }),
 });
 
@@ -103,7 +106,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
 
         const userIds = members.map((m) => m.userId);
         if (userIds.length === 0) {
-          return { rows: [], totals: { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0 } };
+          return { rows: [], totals: { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0, online: 0 } };
         }
 
         // time entries since month start (covers all four windows)
@@ -170,6 +173,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             role: m.role,
             is_owner: m.role === 'owner',
             status: m.status,
+            presence: getPresence(req.organizationId!, m.userId),
             today_seconds: a.today,
             yesterday_seconds: a.yesterday,
             week_seconds: a.week,
@@ -188,8 +192,9 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             yesterday_seconds: t.yesterday_seconds + r.yesterday_seconds,
             week_seconds: t.week_seconds + r.week_seconds,
             month_seconds: t.month_seconds + r.month_seconds,
+            online: t.online + (r.presence !== 'offline' ? 1 : 0),
           }),
-          { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0 },
+          { today_seconds: 0, yesterday_seconds: 0, week_seconds: 0, month_seconds: 0, online: 0 },
         );
 
         return { rows, totals };
