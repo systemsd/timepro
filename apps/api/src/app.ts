@@ -24,6 +24,7 @@ import { settingsRoutes } from './routes/settings';
 import { presenceRoutes } from './routes/presence';
 import { ingestRoutes } from './routes/ingest';
 import { adminRoutes } from './routes/admin';
+import { reportRoutes } from './routes/reports';
 
 /**
  * App factory. Used by both `server.ts` and integration tests.
@@ -97,6 +98,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(presenceRoutes, { prefix: '/v1' });
   await app.register(ingestRoutes, { prefix: '/v1' });
   await app.register(adminRoutes, { prefix: '/v1' });
+  await app.register(reportRoutes, { prefix: '/v1' });
 
   return app;
 }

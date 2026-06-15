@@ -127,8 +127,11 @@ export function TopNav({ session, active }: Props) {
           )}
         </div>
 
-        <button className="nav-tab disabled" disabled>
-          Reports <span className="caret">▾</span>
+        <button
+          className={`nav-tab ${active === 'reports' ? 'active' : ''}`}
+          onClick={() => router.push('/reports')}
+        >
+          Reports
         </button>
 
         {isManagerOrAdmin(role) && (

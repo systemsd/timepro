@@ -96,7 +96,7 @@ Ordered by dependency and value. Each phase is shippable.
 - 🔴 **URL tracking** still needs the **browser extension** (S12 extension download) — `url_usage` table + ingest path are ready for it.
 
 ### Phase 5 — Reports & scale (B7 + B8 + B10)
-- **B7** Reports (incl. time-per-client S10, weekly-limit enforcement).
+- **B7** Reports (incl. time-per-client S10, weekly-limit enforcement). **UI/feature spec:** [docs/06-reporting.md §0](06-reporting.md#0-reports-console--ui--feature-spec) — Reports console with the Summary / Detailed / Weekly Report / Saved Report dropdown, filter bar, and tabbed result area.
 - **B8** Rollups + scheduler (scale S2/S3; recurring OpsCore sync).
 - **B10** Realtime presence/roster (replaces polling).
 

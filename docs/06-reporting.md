@@ -3,9 +3,87 @@
 > **Implementation status** — ✅ built · ⛔ planned.
 >
 > - ✅ Computed **on the fly** (no rollups yet): `GET /v1/me/today` (today's tracked time/status/screenshots), `GET /v1/roster` (per-employee today/yesterday/week/month totals + last screenshot, viewer-tz), `GET /v1/timeline/:userId` (a day's screenshots in 10-min slots + day total).
+> - 📐 **Reports Console** (§0) — UI/feature **spec'd** from the reference screenshots; **not built**. The "Reports ▾" nav tab is disabled today. This is the Phase 5 / **B7** deliverable.
 > - ⛔ Still planned: `reports_hourly/daily/weekly/monthly` rollup tables, rollup jobs, materialized views, exports, caching, and the time-per-client report. No scheduled aggregation runs yet — on-the-fly compute is fine at current scale and moves to rollups in Phase 5.
 
 Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard reads from an "as-of-now" hourly rollup + a live tail.
+
+---
+
+## 0. Reports Console — UI & feature spec
+
+> **Status: 5A + 5B built; 5C–5F pending.** Phase 5 / **B7** deliverable. The Reports nav tab is **live**.
+> - ✅ **5A — query API**: `GET /v1/reports/filters` (RBAC-scoped employees + client/project catalogs) and `POST /v1/reports/run` (Summary/Detailed/Weekly, computed on-the-fly from `time_entries`, viewer-tz). See `apps/api/src/routes/reports.ts`.
+> - ✅ **5B — console UI**: `apps/web/src/app/reports/page.tsx` — filter bar, Summary/Detailed/Weekly/Saved dropdown, daily-totals chart (red weekends), result tabs, expand/collapse group tables.
+> - ⛔ **5C** exports (Excel/PDF) + Saved/Shared reports · **5D** rollups/scheduler · **5E** realtime · **5F** weekly-limits + absences.
+>
+> Open questions are flagged inline with **⚠️**.
+
+The Reports console is one page: a **filter/builder bar** up top, a **report-type dropdown**, and a
+**result area** (daily-totals chart + tabbed tables). The flow: pick a report type → set filters →
+**Show report** → results render below, exportable (Excel/PDF) and saveable.
+
+### 0.1 Report-type dropdown
+
+The top-level selector. Four entries:
+
+| Type | Default group-by | Result table | Extra control |
+| ---- | ---------------- | ------------ | ------------- |
+| **Summary** | employee + project | grouped, expand/collapse (`± Employee / ± Project` → Duration) | — |
+| **Detailed** | none (flat) | one row per time entry: Date · Employee · Project · Note · From · To · Duration | — |
+| **Weekly Report** | employee | flat employee → Duration (per ISO week) | ☐ **Include absences** |
+| **Saved Report** | (loads a saved config) | re-runs a previously **Saved report** | picks from the saved list |
+
+⚠️ The reference UI also shows quick-link presets — *Summary by project · Summary by client · Summary by
+employee · Daily by employee · Detailed · Apps & URLs*. **Decision needed:** are these (a) shortcuts that
+just set the dropdown + group-by, or (b) a row kept alongside the dropdown? Assumed **(a)** — presets over
+Summary/Detailed.
+
+### 0.2 Filter / builder bar (shared by all report types)
+
+- **Date range** — `DD/MM/YY ▶ DD/MM/YY` picker + presets: Today, Yesterday, This Week, **Last Week**, This Month, Last Month, This Year, Last Year.
+- **Report timezone** — "Report times are UTC+5 ▾" selector. ⚠️ Ties to **C6** (viewer/org tz): defaults to the org/viewer tz and drives every day/week boundary + From/To label.
+- **Select employees and groups** — multi-select, **RBAC-scoped** (admin/owner = all; manager = own team; employee = self) via `lib/access.ts` / `visibleUsers`.
+- **Select clients** — multi-select (clients = OpsCore business partners).
+- **Select projects** — multi-select.
+- **Note contains text** — free-text filter on time-entry notes.
+- **Group by** — multi-select chips (`Group by employee`, `Group by project`, …); defaults per report type (0.1). ⚠️ Confirm the full option set (employee, project, client, date?).
+- **Toggles** — ☐ Only offline activities · ☐ Exclude archived · ☐ Include absences *(Weekly only)*.
+
+### 0.3 Actions
+
+- **Show report** (primary green button) — runs the query.
+- **Excel** / **PDF** — export the current report (ties to §6 export pipeline). ⚠️ Large ranges go async per §8's >90-day rule; small ranges may export synchronously — confirm the UI threshold.
+- **Share report** — shareable snapshot/link. ⚠️ Auth + scope of shared links TBD.
+- **Save report** — persists the current type+filter config as a named **Saved Report**, surfaced under the dropdown's "Saved Report" entry. ⚠️ Needs a `saved_reports` table; per-user vs per-org/shared visibility TBD.
+
+### 0.4 Result area
+
+- **Daily-totals bar chart** — one bar per day in range with a value label (e.g. `9h 47m`) and the grand total to the left (e.g. **53h 34m**); **weekends rendered in red**. Shown on the Timeline tab.
+- **Result tabs** — Timeline · Employees · Projects · Clients · Notes · Apps & URLs. Each re-pivots the same filtered dataset:
+  - *Timeline* — the chart + the grouped/detailed table for the chosen report type.
+  - *Employees / Projects / Clients* — totals pivoted by that dimension.
+  - *Notes* — entries that carry a note.
+  - *Apps & URLs* — app/URL usage totals (B5; URL needs the browser extension).
+- Grouped tables support expand/collapse (the `±` / `⊞` affordance on each group row).
+
+### 0.5 Data sources
+
+Reads come from the rollup layer below: `reports_daily` for week/month windows, `reports_hourly` + live tail
+for today; **Detailed** reads raw `time_entries` joined to projects/notes; **Apps & URLs** from
+`app_usage` / `url_usage`. Time-per-client uses `project.client_id` (C3, OpsCore-owned). Ranges > 90 days
+require an export (§8).
+
+### 0.6 Open questions (resolve before building)
+
+1. **Report tz basis** — C6 (org/viewer vs employee vs UTC); must match My Home/Timeline.
+2. **Saved & shared reports** — storage table, visibility (per-user/org), share-link auth.
+3. **Absence source** — Weekly's "Include absences" needs a leave/absence model that **does not exist yet**.
+4. **Quick-links vs dropdown** — presets or a parallel control (0.1).
+5. **Group-by option set** — exact dimensions, and which combinations are valid per type.
+6. **Export sync-vs-async threshold** surfaced in the UI.
+
+---
 
 ## 1. Layered Model
 

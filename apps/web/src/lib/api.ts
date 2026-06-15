@@ -367,6 +367,90 @@ export async function getToday(): Promise<TodaySummary> {
   return res.json();
 }
 
+// ---- reports (B7 / Phase 5) ----
+
+export type ReportType = 'summary' | 'detailed' | 'weekly';
+export type GroupDim = 'employee' | 'project' | 'client';
+
+export interface ReportFilters {
+  employees: Array<{ id: string; name: string }>;
+  clients: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; client_id: string | null }>;
+}
+
+export interface ReportGroupNode {
+  dim: GroupDim;
+  key: string | null;
+  label: string;
+  seconds: number;
+  children?: ReportGroupNode[];
+}
+
+export interface ReportDetailRow {
+  entry_id: string;
+  date: string;
+  user_id: string;
+  display_name: string;
+  project_id: string | null;
+  project_name: string | null;
+  note: string | null;
+  from: string;
+  to: string;
+  duration_seconds: number;
+  is_manual: boolean;
+}
+
+export interface ReportPivot {
+  key: string | null;
+  label: string;
+  seconds: number;
+}
+
+export interface ReportResult {
+  range: { from: string; to: string };
+  type: ReportType;
+  group_by: GroupDim[];
+  total_seconds: number;
+  daily: Array<{ date: string; seconds: number; is_weekend: boolean }>;
+  groups: ReportGroupNode[];
+  detailed: ReportDetailRow[];
+  detailed_truncated: boolean;
+  by_employee: ReportPivot[];
+  by_project: ReportPivot[];
+  by_client: ReportPivot[];
+  notes: ReportDetailRow[];
+}
+
+export interface RunReportInput {
+  type: ReportType;
+  from: string;
+  to: string;
+  userIds?: string[];
+  clientIds?: string[];
+  projectIds?: string[];
+  noteContains?: string;
+  groupBy?: GroupDim[];
+  onlyOffline?: boolean;
+  excludeArchived?: boolean;
+}
+
+export async function getReportFilters(): Promise<ReportFilters> {
+  const res = await fetch(`${API_BASE}/v1/reports/filters`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function runReport(input: RunReportInput): Promise<ReportResult> {
+  const tzOffsetMinutes = new Date().getTimezoneOffset();
+  const res = await fetch(`${API_BASE}/v1/reports/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ ...input, tzOffsetMinutes }),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
 export interface ScreenshotMeta {
   id: string;
   captured_at: string;

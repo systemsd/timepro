@@ -134,12 +134,13 @@ C8 break-glass local owner · C9 screenshot self-delete admin-configurable defau
 
 ---
 
-## 8. Git state — ⚠️ uncommitted
+## 8. Git state
 
-As of this handoff, TimePro has **~37 uncommitted changed files** (everything since the last commit
-`acb45e3 feat: implement presence tracking…`), and OpsCore has **untracked** `app/api/timepro/` + `lib/timepro.ts`
-(+ modified `lib/auth.config.ts`, `.env`). **Nothing from Phases 1/3/4 + the rename is committed.**
-First action in the next session may be to **commit** (review the diff; the rename touched 60+ files).
+- **TimePro: committed & clean.** `main` @ `0002431 feat: implement OpsCore integration…`
+  (Phases 1/3/4 + the TrackFlow→TimePro rename are in history).
+- ⚠️ **OpsCore: still has uncommitted files** — the integration I added:
+  `app/api/timepro/` (handoff + sync routes), `lib/timepro.ts`, edited `lib/auth.config.ts`, and `.env`.
+  These need committing in the OpsCore repo or they'll be lost on a fresh checkout/reset.
 
 ---
 
