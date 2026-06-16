@@ -85,10 +85,12 @@ A0(DNS/host) → A1 → A2 → A3 → A4 → A5 ──┐
 - **Files added:** `infra/compose/docker-compose.prod.yml` · `infra/compose/.env.example` · `infra/compose/envs/api.env.example` · `.gitignore` rule · `apps/api/Dockerfile` (+`/data` seed).
 - **Done when:** ✅ `docker compose up` runs the full stack; migrations apply; API serves with DB connected.
 
-### A3 · Nginx + TLS 🔴 *(mirror OpsCore)*
-- [ ] nginx vhosts: `timepro.systemsd.co` → web:3005, `api.timepro.systemsd.co` → api:4001, with `/v1/realtime` WebSocket upgrade headers.
-- [ ] Let's Encrypt (certbot) for both names.
-- **Done when:** both URLs serve over HTTPS.
+### A3 · Nginx + TLS 🟡 *(config written & syntax-validated; apply needs the host — blocked on A0)*
+- [x] nginx vhost `infra/nginx/timepro.systemsd.co.conf`: `timepro.systemsd.co` → `127.0.0.1:3005` (web), `api.timepro.systemsd.co` → `127.0.0.1:4001` (api) with `/v1/realtime` WebSocket upgrade (1h timeout), HSTS, `client_max_body_size 25m`, http→https redirect + ACME location. Upstreams use keepalive. ✅ **`nginx -t` passes** (validated in nginx:1.27-alpine with stub certs).
+- [x] Confirmed API has `trustProxy: true` — honors `X-Forwarded-Proto` from nginx. No app change needed.
+- [x] `infra/nginx/README.md` runbook: `certbot certonly --nginx` for both names → install vhost → `nginx -t && systemctl reload nginx` (reload, **not** restart — OpsCore shares this nginx) → verify `/healthz` + `/readyz`.
+- [ ] **HOST STEP (needs A0):** run the runbook on `178.105.58.173` — obtain certs, enable vhost, reload.
+- **Done when:** both URLs serve over HTTPS (`https://api.timepro.systemsd.co/readyz` → db:ok).
 
 ### A4 · OpsCore prod wiring ⏳ *(user-gated)*
 - [ ] OpsCore prod `.env`: `TIMEPRO_URL=https://timepro.systemsd.co`; verify shared secrets match; restart.
@@ -145,5 +147,7 @@ Append dated entries as work lands.
 - **2026-06-16** — A0 decisions made: co-locate on OpsCore host `178.105.58.173`; subdomains `timepro.systemsd.co` + `api.timepro.systemsd.co` (both confirmed free). DNS records handed to user; A0 blocked on user adding them. Noted OpsCore repo absent locally (affects A4).
 - **2026-06-16** — **A1 done.** Wrote 3 Dockerfiles + `.dockerignore`; all build & boot via local `docker build` (Docker 27.4 present). Fixed 4 latent issues found by actually building: tsup wasn't bundling `@timepro/db` (prod boot broken), `pg` dynamic-require crash (added pg+uuid to api deps), missing Next `standalone` output, non-deterministic `turbo` prune (pinned 2.9.16). Build context now excludes the multi-GB Rust target dir. Files uncommitted.
 - **2026-06-16** — **A2 done.** Wrote `docker-compose.prod.yml` + env templates; ran the full stack locally and verified end-to-end (postgres→migrate→api→web; `/readyz` db:ok; 19 tables migrated). Confirmed Redis is genuinely unused (placeholder, no container). Fixed nonroot screenshot-volume ownership via a seeded dir in the api image. Pre-validates the A5 migration path. Files uncommitted.
+- **2026-06-16** — Committed A1+A2 on branch `feat/backend-deploy-pipeline` (`40d3905`, `2861049`).
+- **2026-06-16** — **A3 authored.** Wrote `infra/nginx/timepro.systemsd.co.conf` + runbook; `nginx -t` passes (validated in a container with stub certs). Confirmed API `trustProxy: true`. Apply step (certs + reload on host) blocked on A0. Files uncommitted.
 </content>
 </invoke>
