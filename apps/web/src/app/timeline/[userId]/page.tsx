@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
+import { CloseIcon } from '@/components/icons';
 import { getScreenshotObjectUrl, getTimeline, getTimelineActivity, type Timeline } from '@/lib/api';
 
 // ---- calendar-strip helpers (viewer-local) ----
@@ -47,6 +48,12 @@ export default function TimelinePage() {
   const [data, setData] = useState<Timeline | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [shotIndex, setShotIndex] = useState<number | null>(null); // open screenshot (index into allShots)
+
+  // all of the day's screenshots, flattened + chronological — for modal nav
+  const allShots = (data?.slots ?? [])
+    .flatMap((s) => s.screenshots)
+    .sort((a, b) => (a.captured_at < b.captured_at ? -1 : 1));
 
   useEffect(() => {
     if (!checked || !session) return;
@@ -143,17 +150,87 @@ export default function TimelinePage() {
                 </div>
               </div>
               <div className="tl-shots">
-                {slot.screenshots.map((s) => <TLThumb key={s.id} id={s.id} at={s.captured_at} />)}
+                {slot.screenshots.map((s) => (
+                  <TLThumb
+                    key={s.id}
+                    id={s.id}
+                    at={s.captured_at}
+                    onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
+                  />
+                ))}
               </div>
             </div>
           ))
         )}
       </div>
+
+      {shotIndex !== null && allShots[shotIndex] && (
+        <ScreenshotModal
+          shots={allShots}
+          index={shotIndex}
+          onIndex={setShotIndex}
+          onClose={() => setShotIndex(null)}
+        />
+      )}
     </div>
   );
 }
 
-function TLThumb({ id, at }: { id: string; at: string }) {
+/** Lightbox with prev/next navigation across the day's screenshots. */
+function ScreenshotModal({
+  shots,
+  index,
+  onIndex,
+  onClose,
+}: {
+  shots: Array<{ id: string; captured_at: string }>;
+  index: number;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const cur = shots[index]!;
+  const hasPrev = index > 0;
+  const hasNext = index < shots.length - 1;
+
+  useEffect(() => {
+    let revoked: string | null = null;
+    setUrl(null);
+    getScreenshotObjectUrl(cur.id).then((u) => { revoked = u; setUrl(u); }).catch(() => {});
+    return () => { if (revoked) URL.revokeObjectURL(revoked); };
+  }, [cur.id]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft' && hasPrev) onIndex(index - 1);
+      else if (e.key === 'ArrowRight' && hasNext) onIndex(index + 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [index, hasPrev, hasNext, onIndex, onClose]);
+
+  return (
+    <div className="ss-modal" onClick={onClose} role="dialog" aria-modal="true">
+      <button className="ss-nav prev" disabled={!hasPrev} aria-label="Previous"
+        onClick={(e) => { e.stopPropagation(); onIndex(index - 1); }}>‹</button>
+      <div className="ss-modal-inner" onClick={(e) => e.stopPropagation()}>
+        <div className="ss-modal-bar">
+          <span>{new Date(cur.captured_at).toLocaleString()}</span>
+          <span className="ss-count">{index + 1} / {shots.length}</span>
+          <button className="ss-modal-close" onClick={onClose} aria-label="Close">
+            <CloseIcon size={20} />
+          </button>
+        </div>
+        {url ? <img src={url} alt="Screenshot" /> : <div className="ss-modal-loading">Loading…</div>}
+      </div>
+      <button className="ss-nav next" disabled={!hasNext} aria-label="Next"
+        onClick={(e) => { e.stopPropagation(); onIndex(index + 1); }}>›</button>
+    </div>
+  );
+}
+
+function TLThumb({ id, at, onOpen }: { id: string; at: string; onOpen: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let revoked: string | null = null;
@@ -162,7 +239,13 @@ function TLThumb({ id, at }: { id: string; at: string }) {
   }, [id]);
   return (
     <figure className="tl-thumb">
-      {url ? <img src={url} alt="" /> : <div className="tl-thumb-ph" />}
+      {url ? (
+        <button type="button" className="tl-thumb-btn" onClick={onOpen} title="Open screenshot">
+          <img src={url} alt="" />
+        </button>
+      ) : (
+        <div className="tl-thumb-ph" />
+      )}
       <figcaption>{time(at)}</figcaption>
     </figure>
   );

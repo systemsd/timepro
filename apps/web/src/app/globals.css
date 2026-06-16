@@ -651,3 +651,43 @@ body {
   display: inline-block; background: #e8502e; color: #fff; font-size: 11px; font-weight: 700;
   letter-spacing: 0.3px; border-radius: 4px; padding: 1px 6px; margin-right: 6px; text-transform: uppercase;
 }
+
+/* timeline screenshot modal (lightbox) */
+.tl-thumb-btn { display: block; padding: 0; border: none; background: none; cursor: zoom-in; width: 100%; }
+.tl-thumb-btn img { display: block; }
+.ss-modal {
+  position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.78);
+  display: flex; align-items: center; justify-content: center; padding: 32px;
+}
+.ss-modal-inner {
+  display: flex; flex-direction: column; max-width: 95vw; max-height: 92vh;
+  background: #1c2230; border-radius: 10px; overflow: hidden; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.ss-modal-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 9px 12px 9px 16px; color: #d7dce6; font-size: 13px;
+}
+.ss-modal-close {
+  display: inline-flex; align-items: center; justify-content: center; padding: 5px;
+  border: none; background: none; color: #d7dce6; cursor: pointer; border-radius: 6px;
+}
+.ss-modal-close:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.ss-modal-inner img {
+  display: block; max-width: 95vw; max-height: calc(92vh - 42px);
+  width: auto; height: auto; object-fit: contain; background: #000;
+}
+
+/* screenshot modal — prev/next nav */
+.ss-count { color: var(--muted-2); font-size: 12px; }
+.ss-nav {
+  flex: none; width: 52px; height: 52px; border-radius: 50%; margin: 0 8px;
+  border: none; background: rgba(255, 255, 255, 0.12); color: #fff;
+  font-size: 30px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.ss-nav:hover:not(:disabled) { background: rgba(255, 255, 255, 0.22); }
+.ss-nav:disabled { opacity: 0.25; cursor: default; }
+.ss-modal-loading {
+  display: flex; align-items: center; justify-content: center; color: #9aa3b2;
+  min-width: 320px; min-height: 220px; font-size: 14px;
+}
