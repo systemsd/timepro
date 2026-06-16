@@ -53,3 +53,4 @@ pnpm-debug.log*
 # Generated
 packages/desktop-sdk/src/generated/
 apps/api/openapi/openapi.json
+apps/api/data/screenshots
