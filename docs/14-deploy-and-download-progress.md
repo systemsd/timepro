@@ -106,16 +106,19 @@ A0(DNS/host) → A1 → A2 → A3 → A4 → A5 ──┐
 
 ## 3. GROUP B — Make the desktop app downloadable
 
-### B1 · Pre-build config 🔴 *(can start once A0 hostnames fixed)*
-- [ ] `state.rs`: `PRODUCTION_API_BASE=https://api.timepro.systemsd.co`, `PRODUCTION_WEB_BASE=https://timepro.systemsd.co`.
-- [ ] Bump version (`tauri.conf.json` + `Cargo.toml`); confirm bundle metadata/icons.
-- **Done when:** local `tauri build` produces an installer pointing at prod.
+### B1 · Pre-build config ✅ *(done 2026-06-16 — URLs baked)*
+- [x] `state.rs`: `PRODUCTION_API_BASE=https://api.timepro.systemsd.co`, `PRODUCTION_WEB_BASE=https://timepro.systemsd.co`. Resolution order unchanged (runtime env → compile-time `option_env!` → constant), so CI can still override.
+- [x] Confirmed **no other `timepro.app` references** in the desktop. Version stays `0.1.0` for the inaugural release (releases are driven by `v*` tags, not a manual bump). Bundle metadata/icons already present (`identifier app.timepro.agent`, targets `all`).
+- [x] Note: the webview CSP `connect-src` still lists `http://localhost:3001` — harmless, because the UI calls Rust via `invoke()` and never hits the API directly (Rust does all HTTP). Re-verify at B5.
+- **Done when:** ✅ prod hosts are baked. The actual installer is produced by B2's CI (building a real installer locally needs the full Rust/Tauri toolchain and yields only a mac artifact here).
 
-### B2 + B3 · Cross-platform CI build → GitHub Releases 🔴 *(fold together)*
-- [ ] `.github/workflows/desktop-release.yml` using `tauri-apps/tauri-action`, matrix: `macos-latest` (arm64 + x64), `windows-latest`, `ubuntu-latest`; trigger on `v*` tag.
-- [ ] Unsigned (omit signing secrets).
-- [ ] Action drafts a GitHub Release + uploads `.dmg` / `.exe` / `.AppImage`.
-- **Done when:** tagging `vX.Y.Z` produces a Release with installers for all four targets.
+### B2 + B3 · Cross-platform CI build → GitHub Releases 🟡 *(workflow written & lint-clean; first real run needs GitHub)*
+- [x] `.github/workflows/desktop-release.yml` — `tauri-apps/tauri-action`, matrix: `macos-latest` ×2 (aarch64 + x86_64), `ubuntu-22.04`, `windows-latest`; trigger on `v*` tag (+ `workflow_dispatch`). Installs pnpm 9.15.0 + Node 22 + Rust (per-target) + Linux webkit2gtk-4.1 deps + rust-cache.
+- [x] **Unsigned** (no signing secrets) — release body tells users how to approve in Gatekeeper/SmartScreen.
+- [x] Bakes `TIMEPRO_API_URL`/`TIMEPRO_WEB_URL` at compile time (reinforces B1 constants). `releaseDraft: true` → drafts a GitHub Release and uploads `.dmg`/`.app`, `.msi`/`.exe`, `.deb`/`.AppImage`.
+- [x] **Validated:** YAML parses; `actionlint` clean (no findings).
+- [ ] **NEEDS GITHUB:** push to a GitHub remote with Actions enabled, then push a `v0.1.0` tag (or run `workflow_dispatch`) to produce the first Release. (CI can't run locally.)
+- **Done when:** tagging `vX.Y.Z` produces a draft Release with installers for all four targets.
 
 ### B4 · Wire the Download page 🔴
 - [ ] Replace `#` placeholders in `apps/web/src/app/download/page.tsx` with `…/releases/latest/download/<asset>` URLs.
@@ -149,5 +152,6 @@ Append dated entries as work lands.
 - **2026-06-16** — **A2 done.** Wrote `docker-compose.prod.yml` + env templates; ran the full stack locally and verified end-to-end (postgres→migrate→api→web; `/readyz` db:ok; 19 tables migrated). Confirmed Redis is genuinely unused (placeholder, no container). Fixed nonroot screenshot-volume ownership via a seeded dir in the api image. Pre-validates the A5 migration path. Files uncommitted.
 - **2026-06-16** — Committed A1+A2 on branch `feat/backend-deploy-pipeline` (`40d3905`, `2861049`).
 - **2026-06-16** — **A3 authored.** Wrote `infra/nginx/timepro.systemsd.co.conf` + runbook; `nginx -t` passes (validated in a container with stub certs). Confirmed API `trustProxy: true`. Apply step (certs + reload on host) blocked on A0. Files uncommitted.
+- **2026-06-16** — Committed A3 (`a09a9db`). **B1 done** — baked `*.systemsd.co` hosts into `state.rs`. **B2/B3 authored** — `desktop-release.yml` (4-target matrix, unsigned, drafts a GitHub Release); YAML + actionlint clean. First CI run needs a GitHub remote + a `v*` tag.
 </content>
 </invoke>
