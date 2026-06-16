@@ -71,14 +71,14 @@ all `public` tables were truncated for a clean multi-tenant start; the prod logi
 
 ## ⚠️ Verification gaps
 
-**Verified live:** web OpsCore sign-in against **production** OpsCore (full browser flow → `/dashboard`),
-the handoff-token exchange + **JIT org creation** (`Systemsd` org, `Hamid` admin), `/v1/me/profile`, CORS for `:3005`.
+**Verified live:**
+- **Web OpsCore sign-in** against production (browser flow → `/dashboard`); handoff exchange + **JIT org** (`Systemsd`/`Hamid`); `/v1/me/profile`; CORS for `:3005`.
+- **Desktop agent end-to-end against prod** — OpsCore **loopback login**, directory synced (15 real employees), timer tracking, **real screen capture (3456×2234) → upload → disk**, settings/heartbeat/activity/app ingest. All agent endpoints curl-verified 200.
 
 Built and typecheck/`cargo check`-clean but **layout not eyeballed in a browser this session** (API paths verified by curl):
 
 - Manager 4-column roster, **employee company-row dashboard**, Timeline **calendar strip** (+ dots), Reports employee gating.
 - Reports console, realtime presence dots, weekly-limit UI, My Account page + avatar dropdown + line icons.
-- Desktop OpsCore loopback login + the two Phase P items (compile + API proven; round-trip needs the Tauri GUI).
 - Browser extension (manifest/JS valid; not loaded in Chrome).
 
 ## Run (dev)

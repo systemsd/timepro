@@ -204,8 +204,22 @@ button:disabled { cursor: default; }
   align-items: center;
   gap: 14px;
 }
-.today-time .colon { transform: translateY(-6px); }
+.today-time .colon { transform: translateY(-6px); transform-origin: center; }
 .today-time.running { color: #7fbf63; }
+
+/* heartbeat: the two dots pulse (lub-dub) while the tracker is playing */
+.today-time.running .colon { animation: colon-heartbeat 1.3s ease-in-out infinite; }
+@keyframes colon-heartbeat {
+  0%   { transform: translateY(-6px) scale(1); }
+  14%  { transform: translateY(-6px) scale(1.22); }
+  28%  { transform: translateY(-6px) scale(1); }
+  42%  { transform: translateY(-6px) scale(1.22); }
+  70%  { transform: translateY(-6px) scale(1); }
+  100% { transform: translateY(-6px) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .today-time.running .colon { animation: none; }
+}
 
 .view-online {
   align-self: flex-start;

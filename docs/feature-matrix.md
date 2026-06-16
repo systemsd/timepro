@@ -40,7 +40,7 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 | **Own Timeline + calendar strip** | ✅ | Own day timeline (screenshots + activity), navigated by the calendar day-strip (dots = own tracked days). |
 | **Reports (self)** | ✅ | Reports console scoped to own data only; **Clients/Projects filter dropdowns hidden** for employees (server returns empty + UI hides them). |
 | **My Account** | 🟡 | Own profile ✅; edit/change-password/2FA/delete/API-token 🔴 (Phase 6). |
-| **Desktop OpsCore login** | ✅ | Loopback flow (browser → OpsCore → agent). Email dev-login also available (non-prod). |
+| **Desktop OpsCore login** | ✅ | Loopback flow (browser → **prod** OpsCore → agent), **verified end-to-end**. (Email login removed from the desktop UI too.) |
 | **Desktop → web "view online" handoff** | ✅ | One-time code opens the web dashboard already signed in. |
 | **Team / roster / other employees** | 🔴 (by design) | Employees have no team/roster access (RBAC). |
 | **Real login (password/JWT/MFA)** | 🔴 | Phase 6. |
