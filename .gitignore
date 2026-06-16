@@ -25,6 +25,11 @@ coverage/
 .env.*.local
 !.env.example
 
+# Production compose env (real secrets — keep only the .example templates)
+infra/compose/.env
+infra/compose/envs/*.env
+!infra/compose/envs/*.env.example
+
 # Logs
 logs/
 *.log
