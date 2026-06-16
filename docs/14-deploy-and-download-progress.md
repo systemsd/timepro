@@ -10,7 +10,7 @@
 > Maps to **Phase 7 — Ship pipeline (B9)** in [docs/13-opscore-feature-roadmap.md](13-opscore-feature-roadmap.md).
 > Read [CLAUDE.md](../CLAUDE.md) + [docs/HANDOFF.md](HANDOFF.md) first for ground truth.
 
-**Status:** 🟡 In progress — planning complete, build not started.
+**Status:** 🟡 In progress — all off-server work built & validated (A1/A2/A3/A6, B1/B2); local dry-run proved download→track→visible. Remaining is server setup + CI runs (see §0.1 + table below).
 **Last updated:** 2026-06-16.
 
 Status legend: ✅ done · 🟡 in progress · 🔴 not started · ⏳ blocked (needs input/credential) · ⛔ cut/deferred.
@@ -34,6 +34,21 @@ All four chosen to **mirror what's already in use** (the sibling app **OpsCore**
 
 ---
 
+## 0.1 Direction update (2026-06-16) — CI/CD auto-deploy on push to `main`
+
+Per manager (Hamid, Slack): **"we'll set up CI/CD for this repo … push to `main` → code auto-deploys."**
+This reshapes how **group A is executed** — the host steps (A3 apply / A4 / A5) get wrapped into a
+GitHub Actions **deploy workflow** instead of being run by hand. The Dockerfiles/compose/nginx/migrate
+already built are exactly what that workflow runs — nothing wasted.
+
+- **New task A6 — backend deploy workflow** (`.github/workflows/deploy.yml`): on push to `main`, SSH to
+  `178.105.58.173` → `git pull` → `docker compose -f infra/compose/docker-compose.prod.yml up -d --build`
+  (migrate one-shot runs automatically). Authorable off-server now.
+- **"Server access" = one-time setup**, then automated: (1) deploy SSH key on the server + private key as a
+  GitHub secret; (2) env files (`.env`, `envs/api.env`) on the server; (3) nginx + certbot once (A3 runbook).
+- Decision pending: build-on-host (simplest, chosen default) vs CI builds → GHCR → server pulls (scale-up).
+- **Domain confirmed:** `timepro` (single-p) is the real record; `timppro` (Hamid's nslookup typo) does not resolve.
+
 ## 1. Critical path
 
 ```
@@ -53,12 +68,10 @@ A0(DNS/host) → A1 → A2 → A3 → A4 → A5 ──┐
 ### A0 · Provision & DNS 🟡 *(user-gated — waiting on DNS)*
 - [x] Decide host: **co-locate on OpsCore's box `178.105.58.173`** (Ubuntu, runs OpsCore + apex `systemsd.co`). Reuse its nginx + certbot. No port clash (TimePro 4001/3005 vs OpsCore 3000/3001).
 - [x] Confirm subdomain labels: web **`timepro.systemsd.co`**, API **`api.timepro.systemsd.co`** (both currently free — no existing A record).
-- [ ] **USER ACTION** — add two DNS A-records (DNS-only / not proxied, matching opscore):
-  - `timepro.systemsd.co.` → `178.105.58.173`
-  - `api.timepro.systemsd.co.` → `178.105.58.173`
-- [ ] Verify both resolve: `dig +short timepro.systemsd.co api.timepro.systemsd.co` → `178.105.58.173`.
-- [ ] Confirm SSH access to `178.105.58.173`.
-- **Done when:** host has SSH access + both DNS names resolve to `178.105.58.173`.
+- [x] **DNS added** (2026-06-16) — `timepro` + `api.timepro` A-records → `178.105.58.173`. ✅ Verified via `@1.1.1.1` (both resolve; local resolver cache lagging but authoritative is correct).
+- [x] Host reachable: SSH/22 open, HTTPS/443 already serving (OpsCore's nginx).
+- [ ] **Open:** how on-host steps (A3-apply/A4/A5) get executed — no SSH creds in this env. Either user grants SSH (user@host) or runs the prepared commands.
+- **Done when:** both DNS names resolve (✅) + a way to run commands on the host is settled.
 - **Note:** OpsCore source repo is **not on this machine** (`/Users/macos/Code/systemsd/OpsCore` missing) — A4 (OpsCore env edit + commit) must run wherever that repo actually lives (likely on the server).
 
 ### A1 · Production Dockerfiles ✅ *(done 2026-06-16 — all three build & boot locally)*
@@ -101,6 +114,15 @@ A0(DNS/host) → A1 → A2 → A3 → A4 → A5 ──┐
 - [ ] Run `migrate` against prod Postgres.
 - [ ] Bring stack up; verify end-to-end: OpsCore login → JIT org → Team "Sync from OpsCore" → API over HTTPS → realtime presence WS connects.
 - **Done when:** ✅ a real user can log into TimePro on the public web. *(Group A complete.)*
+- **Note:** once A6 (deploy workflow) is live, A5 is performed *by* the workflow (push to main) rather than by hand — this manual run is the first-time bring-up / fallback.
+
+### A6 · Backend deploy workflow (CI/CD on push to main) 🟡 *(authored 2026-06-16; needs server secrets to run)*
+- [x] `.github/workflows/deploy.yml` — on push to `main` (+ `workflow_dispatch`): SSH to `178.105.58.173` → `git reset --hard origin/main` (untracked env files preserved) → `docker compose -f infra/compose/docker-compose.prod.yml up -d --build` (migrate one-shot runs first) → poll `/readyz` until healthy → prune. `concurrency` group prevents overlapping deploys.
+- [x] **Validated:** YAML parses; `actionlint` clean.
+- [ ] **One-time host setup (the "server access" from the Slack thread):** clone repo on server, create env files, add deploy SSH key, deploy user in `docker` group, run nginx/certbot once (A3).
+- [ ] **GitHub secrets:** `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY`, `DEPLOY_SSH_PORT?`.
+- [ ] Decision (pending): build-on-host (current) vs CI→GHCR→pull (scale-up).
+- **Done when:** a push to `main` auto-deploys and `/readyz` is green on the host.
 
 ---
 
@@ -152,6 +174,9 @@ Append dated entries as work lands.
 - **2026-06-16** — **A2 done.** Wrote `docker-compose.prod.yml` + env templates; ran the full stack locally and verified end-to-end (postgres→migrate→api→web; `/readyz` db:ok; 19 tables migrated). Confirmed Redis is genuinely unused (placeholder, no container). Fixed nonroot screenshot-volume ownership via a seeded dir in the api image. Pre-validates the A5 migration path. Files uncommitted.
 - **2026-06-16** — Committed A1+A2 on branch `feat/backend-deploy-pipeline` (`40d3905`, `2861049`).
 - **2026-06-16** — **A3 authored.** Wrote `infra/nginx/timepro.systemsd.co.conf` + runbook; `nginx -t` passes (validated in a container with stub certs). Confirmed API `trustProxy: true`. Apply step (certs + reload on host) blocked on A0. Files uncommitted.
-- **2026-06-16** — Committed A3 (`a09a9db`). **B1 done** — baked `*.systemsd.co` hosts into `state.rs`. **B2/B3 authored** — `desktop-release.yml` (4-target matrix, unsigned, drafts a GitHub Release); YAML + actionlint clean. First CI run needs a GitHub remote + a `v*` tag.
+- **2026-06-16** — Committed A3 (`a09a9db`). **B1 done** — baked `*.systemsd.co` hosts into `state.rs`. **B2/B3 authored** — `desktop-release.yml` (4-target matrix, unsigned, drafts a GitHub Release); YAML + actionlint clean. First CI run needs a GitHub remote + a `v*` tag. Remote exists: `github.com:systemsd/timepro.git`.
+- **2026-06-16** — A0 DNS verified resolving (`@1.1.1.1` → `178.105.58.173`).
+- **2026-06-16** — **A6 authored** — `deploy.yml` (push-to-main → SSH → compose up --build → /readyz health-gate). Per manager's CI/CD direction. YAML + actionlint clean. Needs one-time host setup + GitHub secrets. Domain re-verified: `timepro` resolves, `timppro` (Slack typo) does not.
+- **2026-06-16** — **Local dry-run (Path B)** — pre-validates the "tracking is visible" chain (B5/C1) on this Mac without the server. Local stack already running (API:4001/web:3005/pg container). Simulated the desktop agent for **Muhammad Anas** via the API (dev-header auth): `timer/start` → `agent/heartbeat` → `ingest/activity` (2 samples) → `screenshots` (a real 6.9 MB `screencapture` PNG → DB + disk). Verified visible: `/v1/roster` (as admin) returns `Muhammad Anas | presence=tracking | last_screenshot=True`; screenshot servable `[200] image/png`. **Note:** Rust toolchain was NOT installed on this machine (native desktop app couldn't launch) — installing it for Path A (real native-app run).
 </content>
 </invoke>

@@ -1,0 +1,84 @@
+name: Deploy Backend
+
+# Auto-deploy the backend (api + web + migrations) to the production host on
+# every push to main. The host runs the compose stack from this repo, so a
+# deploy is: pull the latest main, then `docker compose up -d --build` (which
+# also runs the one-shot migrate service). nginx + TLS are a one-time host
+# setup (infra/nginx/README.md) and are NOT touched by deploys.
+#
+# ── One-time setup before this workflow can run ──────────────────────────────
+# On the server (178.105.58.173):
+#   1. Clone this repo somewhere, e.g. /opt/timepro  (git remote = origin → GitHub)
+#   2. Create the env files (NOT in git):
+#        infra/compose/.env            (from .env.example)
+#        infra/compose/envs/api.env    (from envs/api.env.example)
+#   3. Add a deploy SSH public key to the deploy user's ~/.ssh/authorized_keys.
+#   4. Ensure the deploy user can run docker (in the `docker` group).
+#   5. Run the nginx + certbot setup once (infra/nginx/README.md).
+# In GitHub repo settings → Secrets and variables → Actions, add:
+#   DEPLOY_HOST      = 178.105.58.173
+#   DEPLOY_USER      = <deploy user>
+#   DEPLOY_PATH      = /opt/timepro            (the clone path from step 1)
+#   DEPLOY_SSH_KEY   = <private key matching the authorized_keys entry>
+#   DEPLOY_SSH_PORT  = 22                       (optional; defaults to 22)
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; let an in-flight deploy finish.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_SSH_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_SSH_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "${DEPLOY_PATH:?DEPLOY_PATH not set}"
+
+          echo "==> Updating code to origin/main"
+          git fetch --prune origin
+          git checkout main
+          git reset --hard origin/main   # untracked env files are preserved
+
+          echo "==> Building + starting the stack (migrate one-shot runs first)"
+          cd infra/compose
+          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+          echo "==> Waiting for the API to report ready"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4001/readyz >/dev/null 2>&1; then
+              echo "API healthy"; break
+            fi
+            [ "$i" -eq 30 ] && { echo "API did not become healthy in time"; exit 1; }
+            sleep 2
+          done
+
+          echo "==> Pruning dangling images"
+          docker image prune -f >/dev/null 2>&1 || true
+          echo "==> Deploy complete"
+          REMOTE
