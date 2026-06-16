@@ -44,7 +44,8 @@ export default function TimelinePage() {
   const userId = params.userId as string;
   const [date, setDate] = useState(todayLocal());
   const [viewMonth, setViewMonth] = useState(monthOf(todayLocal()));
-  const [activeDays, setActiveDays] = useState<Set<string>>(new Set());
+  const [dayActivity, setDayActivity] = useState<Record<string, number>>({}); // date → tracked seconds
+  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null); // day tooltip
   const [data, setData] = useState<Timeline | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,8 +68,8 @@ export default function TimelinePage() {
   useEffect(() => {
     if (!checked || !session) return;
     getTimelineActivity(userId, viewMonth)
-      .then((r) => setActiveDays(new Set(r.days.filter((d) => d.seconds > 0).map((d) => d.date))))
-      .catch(() => setActiveDays(new Set()));
+      .then((r) => setDayActivity(Object.fromEntries(r.days.map((d) => [d.date, d.seconds]))))
+      .catch(() => setDayActivity({}));
   }, [checked, session, userId, viewMonth]);
 
   if (!checked || !session) return <div className="center muted">Loading…</div>;
@@ -97,20 +98,29 @@ export default function TimelinePage() {
         <div className="cal-strip">
           {monthDays(viewMonth).map((c) => {
             const future = c.date > today;
+            const secs = dayActivity[c.date] ?? 0;
             return (
               <button
                 key={c.date}
                 className={`cal-day${c.date === date ? ' selected' : ''}${c.date === today ? ' today' : ''}${c.weekend ? ' weekend' : ''}${future ? ' future' : ''}`}
                 onClick={() => !future && setDate(c.date)}
                 disabled={future}
+                onMouseEnter={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setTip({ text: hhmm(secs), x: r.left + r.width / 2, y: r.top });
+                }}
+                onMouseLeave={() => setTip(null)}
               >
                 <span className="cal-dow">{c.dow}</span>
                 <span className="cal-num">{c.day}</span>
-                <span className={`cal-dot${activeDays.has(c.date) ? ' on' : ''}`} />
+                <span className={`cal-dot${secs > 0 ? ' on' : ''}`} />
               </button>
             );
           })}
         </div>
+        {tip && (
+          <div className="cal-tip" style={{ left: tip.x, top: tip.y }}>{tip.text}</div>
+        )}
       </div>
 
       <div className="tl-band">
@@ -253,6 +263,12 @@ function TLThumb({ id, at, onOpen }: { id: string; at: string; onOpen: () => voi
 
 function time(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+/** Zero-padded `00h 00m` (calendar-strip day tooltip). */
+function hhmm(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${pad(h)}h ${pad(m)}m`;
 }
 function hm(seconds: number): string {
   const h = Math.floor(seconds / 3600);

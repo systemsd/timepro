@@ -691,3 +691,15 @@ body {
   display: flex; align-items: center; justify-content: center; color: #9aa3b2;
   min-width: 320px; min-height: 220px; font-size: 14px;
 }
+
+/* calendar-strip day tooltip (fixed-position so the strip's scroll doesn't clip it) */
+.cal-tip {
+  position: fixed; transform: translate(-50%, calc(-100% - 9px));
+  background: #2f3a4d; color: #fff; font-size: 12px; font-weight: 600;
+  padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+  pointer-events: none; z-index: 200; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+.cal-tip::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: #2f3a4d;
+}

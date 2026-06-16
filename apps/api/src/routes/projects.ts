@@ -29,6 +29,8 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       return req.withTenantDb(async (tx) => {
+        // Only projects the logged-in user is assigned to (project_members) —
+        // this is the tracking picker, so you can only track projects you're on.
         const rows = await tx
           .select({
             id: schema.projects.id,
@@ -38,6 +40,13 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
             isBillable: schema.projects.isBillable,
           })
           .from(schema.projects)
+          .innerJoin(
+            schema.projectMembers,
+            and(
+              eq(schema.projectMembers.projectId, schema.projects.id),
+              eq(schema.projectMembers.userId, req.userId!),
+            ),
+          )
           .where(
             and(
               eq(schema.projects.organizationId, req.organizationId!),

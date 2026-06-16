@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { getDb, schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, isAdmin, requesterRole } from '../lib/access';
@@ -35,6 +35,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
             clients: z.number(),
             projects: z.number(),
             assignments: z.number(),
+            disabled: z.number(),
           }),
         },
         tags: ['admin'],
@@ -117,7 +118,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
 
         const role = mapOpsCoreRole(e.role);
         const [m] = await db
-          .select({ role: schema.memberships.role })
+          .select({ role: schema.memberships.role, status: schema.memberships.status })
           .from(schema.memberships)
           .where(and(eq(schema.memberships.organizationId, orgId), eq(schema.memberships.userId, user!.id)))
           .limit(1);
@@ -129,11 +130,48 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
             status: 'active',
             joinedAt: new Date(),
           });
-        } else if (m.role !== 'owner' && m.role !== role) {
+        } else if (m.role !== 'owner') {
+          // present in OpsCore → keep role in sync + re-activate if it had been
+          // disabled by a prior sync (employee re-added to the directory).
+          const patch: { role?: string; status?: string } = {};
+          if (m.role !== role) patch.role = role;
+          if (m.status !== 'active' && m.status !== 'invited') patch.status = 'active';
+          if (Object.keys(patch).length > 0) {
+            await db
+              .update(schema.memberships)
+              .set(patch)
+              .where(and(eq(schema.memberships.organizationId, orgId), eq(schema.memberships.userId, user!.id)));
+          }
+        }
+      }
+
+      // 2b) Disable OpsCore-managed members no longer present in the directory.
+      // Only touches users linked to OpsCore (have an `opscore_employee_id`);
+      // local/owner accounts are never auto-disabled.
+      const presentOps = new Set(emp.employees.map((e) => e.id));
+      const opsMembers = await db
+        .select({
+          userId: schema.memberships.userId,
+          opsId: schema.users.opscoreEmployeeId,
+          status: schema.memberships.status,
+          role: schema.memberships.role,
+        })
+        .from(schema.memberships)
+        .innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
+        .where(
+          and(
+            eq(schema.memberships.organizationId, orgId),
+            isNotNull(schema.users.opscoreEmployeeId),
+          ),
+        );
+      let disabled = 0;
+      for (const m of opsMembers) {
+        if (m.opsId && !presentOps.has(m.opsId) && m.role !== 'owner' && m.status === 'active') {
           await db
             .update(schema.memberships)
-            .set({ role })
-            .where(and(eq(schema.memberships.organizationId, orgId), eq(schema.memberships.userId, user!.id)));
+            .set({ status: 'suspended' })
+            .where(and(eq(schema.memberships.organizationId, orgId), eq(schema.memberships.userId, m.userId)));
+          disabled += 1;
         }
       }
 
@@ -195,6 +233,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
         clients: bp.business_partners.length,
         projects: proj.projects.length,
         assignments,
+        disabled,
       };
     },
   );

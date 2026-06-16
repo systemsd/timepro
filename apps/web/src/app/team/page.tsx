@@ -170,7 +170,10 @@ export default function TeamPage() {
                 setError(null);
                 try {
                   const r = await syncOpsCore();
-                  setSyncMsg(`Synced ${r.users} users · ${r.projects} projects · ${r.clients} clients`);
+                  setSyncMsg(
+                    `Synced ${r.users} users · ${r.projects} projects · ${r.clients} clients` +
+                      (r.disabled > 0 ? ` · ${r.disabled} disabled` : ''),
+                  );
                   await loadMembers(true);
                 } catch (e) {
                   setError(e instanceof Error ? e.message : String(e));

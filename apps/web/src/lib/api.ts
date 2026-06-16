@@ -66,6 +66,7 @@ export async function syncOpsCore(): Promise<{
   clients: number;
   projects: number;
   assignments: number;
+  disabled: number;
 }> {
   const res = await fetch(`${API_BASE}/v1/admin/opscore/sync`, {
     method: 'POST',
