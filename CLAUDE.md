@@ -131,8 +131,10 @@ cd apps/desktop/src-tauri && cargo check
 - **Screenshots (MVP)** are written to the local filesystem under `STORAGE_DIR`
   (default `apps/api/data/screenshots/{org}/{date}/{id}.png`) and served via
   `GET /v1/screenshots/:id/raw`. The S3 driver from [docs/07-storage.md](docs/07-storage.md) isn't wired yet.
-- **Screenshot capture cadence** is `screenshot_interval_sec` in `state.rs` (currently `300` = 12/hr,
-  matching the Settings team policy). Capture only runs while a timer is active.
+- **Screenshot capture cadence** is `screenshot_interval_sec` in `state.rs`, derived from the
+  `screenshots.per_hour` setting on each `/settings/effective` refresh (`300`s fallback before first fetch).
+  Capture only runs while a timer is active. The agent also enforces `screenshots.blur=always` (gaussian blur
+  before upload) and `tracking.auto_pause_minutes` (stops the timer after that many seconds of input idle).
 - **Migrations are expand-only / forward-only.** Never roll back the DB; write a new migration.
 - **Web is on :3005, not :3000 — prod-OpsCore/nginx collision.** Prod OpsCore (`https://opscore.systemsd.co`)
   runs behind nginx with its own app on `:3000`; nginx rewrites any `Location: http://localhost:3000/…` (its
@@ -161,7 +163,7 @@ UI uses line icons (`apps/web/src/components/icons.tsx`), no emojis.
 
 **Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
 - ✅ **Phase 0** (quick wins) — done.
-- ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`).
+- ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`). **Enforcement live:** agent honors `screenshots.{enabled,per_hour,blur=always,notify}`, `activity.tracking`, `app_url.tracking`, `tracking.auto_pause_minutes` (idle auto-pause); server enforces `limits.weekly_hours`. Only `time.allow_offline` is unenforced (offline-time feature not built).
 - ✅ **Phase 2 — Presence (B3)** — done (agent heartbeat → in-memory store → 3-state dots + "N online").
 - ✅ **Phase 4 — Activity + App tracking (B4/B5)** — done (agent activity aggregator + app polling →
   `/v1/ingest/activity` + `/ingest/app-usage` + `/ingest/url-usage`; Timeline activity %/per-slot app; roster last-app;
@@ -179,6 +181,6 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 - 🔴 **Phase 7 — Ship pipeline (B9)** — cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs (credential-gated).
 - 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
 - 🔴 **Phase 9 — Billing & plans**.
-- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
+- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle auto-pause (`tracking.auto_pause_minutes`) + `screenshots.blur=always` enforcement · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
 
 See also [docs/11-roadmap.md](docs/11-roadmap.md) (original MVP/P2/P3) and the per-doc status banners.

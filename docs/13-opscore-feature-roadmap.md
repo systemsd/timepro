@@ -40,7 +40,7 @@ light up together.
 | **B3 — Presence / heartbeat** | online dots in My Home (S2) + Timeline dropdown (S4) + "N online" headlines | 🔴 (`devices.last_seen_at` exists) |
 | **B4 — Activity tracking** | activity % + strip (S3), "Activity Level" setting (S11), activity column (S2) | 🔴 (`activity_samples` table exists, unused) |
 | **B5 — App & URL tracking** | last app/URL column (S2), per-slot app/URL (S3), "App & URL" setting (S11), browser extension (S12) | 🔴 (no tables) |
-| **B6 — Settings engine** | Settings page (S11), Team per-user overrides (S7), agent behavior | 🔴 (`settings_scoped` exists) |
+| **B6 — Settings engine** | Settings page (S11), Team per-user overrides (S7), agent behavior | ✅ (registry + resolver + API + UI + agent enforcement; only offline-time unbuilt) |
 | **B7 — Reports** | time-per-client (S10), weekly-limit enforcement (S11), team totals at scale (S2) | 🔴 |
 | **B8 — Rollups + scheduler** | scale-out of S2/S3 aggregation; recurring OpsCore sync (B1) | 🔴 |
 | **B9 — Build/sign/host pipeline** | Download page artifacts (S12) | 🔴 (local macOS build only) |
@@ -65,8 +65,8 @@ Ordered by dependency and value. Each phase is shippable.
 ### Phase 1 — Settings engine (B6) — ✅ BUILT
 - ✅ **S11** Settings catalog registry (`lib/settings-registry.ts`, 11 settings), resolver (org default ← user override, `lib/settings.ts`), Settings page UI (catalog list + typed editors + "Individual settings" per-user toggles), API (`/v1/settings`, `/settings/user/:id`, `/settings/effective`).
 - ✅ **S7** Team per-user overrides — same engine; Team "effective settings" now resolver-backed.
-- ✅ Agent consumes `/v1/settings/effective` (refresh ~60s): `screenshots.per_hour` → capture interval, `screenshots.enabled` honored. (Native screenshot-notification toast is the one deferred enforcement bit.)
-- 🔴 Settings gated on unbuilt features (activity, app/URL, offline time, weekly-limit) store + resolve correctly but only *act* once those features ship (flagged in the UI).
+- ✅ Agent consumes `/v1/settings/effective` (refresh ~60s) and **enforces**: `screenshots.per_hour` → capture interval, `screenshots.enabled`, `screenshots.blur=always` (gaussian blur before upload), `screenshots.notify` (toast), `activity.tracking`, `app_url.tracking`, `tracking.auto_pause_minutes` (idle auto-pause → `timer/stop`). Server enforces `limits.weekly_hours` (blocks `timer/start`).
+- 🔴 Only `time.allow_offline` is unenforced — the offline-time entry feature isn't built (honestly flagged in the Settings UI). All other settings store, resolve, **and act**.
 
 ### Phase 2 — Presence (B3) — ✅ BUILT
 - ✅ Agent heartbeat (`POST /v1/agent/heartbeat`, every ~45s with `is_tracking`); in-memory presence store (`lib/presence.ts`, 90s TTL, Redis-swappable).

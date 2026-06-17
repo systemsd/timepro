@@ -20,7 +20,7 @@ Monorepo: Turborepo + pnpm, Node 20. Apps: `api`, `web`, `desktop`. Packages: `d
 | Phase | Status | What's working |
 | ----- | ------ | -------------- |
 | **Phase 0** — quick wins | ✅ | role-aware My Home roster, employee Timeline, Projects/Clients pages, Download page, ☰ menu, RBAC scoping (C1) |
-| **Phase 1** — Settings engine (B6) | ✅ | catalog registry + resolver (org default ← user override), Settings page, Team per-user overrides, agent consumes `/settings/effective` |
+| **Phase 1** — Settings engine (B6) | ✅ | catalog registry + resolver (org default ← user override), Settings page, Team per-user overrides, agent consumes `/settings/effective`. **Enforced:** screenshots (enabled/per-hour/blur=always/notify), activity + app/URL tracking, idle auto-pause, weekly limit (server). Only `time.allow_offline` unbuilt. |
 | **Phase 2** — Presence (B3) | ✅ | agent heartbeat → in-memory store → 3-state dots (offline/connected/tracking) + "N online" |
 | **Phase 4** — Activity + App + URL tracking (B4/B5) | ✅ | agent activity aggregator (idle-derived) + app polling → ingest; Timeline activity %/per-slot app; roster last-app; **URL** ingest + Reports "Apps & URLs" + browser extension (`apps/extension`) |
 | **Phase 3** — OpsCore (B1/B2) | ✅ web + desktop | handoff-JWT login + Bearer service-API sync. **Desktop OpsCore login done** (loopback flow via the web `/desktop-auth` bridge). |
@@ -43,7 +43,7 @@ login is **OpsCore-only** (email/password removed) · line icons, no emojis.
 - **Phase 7 — Ship pipeline (B9)**: cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs. *Credential-gated.*
 - **Phase 8 — Scale & storage**: 8.1 reporting rollups + scheduler (B8) · 8.2 S3 storage + thumbnails · 8.3 worker/realtime services + Redis-backed presence.
 - **Phase 9 — Billing & plans**.
-- **Phase P — Polish & UX** *(small, anytime)*: ✅ native screenshot-notification toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links. *(Both ✅ compile via `cargo check`; not yet run in the GUI.)*
+- **Phase P — Polish & UX** *(small, anytime)*: ✅ native screenshot-notification toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 · ✅ idle auto-pause (`tracking.auto_pause_minutes`) + `screenshots.blur=always` enforcement · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links. *(Agent bits ✅ compile via `cargo check`; not yet run in the GUI.)*
 
 ---
 
