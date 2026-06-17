@@ -1,84 +1,125 @@
-name: Deploy Backend
+name: Deploy TimePro
 
-# Auto-deploy the backend (api + web + migrations) to the production host on
-# every push to main. The host runs the compose stack from this repo, so a
-# deploy is: pull the latest main, then `docker compose up -d --build` (which
-# also runs the one-shot migrate service). nginx + TLS are a one-time host
-# setup (infra/nginx/README.md) and are NOT touched by deploys.
+# Auto-deploy the backend stack (api + web, with a one-shot migrate) to the VPS
+# on every push to main. Same shape as OpsCore's deploy: verify the build in a
+# throwaway staging clone first, then deploy to production only if that passes.
+# TimePro runs as a Docker Compose stack; nginx + TLS are a one-time host setup
+# (infra/nginx/) and are NOT touched by deploys.
 #
-# ── One-time setup before this workflow can run ──────────────────────────────
-# On the server (178.105.58.173):
-#   1. Clone this repo somewhere, e.g. /opt/timepro  (git remote = origin → GitHub)
-#   2. Create the env files (NOT in git):
-#        infra/compose/.env            (from .env.example)
-#        infra/compose/envs/api.env    (from envs/api.env.example)
-#   3. Add a deploy SSH public key to the deploy user's ~/.ssh/authorized_keys.
-#   4. Ensure the deploy user can run docker (in the `docker` group).
-#   5. Run the nginx + certbot setup once (infra/nginx/README.md).
-# In GitHub repo settings → Secrets and variables → Actions, add:
-#   DEPLOY_HOST      = 178.105.58.173
-#   DEPLOY_USER      = <deploy user>
-#   DEPLOY_PATH      = /opt/timepro            (the clone path from step 1)
-#   DEPLOY_SSH_KEY   = <private key matching the authorized_keys entry>
-#   DEPLOY_SSH_PORT  = 22                       (optional; defaults to 22)
-# ─────────────────────────────────────────────────────────────────────────────
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST     – the VPS hostname/IP   (same VPS as OpsCore)
+#   VPS_USER     – ssh user (in the `docker` group)
+#   VPS_SSH_KEY  – private key for that user
+# Required on the VPS (one-time): see the repo's deploy notes.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Never run two deploys at once; let an in-flight deploy finish.
+# Never run two deploys at once; let an in-flight one finish.
 concurrency:
-  group: deploy-backend
+  group: deploy-timepro
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 1: build the images in a throwaway staging clone. If the build fails
+  # here, the deploy job never runs and production is left untouched.
+  # ───────────────────────────────────────────────────────────────────────────
+  verify-build:
+    name: Verify Build (staging)
     runs-on: ubuntu-latest
     steps:
-      - name: Configure SSH
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "$DEPLOY_SSH_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
 
-      - name: Deploy over SSH
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
-        run: |
-          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_SSH_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -s" <<'REMOTE'
-          set -euo pipefail
-          cd "${DEPLOY_PATH:?DEPLOY_PATH not set}"
+      - name: Verify Docker build on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
 
-          echo "==> Updating code to origin/main"
-          git fetch --prune origin
-          git checkout main
-          git reset --hard origin/main   # untracked env files are preserved
+            STAGING=/var/www/timepro-staging
+            PROD=/var/www/timepro
 
-          echo "==> Building + starting the stack (migrate one-shot runs first)"
-          cd infra/compose
-          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            echo "──▶ Preparing staging directory at $STAGING"
+            rm -rf "$STAGING"
+            mkdir -p "$STAGING"
 
-          echo "==> Waiting for the API to report ready"
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4001/readyz >/dev/null 2>&1; then
-              echo "API healthy"; break
-            fi
-            [ "$i" -eq 30 ] && { echo "API did not become healthy in time"; exit 1; }
-            sleep 2
-          done
+            # Fast local copy of the production tree (skip heavy dirs), then
+            # sync to the latest main from origin.
+            rsync -a \
+              --exclude='node_modules' \
+              --exclude='.next' \
+              --exclude='dist' \
+              "$PROD"/ "$STAGING"/
 
-          echo "==> Pruning dangling images"
-          docker image prune -f >/dev/null 2>&1 || true
-          echo "==> Deploy complete"
-          REMOTE
+            cd "$STAGING"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "──▶ Building images (no containers started)"
+            cd infra/compose
+            docker compose -f docker-compose.prod.yml build
+
+            echo "✅ Verification build succeeded"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 2: real deployment. Only runs when verify-build passes.
+  # ───────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: verify-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Deploy to production on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+
+            PROD=/var/www/timepro
+            STAGING=/var/www/timepro-staging
+
+            echo "──▶ Pulling latest main into $PROD"
+            cd "$PROD"
+            git fetch --prune origin
+            git checkout main
+            git reset --hard origin/main   # untracked env files are preserved
+
+            echo "──▶ Building + starting the stack (migrate one-shot runs first)"
+            cd infra/compose
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+            echo "──▶ Waiting for the API to report ready"
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:4001/readyz >/dev/null 2>&1; then
+                echo "API healthy"; break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "API did not become healthy in time — recent api logs:"
+                docker compose -f docker-compose.prod.yml logs --tail=50 api || true
+                exit 1
+              fi
+              sleep 2
+            done
+
+            echo "──▶ Pruning dangling images + cleaning staging"
+            docker image prune -f >/dev/null 2>&1 || true
+            rm -rf "$STAGING"
+
+            echo "✅ Deploy complete"

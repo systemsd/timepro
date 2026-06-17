@@ -106,7 +106,11 @@ cd apps/desktop/src-tauri && cargo check
   self. Use `visibleUsers(req)` / `canView()` / `isAdmin()` for any cross-user read.
 
 ### API routes (`apps/api/src/routes/`)
-`auth` · `health` · `me` · `projects` · `screenshots` · `team` · `timer` · `roster` · `timeline` · `clients`
+`auth` · `health` · `me` (today, profile) · `projects` (list **member-scoped** to the caller's active assignments) ·
+`screenshots` · `team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ `/:userId/activity`) ·
+`clients` · `settings` · `presence` · `ingest` (activity/app-usage/url-usage) ·
+`admin` (`opscore/sync` — **disables members absent from the OpsCore response**) · `reports` (filters/run/saved;
+employees get no clients/projects) · `realtime` (ws presence).
 (OpenAPI is generated from the Zod route schemas: `pnpm gen:openapi`.)
 
 ### Desktop Rust modules (`apps/desktop/src-tauri/src/`)
@@ -147,16 +151,18 @@ cd apps/desktop/src-tauri && cargo check
 
 ## What's real vs stubbed
 
-**Working end-to-end:** desktop time tracking + automatic screenshot capture → API → DB + disk
-(native OS toast gated by `screenshots.notify`); web + desktop OpsCore login + desktop→web handoff;
-**role-aware My Home** (admin/manager → team roster with realtime presence dots, employee → personal +
-weekly-limit banner); **employee Timeline** (screenshot slots + activity % + day total + day nav);
-**Reports** console (Summary/Detailed/Weekly, saved reports, CSV/PDF export, Apps & URLs); **Team** page
-(roles, project toggles, invite/pause/archive/delete, RBAC-scoped per C1); **Projects** + **Clients** pages;
-**Settings** (org defaults + per-user overrides); **My Account** page (`/account`, per-user profile via
-`/v1/me/profile`) reached from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page
-(placeholder links); ☰ menu (role-filtered). Weekly-limit enforcement blocks `timer/start` at the cap.
-UI uses line icons (`apps/web/src/components/icons.tsx`), no emojis.
+**Working end-to-end (desktop agent verified live against PRODUCTION OpsCore):** loopback OpsCore login → directory
+sync → time tracking → real screen capture → API → DB + disk (native OS toast gated by `screenshots.notify`; the
+timer colon "beats" while tracking); the agent **project picker shows only the user's active assignments**.
+**Role-aware home** — admin/manager → 4-column team roster with realtime presence dots; **employee → company-row
+dashboard** (org + role badge + last-active + period totals, via the self-scoped `/v1/roster`).
+**Timeline** (screenshot slots + activity % + day total) with a **calendar day-strip** date nav (per-user activity
+dots + `00h 00m` hover tooltip) and a **screenshot lightbox** (click → modal with prev/next).
+**Reports** console (Summary/Detailed/Weekly, saved reports, CSV/PDF, Apps & URLs; Clients/Projects filters hidden
+for employees); **Team** page (RBAC-scoped per C1; **OpsCore sync auto-disables members absent from the directory**);
+**Projects** + **Clients** pages; **Settings** (org + per-user overrides); **My Account** (`/account`, via `/v1/me/profile`)
+from the **avatar dropdown** (Dashboard · My Account · Log out); ☰ menu (role-filtered). Weekly-limit enforcement
+blocks `timer/start` at the cap. UI uses line icons (`apps/web/src/components/icons.tsx`), no emojis. Login is OpsCore-only.
 
 **Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
 - ✅ **Phase 0** (quick wins) — done.
@@ -174,7 +180,7 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 - ✅ **Phase 5** Reports (B7) + realtime presence (B10) — see [docs/06-reporting.md §0](docs/06-reporting.md). Rollups (B8) deferred, absences cut.
 
 **Pending — phased (full detail in [docs/13 §3](docs/13-opscore-feature-roadmap.md)):**
-- 🔴 **Phase 6 — Multi-tenancy & real auth** *(next)* — one shared DB, many orgs: 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX.
+- ⏸️ **Phase 6 — Multi-tenancy & real auth** *(PAUSED — single-tenant Systemsd is the current focus)* — one shared DB, many orgs: 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX.
 - 🔴 **Phase 7 — Ship pipeline (B9)** — cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs (credential-gated).
 - 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
 - 🔴 **Phase 9 — Billing & plans**.

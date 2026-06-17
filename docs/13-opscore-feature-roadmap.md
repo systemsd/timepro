@@ -107,7 +107,7 @@ Ordered by dependency and value. Each phase is shippable.
 
 **Phase 5 is complete** for the agreed scope (B7 + B10; B8 deferred, absences cut).
 
-### Phase 6 — Multi-tenancy & real auth 🔴 (next; agreed direction)
+### Phase 6 — Multi-tenancy & real auth ⏸️ PAUSED (single-tenant Systemsd is the current focus)
 One shared DB, many companies (orgs). TimePro-native onboarding + real auth; OpsCore demoted to an
 optional per-org SSO connector; fail-closed RLS. Replaces the `x-dev-*` shim and the single-`OPSCORE_ORG_SLUG`
 assumption. Sub-phases:

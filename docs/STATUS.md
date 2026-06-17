@@ -22,10 +22,12 @@ the prod-OpsCore nginx rewriting the handoff redirect), API **4001**. Sign-in is
 `screenshots.notify`), Settings engine, realtime presence, activity/app/URL tracking, the Reports console
 (saved reports, CSV/PDF, weekly-limit enforcement), and **OpsCore sign-in wired to production and verified**.
 
-Recent UI shape:
+Recent UI / behavior:
 - **Manager dashboard** = 4-column team roster overview (today/yesterday/week/month).
 - **Employee dashboard** = company-row table (org name + role badge + last-active + period totals), powered by the now self-scoped `/v1/roster`.
-- **Timeline** carries the **calendar day-strip** date nav (per-user activity dots).
+- **Timeline** carries the **calendar day-strip** date nav (per-user activity dots + `00h 00m` hover tooltip); clicking a screenshot opens a **lightbox** with prev/next.
+- **Desktop**: project picker is **member-scoped** (only your active assignments); timer colon "beats" while tracking.
+- **OpsCore sync** auto-disables members no longer in the directory (→ suspended; re-activates returners).
 - **Reports**: Clients/Projects filter dropdowns hidden for employees.
 - **My Account** (`/account`) via the avatar dropdown (Dashboard · My Account · Log out).
 - UI uses line icons, no emojis. Login is OpsCore-only.
@@ -41,7 +43,7 @@ Recent UI shape:
 | **3** | OpsCore (B1/B2) — web handoff login + sync + **desktop loopback login** | ✅ Done |
 | **4** | Activity + App + **URL** tracking (B4/B5) — ingest + reporting + browser extension | ✅ Done |
 | **5** | Reports + realtime (B7/B10) — console, saved reports, CSV/PDF, **weekly-limit enforcement**, presence WS | ✅ Done |
-| **6** | **Multi-tenancy & real auth** *(next)* | 🔴 Not started |
+| **6** | **Multi-tenancy & real auth** | ⏸️ Paused (single-tenant focus) |
 | **7** | Ship pipeline (B9) — build/sign/host installers | 🔴 Not started |
 | **8** | Scale & storage — rollups, S3, worker/realtime | 🔴 Not started |
 | **9** | Billing & plans | 🔴 Not started |
@@ -49,7 +51,7 @@ Recent UI shape:
 
 ## Pending work (detail)
 
-- **Phase 6 — Multi-tenancy & real auth** *(recommended next; agreed direction)*: one shared DB, many orgs.
+- **Phase 6 — Multi-tenancy & real auth** *(PAUSED — single-tenant Systemsd is the current focus)*: one shared DB, many orgs.
   - 6.1 Real auth — Argon2 passwords + signed **JWT** (cookie + bearer); retire the `x-dev-*` dev shim.
   - 6.2 Org onboarding — `signup` creates org + first owner; real invites. _(Open: multi-org membership? public signup vs invite-only?)_
   - 6.3 Per-org OpsCore SSO — move OpsCore config off global env to per-org; route by org.

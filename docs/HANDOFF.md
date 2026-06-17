@@ -66,14 +66,17 @@ Monorepo: Turborepo + pnpm, Node 20. Apps: `api`, `web`, `desktop`. Packages: `d
 **Original MVP (pre-OpsCore) also done:** time tracking, automatic screenshot capture → API → disk,
 web/desktop login, desktop→web "view online" handoff, Team management.
 
-**Recent UI (this session):** **Manager dashboard** = 4-column team roster overview · **Employee dashboard** =
+**Recent UI / behavior:** **Manager dashboard** = 4-column team roster overview · **Employee dashboard** =
 company-row table (org + role badge + last-active + period totals; `/v1/roster` is now self-scoped for employees) ·
-**Timeline** date nav is a **calendar day-strip** (per-user activity dots) · **My Account** page (`/account`) +
-avatar dropdown (Dashboard · My Account · Log out) · **Reports** hides Clients/Projects dropdowns for employees ·
-login is **OpsCore-only** (email/password removed) · line icons, no emojis.
+**Timeline** date nav is a **calendar day-strip** (per-user activity dots + hover tooltip `00h 00m`); clicking a
+screenshot opens a **lightbox modal** with prev/next (← →) · desktop timer colon "beats" (digital-clock blink) while
+tracking · desktop **project picker is member-scoped** (only your active assignments) · **OpsCore sync disables members
+absent from the directory** (→ suspended) · **My Account** page (`/account`) + avatar dropdown (Dashboard · My Account ·
+Log out) · **Reports** hides Clients/Projects dropdowns for employees · login is **OpsCore-only** · line icons, no emojis.
+**Desktop agent verified end-to-end against prod** (loopback login → directory → track → real capture → upload).
 
 ### 🔴 Pending — phased (full detail in [docs/13 §3](13-opscore-feature-roadmap.md))
-- **Phase 6 — Multi-tenancy & real auth** *(next; agreed direction)*: one shared DB, many orgs. 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO (config moves off global env) · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX. *Folds in the old "real auth / MFA" and "RLS / partitioning" items.*
+- **Phase 6 — Multi-tenancy & real auth** *(⏸️ PAUSED — single-tenant Systemsd is the current focus)*: one shared DB, many orgs. 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO (config moves off global env) · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX. *Folds in the old "real auth / MFA" and "RLS / partitioning" items.*
 - **Phase 7 — Ship pipeline (B9)**: cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs. *Credential-gated.*
 - **Phase 8 — Scale & storage**: 8.1 reporting rollups + scheduler (B8) · 8.2 S3 storage + thumbnails · 8.3 worker/realtime services + Redis-backed presence.
 - **Phase 9 — Billing & plans**.
@@ -152,10 +155,10 @@ verifies locally (signature only) — sign-in does **not** call `OPSCORE_API_URL
 ## 5. API route inventory (`apps/api/src/routes/`)
 
 `auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today, profile) ·
-`projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw) · `team` · `timer` ·
-`roster` (self-scoped for employees) · `timeline` (+ :userId/activity for the calendar dots) · `clients` ·
+`projects` (list is **member-scoped** to the caller's active assignments; + manage, :id/members) · `screenshots` (ingest + list + raw) ·
+`team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ :userId/activity for the calendar dots) · `clients` ·
 `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) · `ingest` (activity, app-usage, url-usage) ·
-`admin` (opscore/sync) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
+`admin` (opscore/sync — **disables members absent from the response**, re-activates returners) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
 
 **Auth shim:** `requireAuth` accepts `x-dev-org` + `x-dev-user` headers (non-prod). RBAC scoping (admin=all /
 manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/access.ts`.
@@ -202,13 +205,14 @@ C8 break-glass local owner · C9 screenshot self-delete admin-configurable defau
 
 ## 9. Recommended next steps
 
-Phases 0–5 are done. The remaining work is phased in [docs/13 §3](13-opscore-feature-roadmap.md):
+Phases 0–5 are done; **Phase 6 (multi-tenancy) is PAUSED** — the focus is the single-tenant Systemsd product,
+which is **live against production OpsCore and verified end-to-end** (web + desktop). Sensible next work:
 
-1. **Phase 6 — Multi-tenancy & real auth** *(recommended next)* — start with **6.1 real auth** (Argon2 + JWT, retire the `x-dev-*` shim); it's the foundation for everything multi-tenant. Open sub-decisions: multi-org membership vs single-org, public signup vs invite-only.
-2. **Phase P — Polish** — quick, parallelizable wins (screenshot toast, desktop weekly-limit 409 message).
-3. **Phase 7 — Ship pipeline** — installer sign/notarize/host (needs signing creds + hosting).
-4. **Phase 8 / 9** — scale & storage, then billing.
+1. **Verify & polish the built UIs** in a browser (employee dashboard, Timeline strip + screenshot modal, Reports, My Account) + remaining **Phase P** wins (keyboard/mouse activity counts, Reports shareable links).
+2. **Phase 7 — Ship pipeline** — installer sign/notarize/host so the agent can be distributed (needs signing creds + hosting).
+3. **Phase 8 / 9** — scale & storage (rollups, S3), then billing — only when needed.
+4. **Phase 6 (multi-tenancy)** — resume if/when going multi-company (real auth + onboarding + RLS).
 
-> **DB note:** all `public` tables were **truncated** (schema + migration journal intact) for a clean multi-tenant start.
+> **DB note:** the production OpsCore login + sync populated the `Systemsd` org (employees/projects/clients); the migration journal is intact.
 
 Everything verified this session is reproducible via the commands in §3.
