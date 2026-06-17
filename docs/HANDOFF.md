@@ -5,6 +5,43 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
+## 🚧 ACTIVE WORK (2026-06-16) — Deploy & Download feature
+
+> Continuing work on making the desktop app **downloadable** + **deploying its backend**.
+> **Source of truth: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md)** (full tracker).
+
+**Goal:** "Make the app downloadable so users start tracking, and tracking is visible." Scope = Group A (deploy backend) + Group B (downloadable installers).
+
+**Locked decisions (all mirror sibling app OpsCore):**
+- Host: single Ubuntu box `178.105.58.173` (co-located with OpsCore), Docker + nginx + Let's Encrypt.
+- Domain: `timepro.systemsd.co` (web) + `api.timepro.systemsd.co` (api) — **single-p `timepro`**, DNS verified. (`timppro` was a Slack typo.)
+- Installers: unsigned interim, hosted on GitHub Releases.
+- CI/CD: manager (Hamid) wants **push to `main` → auto-deploy**.
+
+**Branch `feat/backend-deploy-pipeline`** (⚠️ **NOT pushed yet**), 5 commits authored as **Hamid Ali** (repo-local git config = `alihamidali2@gmail.com` — keep using it):
+- A1 ✅ prod Dockerfiles (api/web/migrate) — built + boot-tested
+- A2 ✅ `infra/compose/docker-compose.prod.yml` + env templates — full stack ran locally, `/readyz` db:ok
+- A3 ✅ `infra/nginx/timepro.systemsd.co.conf` + runbook — `nginx -t` validated
+- B1 ✅ baked prod URLs into `apps/desktop/src-tauri/src/state.rs`
+- B2/B3 ✅ `.github/workflows/desktop-release.yml` (tag `v*` → installers)
+- A6 ✅ `.github/workflows/deploy.yml` (push main → SSH → compose up → /readyz gate)
+
+**Proven locally:** full stack + native desktop app both build & run; download→track→visible chain confirmed via a simulated agent session (cleaned up after).
+
+**Pending (~1 day, mostly setup, no big coding):**
+1. One-time **server setup** (needs Hamid/server access): clone repo, create env files, deploy SSH key, run nginx/certbot once.
+2. **GitHub secrets:** `DEPLOY_HOST/USER/PATH/SSH_KEY`.
+3. **A4:** set OpsCore prod `TIMEPRO_URL=https://timepro.systemsd.co` + restart.
+4. **Push branch + tag `v0.1.0`** → CI builds installers.
+5. **B4:** wire Download page (`apps/web/src/app/download/page.tsx`) to release URLs.
+6. **B5:** verify on a clean machine.
+
+**Deploy-specific gotchas:** turbo pinned `2.9.16` in Dockerfiles (prune determinism); `@timepro/db` bundled into api via `apps/api/tsup.config.ts` (pg/uuid kept external so the ESM bundle boots); api runs distroless `nonroot` so the screenshot volume dir is seeded in the image for ownership; compose ports bind `127.0.0.1` (nginx fronts them); no Redis container (`REDIS_URL` is declared-but-unused).
+
+**Untouched pre-existing changes (leave them):** `apps/web/src/app/login/page.tsx` (modified) + `List` (stray, untracked).
+
+---
+
 ## 1. What this is
 
 TimePro — employee time-tracking + screenshot monitoring (Hubstaff/Time-Doctor/ScreenshotMonitor class).
