@@ -536,6 +536,37 @@ body {
 }
 .rep-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* preset links arranged as a 2-row × 4-col grid (this-* over last-*) */
+.rep-presets-grid { display: grid; grid-template-columns: repeat(4, max-content); gap: 5px 20px; }
+
+/* stacked full-width filter fields */
+.rep-stack { display: flex; flex-direction: column; gap: 10px; }
+.rep-stack > * { width: 100%; }
+
+/* report-type text links */
+.rep-typelinks {
+  display: flex; flex-wrap: wrap; gap: 20px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.rep-typelink { border: none; background: none; color: var(--accent); cursor: pointer; font-size: 14px; padding: 2px 0; }
+.rep-typelink:hover { text-decoration: underline; }
+.rep-typelink.active { font-weight: 700; text-decoration: underline; }
+
+/* group-by chip field */
+.rep-gb { position: relative; }
+.rep-gb-field {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 42px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: #fff; cursor: pointer;
+}
+.rep-gb-ph { color: var(--muted); font-size: 14px; }
+.rep-gb-chip {
+  display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 10px; font-size: 13px; color: var(--text);
+}
+.rep-gb-chip button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
+.rep-gb-chip button:hover { color: var(--text); }
+.rep-gb .rep-caret { margin-left: auto; }
+
 /* toggles + actions */
 .rep-check { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text); }
 .rep-check.disabled { color: var(--muted-2); }

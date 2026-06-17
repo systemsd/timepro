@@ -191,21 +191,15 @@ function Chart({ daily, total }: { daily: ReportResult['daily']; total: number }
 
 // ---- page ----
 
-const REPORT_TYPES: Array<{ value: ReportType | 'saved'; label: string }> = [
-  { value: 'summary', label: 'Summary' },
-  { value: 'detailed', label: 'Detailed' },
-  { value: 'weekly', label: 'Weekly Report' },
-  { value: 'saved', label: 'Saved Report' },
-];
-
-const PRESETS: Array<{ value: Preset; label: string }> = [
+// Row-major order for the 4-column preset grid (top row this-*, bottom row last-*).
+const PRESETS_GRID: Array<{ value: Preset; label: string }> = [
   { value: 'today', label: 'Today' },
-  { value: 'yesterday', label: 'Yesterday' },
   { value: 'this_week', label: 'This Week' },
-  { value: 'last_week', label: 'Last Week' },
   { value: 'this_month', label: 'This Month' },
-  { value: 'last_month', label: 'Last Month' },
   { value: 'this_year', label: 'This Year' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'last_week', label: 'Last Week' },
+  { value: 'last_month', label: 'Last Month' },
   { value: 'last_year', label: 'Last Year' },
 ];
 
@@ -214,6 +208,54 @@ const GROUP_DIMS: Array<{ value: GroupDim; label: string }> = [
   { value: 'project', label: 'Project' },
   { value: 'client', label: 'Client' },
 ];
+
+// Named report types (text links). Each maps to an engine mode + default grouping
+// + which result tab to land on. "Apps & URLs" is a summary that opens the Apps tab.
+const REPORT_LINKS: Array<{ id: string; label: string; mode: ReportType; groupBy?: GroupDim[]; tab: Tab }> = [
+  { id: 'summary_project', label: 'Summary by project', mode: 'summary', groupBy: ['project'], tab: 'timeline' },
+  { id: 'summary_employee', label: 'Summary by employee', mode: 'summary', groupBy: ['employee'], tab: 'timeline' },
+  { id: 'weekly', label: 'Weekly', mode: 'weekly', groupBy: ['employee'], tab: 'timeline' },
+  { id: 'detailed', label: 'Detailed', mode: 'detailed', tab: 'timeline' },
+  { id: 'apps', label: 'Apps & URLs', mode: 'summary', groupBy: ['employee'], tab: 'apps' },
+];
+
+/** Group-by chip field: selected dims as removable "Group by X" chips + a dropdown to add more. */
+function GroupByField({ value, onChange }: { value: GroupDim[]; onChange: (v: GroupDim[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  const remaining = GROUP_DIMS.filter((d) => !value.includes(d.value));
+  const lbl = (v: GroupDim) => GROUP_DIMS.find((d) => d.value === v)?.label.toLowerCase() ?? v;
+  return (
+    <div className="rep-gb" ref={ref}>
+      <div className="rep-gb-field" onClick={() => setOpen((o) => !o)}>
+        {value.length === 0 && <span className="rep-gb-ph">Group by…</span>}
+        {value.map((v) => (
+          <span className="rep-gb-chip" key={v}>
+            <button type="button" aria-label={`Remove group by ${lbl(v)}`}
+              onClick={(e) => { e.stopPropagation(); onChange(value.filter((x) => x !== v)); }}>×</button>
+            Group by {lbl(v)}
+          </span>
+        ))}
+        <span className="rep-caret">▾</span>
+      </div>
+      {open && remaining.length > 0 && (
+        <div className="rep-ms-menu">
+          {remaining.map((d) => (
+            <button type="button" key={d.value} className="rep-ms-clear"
+              onClick={() => { onChange([...value, d.value]); setOpen(false); }}>
+              Group by {d.label.toLowerCase()}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type Tab = 'timeline' | 'employees' | 'projects' | 'clients' | 'notes' | 'apps';
 
@@ -231,23 +273,28 @@ export default function ReportsPage() {
   const [clientIds, setClientIds] = useState<string[]>([]);
   const [projectIds, setProjectIds] = useState<string[]>([]);
   const [noteContains, setNoteContains] = useState('');
-  const [groupBy, setGroupBy] = useState<GroupDim[]>(['employee', 'project']);
+  const [groupBy, setGroupBy] = useState<GroupDim[]>(['employee']);
   const [onlyOffline, setOnlyOffline] = useState(false);
   const [excludeArchived, setExcludeArchived] = useState(false);
 
   const [result, setResult] = useState<ReportResult | null>(null);
   const [tab, setTab] = useState<Tab>('timeline');
+  const [preferredTab, setPreferredTab] = useState<Tab>('timeline');
+  const [reportLink, setReportLink] = useState<string>('summary_employee');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [saved, setSaved] = useState<SavedReport[]>([]);
   const reloadSaved = () => getSavedReports().then((r) => setSaved(r.reports)).catch(() => setSaved([]));
 
-  // default group-by per report type
-  useEffect(() => {
-    if (mode === 'summary') setGroupBy(['employee', 'project']);
-    else if (mode === 'weekly') setGroupBy(['employee']);
-  }, [mode]);
+  // pick a named report type → sets the underlying mode + default group-by + result tab
+  const pickReportLink = (l: (typeof REPORT_LINKS)[number]) => {
+    setReportLink(l.id);
+    if (l.id === 'saved') { setMode('saved'); return; }
+    setMode(l.mode);
+    if (l.groupBy) setGroupBy(l.groupBy);
+    setPreferredTab(l.tab);
+  };
 
   useEffect(() => {
     if (!checked || !session) return;
@@ -268,7 +315,7 @@ export default function ReportsPage() {
     try {
       const res = await runReport(input);
       setResult(res);
-      setTab('timeline');
+      setTab(preferredTab);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -351,9 +398,6 @@ export default function ReportsPage() {
   const exportCsv = () => { if (result) downloadCsv(result); };
   const exportPdf = () => window.print();
 
-  const toggleGroup = (d: GroupDim) =>
-    setGroupBy((g) => (g.includes(d) ? g.filter((x) => x !== d) : [...g, d]));
-
   const tzLabel = useMemo(() => {
     const off = -new Date().getTimezoneOffset() / 60;
     return `UTC${off >= 0 ? '+' : ''}${off}`;
@@ -376,8 +420,8 @@ export default function ReportsPage() {
               <span className="rep-arrow">▶</span>
               <input type="date" value={to} min={from} max={todayLocal()} onChange={(e) => { setTo(e.target.value); setActivePreset(null); }} />
             </div>
-            <div className="rep-presets">
-              {PRESETS.map((p) => (
+            <div className="rep-presets-grid">
+              {PRESETS_GRID.map((p) => (
                 <button
                   key={p.value}
                   className={`rep-preset ${activePreset === p.value ? 'active' : ''}`}
@@ -390,40 +434,40 @@ export default function ReportsPage() {
             <div className="rep-tz" title="Report timezone (viewer)">Report times are {tzLabel}</div>
           </div>
 
-          {/* row 2: filters — clients/projects are manager/admin only */}
-          <div className="rep-row rep-filters">
+          {/* row 2: filters — stacked full-width fields (clients/projects are manager/admin only) */}
+          <div className="rep-stack">
             <MultiSelect placeholder="Select employees and groups" options={filters?.employees ?? []} selected={userIds} onChange={setUserIds} />
             {session.role !== 'employee' && (
               <>
-                <MultiSelect placeholder="Select clients" options={filters?.clients ?? []} selected={clientIds} onChange={setClientIds} />
                 <MultiSelect placeholder="Select projects" options={(filters?.projects ?? []).map((p) => ({ id: p.id, name: p.name }))} selected={projectIds} onChange={setProjectIds} />
+                <MultiSelect placeholder="Select clients" options={filters?.clients ?? []} selected={clientIds} onChange={setClientIds} />
               </>
             )}
             <input className="rep-note" placeholder="Note contains text" value={noteContains} onChange={(e) => setNoteContains(e.target.value)} />
           </div>
 
-          {/* row 3: report type + group by */}
-          <div className="rep-row rep-typerow">
-            <label className="rep-typelabel">Report</label>
-            <select className="rep-typeselect" value={mode} onChange={(e) => setMode(e.target.value as ReportType | 'saved')}>
-              {REPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-
-            {(mode === 'summary' || mode === 'weekly') && (
-              <div className="rep-groupby">
-                <span className="rep-groupby-label">Group by</span>
-                {GROUP_DIMS.map((d) => (
-                  <button
-                    key={d.value}
-                    className={`rep-chip ${groupBy.includes(d.value) ? 'on' : ''}`}
-                    onClick={() => toggleGroup(d.value)}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-            )}
+          {/* row 3: report-type links + group-by chip field */}
+          <div className="rep-typelinks">
+            {REPORT_LINKS.map((l) => (
+              <button
+                key={l.id}
+                className={`rep-typelink ${reportLink === l.id && mode !== 'saved' ? 'active' : ''}`}
+                onClick={() => pickReportLink(l)}
+              >
+                {l.label}
+              </button>
+            ))}
+            <button
+              className={`rep-typelink ${mode === 'saved' ? 'active' : ''}`}
+              onClick={() => { setReportLink('saved'); setMode('saved'); }}
+            >
+              Saved
+            </button>
           </div>
+
+          {(mode === 'summary' || mode === 'weekly') && (
+            <GroupByField value={groupBy} onChange={setGroupBy} />
+          )}
 
           {/* row 4: toggles + actions */}
           <div className="rep-row rep-actions">
