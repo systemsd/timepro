@@ -349,6 +349,14 @@ export async function getSettingsCatalog(): Promise<{
   return res.json();
 }
 
+/** The current user's own effective settings (what policies apply to them). */
+export async function getMyEffectiveSettings(): Promise<Record<string, SettingValue>> {
+  const res = await fetch(`${API_BASE}/v1/settings/effective`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  const json = (await res.json()) as { effective: Record<string, SettingValue> };
+  return json.effective;
+}
+
 export async function setOrgSetting(key: string, value: SettingValue): Promise<void> {
   const res = await fetch(`${API_BASE}/v1/settings`, {
     method: 'PUT',

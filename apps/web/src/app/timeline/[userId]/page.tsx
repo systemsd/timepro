@@ -7,6 +7,7 @@ import { useSession } from '@/lib/useSession';
 import { CloseIcon, TrashIcon } from '@/components/icons';
 import {
   deleteScreenshot,
+  getMyEffectiveSettings,
   getScreenshotObjectUrl,
   getTimeline,
   getTimelineActivity,
@@ -84,9 +85,12 @@ export default function TimelinePage() {
   const [usage, setUsage] = useState<TimelineAppsUrls | null>(null);
   const [usageTab, setUsageTab] = useState<'apps' | 'urls'>('apps');
   const [refreshTick, setRefreshTick] = useState(0); // bumped after a screenshot delete
+  const [allowSelfDelete, setAllowSelfDelete] = useState(false);
 
-  // managers/admins can delete screenshots; employees gated server-side (C9)
-  const canDeleteShots = session?.role !== 'employee';
+  // admins/managers can delete; an employee can delete their own only when the
+  // screenshots.allow_self_delete policy is on (C9). Mirrors the API's RBAC.
+  const isSelf = session?.user_id === userId;
+  const canDeleteShots = session?.role !== 'employee' || (isSelf && allowSelfDelete);
 
   // all of the day's screenshots, flattened + chronological — for modal nav
   const allShots = (data?.slots ?? [])
@@ -115,6 +119,13 @@ export default function TimelinePage() {
       .then(setUsage)
       .catch(() => setUsage(null));
   }, [checked, session, userId, date]);
+
+  useEffect(() => {
+    if (!checked || !session || session.role !== 'employee') return;
+    getMyEffectiveSettings()
+      .then((e) => setAllowSelfDelete(!!e['screenshots.allow_self_delete']))
+      .catch(() => setAllowSelfDelete(false));
+  }, [checked, session]);
 
   if (!checked || !session) return <div className="center muted">Loading…</div>;
 
