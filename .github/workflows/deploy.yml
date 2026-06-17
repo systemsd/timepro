@@ -1,0 +1,125 @@
+name: Deploy TimePro
+
+# Auto-deploy the backend stack (api + web, with a one-shot migrate) to the VPS
+# on every push to main. Same shape as OpsCore's deploy: verify the build in a
+# throwaway staging clone first, then deploy to production only if that passes.
+# TimePro runs as a Docker Compose stack; nginx + TLS are a one-time host setup
+# (infra/nginx/) and are NOT touched by deploys.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST     – the VPS hostname/IP   (same VPS as OpsCore)
+#   VPS_USER     – ssh user (in the `docker` group)
+#   VPS_SSH_KEY  – private key for that user
+# Required on the VPS (one-time): see the repo's deploy notes.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; let an in-flight one finish.
+concurrency:
+  group: deploy-timepro
+  cancel-in-progress: false
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 1: build the images in a throwaway staging clone. If the build fails
+  # here, the deploy job never runs and production is left untouched.
+  # ───────────────────────────────────────────────────────────────────────────
+  verify-build:
+    name: Verify Build (staging)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Verify Docker build on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+
+            STAGING=/var/www/timepro-staging
+            PROD=/var/www/timepro
+
+            echo "──▶ Preparing staging directory at $STAGING"
+            rm -rf "$STAGING"
+            mkdir -p "$STAGING"
+
+            # Fast local copy of the production tree (skip heavy dirs), then
+            # sync to the latest main from origin.
+            rsync -a \
+              --exclude='node_modules' \
+              --exclude='.next' \
+              --exclude='dist' \
+              "$PROD"/ "$STAGING"/
+
+            cd "$STAGING"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "──▶ Building images (no containers started)"
+            cd infra/compose
+            docker compose -f docker-compose.prod.yml build
+
+            echo "✅ Verification build succeeded"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 2: real deployment. Only runs when verify-build passes.
+  # ───────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: verify-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Deploy to production on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+
+            PROD=/var/www/timepro
+            STAGING=/var/www/timepro-staging
+
+            echo "──▶ Pulling latest main into $PROD"
+            cd "$PROD"
+            git fetch --prune origin
+            git checkout main
+            git reset --hard origin/main   # untracked env files are preserved
+
+            echo "──▶ Building + starting the stack (migrate one-shot runs first)"
+            cd infra/compose
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+            echo "──▶ Waiting for the API to report ready"
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:4001/readyz >/dev/null 2>&1; then
+                echo "API healthy"; break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "API did not become healthy in time — recent api logs:"
+                docker compose -f docker-compose.prod.yml logs --tail=50 api || true
+                exit 1
+              fi
+              sleep 2
+            done
+
+            echo "──▶ Pruning dangling images + cleaning staging"
+            docker image prune -f >/dev/null 2>&1 || true
+            rm -rf "$STAGING"
+
+            echo "✅ Deploy complete"

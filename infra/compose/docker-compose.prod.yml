@@ -1,0 +1,92 @@
+# TimePro — production stack (single Docker host, co-located with OpsCore).
+#
+# Builds the api/web/migrate images from this repo and runs them with a Postgres
+# container. nginx + TLS live OUTSIDE this file (A3) — it proxies to the
+# host-local ports published below. Redis is intentionally absent: REDIS_URL is
+# a declared-but-unused env var at current scale (presence/realtime are
+# in-process), so it's satisfied by a placeholder, not a container.
+#
+# Usage (run from infra/compose/, on the host):
+#   cp .env.example .env                 # fill POSTGRES_PASSWORD + NEXT_PUBLIC_*
+#   cp envs/api.env.example envs/api.env # fill secrets
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Ports are bound to 127.0.0.1 only — nothing is exposed publicly except through
+# nginx (A3).
+
+name: timepro
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Local-only bind for debugging/psql; remove if not needed.
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: bootstrap citext/pgcrypto + apply drizzle migrations, then exit.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: packages/db/Dockerfile
+    image: timepro-migrate:latest
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_ADMIN_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    image: timepro-api:latest
+    restart: unless-stopped
+    env_file:
+      - ./envs/api.env
+    environment:
+      # DB URL is composed from the shared POSTGRES_* vars so the password lives
+      # in one place (.env) — overrides any value in api.env.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - screenshots:/data/screenshots
+    ports:
+      - "127.0.0.1:4001:4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Next inlines NEXT_PUBLIC_* at BUILD time — these come from .env.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_OPSCORE_URL: ${NEXT_PUBLIC_OPSCORE_URL}
+    image: timepro-web:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3005:3005"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  screenshots:
