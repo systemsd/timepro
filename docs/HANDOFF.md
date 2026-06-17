@@ -31,7 +31,10 @@ web/desktop login, desktop→web "view online" handoff, Team management.
 
 **Recent UI (this session):** **Manager dashboard** = 4-column team roster overview · **Employee dashboard** =
 company-row table (org + role badge + last-active + period totals; `/v1/roster` is now self-scoped for employees) ·
-**Timeline** date nav is a **calendar day-strip** (per-user activity dots) · **My Account** page (`/account`) +
+**Timeline** redesigned Hubstaff-style (branch `feat/ui-enhancements`): month strip with per-day **activity bars** +
+weekday labels (weekends red) + yellow selected day · **summary card** (date · big day total · Week/Month/Activity) with an
+**Apps/URLs** usage panel + prev/next day stepper · **24h activity ruler** (green, opacity by activity) · screenshot slots
+(red time-range + app badge + thumbnails) · **My Account** page (`/account`) +
 avatar dropdown (Dashboard · My Account · Log out) · **Reports** hides Clients/Projects dropdowns for employees ·
 login is **OpsCore-only** (email/password removed) · line icons, no emojis.
 
@@ -116,7 +119,7 @@ verifies locally (signature only) — sign-in does **not** call `OPSCORE_API_URL
 
 `auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today, profile) ·
 `projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw) · `team` · `timer` ·
-`roster` (self-scoped for employees) · `timeline` (+ :userId/activity for the calendar dots) · `clients` ·
+`roster` (self-scoped for employees) · `timeline` (+ `:userId/activity` for the strip bars, `:userId/apps-urls` for the summary panel) · `clients` ·
 `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) · `ingest` (activity, app-usage, url-usage) ·
 `admin` (opscore/sync) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
 

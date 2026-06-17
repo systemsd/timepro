@@ -2,7 +2,7 @@
 
 > **Implementation status** — ✅ built · ⛔ planned.
 >
-> - ✅ Computed **on the fly** (no rollups yet): `GET /v1/me/today` (today's tracked time/status/screenshots), `GET /v1/roster` (per-employee today/yesterday/week/month totals + last screenshot, viewer-tz), `GET /v1/timeline/:userId` (a day's screenshots in 10-min slots + day total).
+> - ✅ Computed **on the fly** (no rollups yet): `GET /v1/me/today` (today's tracked time/status/screenshots), `GET /v1/roster` (per-employee today/yesterday/week/month totals + last screenshot, viewer-tz), `GET /v1/timeline/:userId` (a day's screenshots/activity in 10-min slots + day total), `GET /v1/timeline/:userId/activity` (per-day tracked seconds for a month — the Timeline strip bars), `GET /v1/timeline/:userId/apps-urls` (a day's app + domain usage — the Timeline summary-card Apps/URLs panel).
 > - 📐 **Reports Console** (§0) — UI/feature **spec'd** from the reference screenshots; **not built**. The "Reports ▾" nav tab is disabled today. This is the Phase 5 / **B7** deliverable.
 > - ⛔ Still planned: `reports_hourly/daily/weekly/monthly` rollup tables, rollup jobs, materialized views, exports, caching, and the time-per-client report. No scheduled aggregation runs yet — on-the-fly compute is fine at current scale and moves to rollups in Phase 5.
 

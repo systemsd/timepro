@@ -13,7 +13,7 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 | ------- | ------ | ----- |
 | **My Home → team roster** | ✅ | 4-column overview (today/yesterday/week/month) per visible employee + last app + last screenshot. Manager = own team; admin = all. |
 | **Realtime presence dots** | ✅ | Live offline/connected/tracking via websocket (`/v1/realtime/presence`); "N online" headline. |
-| **Employee Timeline + calendar strip** | ✅ | Per-user day view (screenshot slots + activity % + per-slot app + day total). Date nav is a **calendar day-strip** (‹ Month Year › + Today, day cells with green activity dots via `/v1/timeline/:userId/activity`). For any visible employee (Timeline dropdown). |
+| **Employee Timeline (Hubstaff-style)** | ✅ | Per-user day view: month strip with weekday labels (weekends red) + per-day **activity bars** (`/v1/timeline/:userId/activity`) + yellow selected day; **summary card** (date · day total · Week/Month/Activity) with an **Apps/URLs** usage panel (`/v1/timeline/:userId/apps-urls`) + day stepper; **24h activity ruler**; screenshot slots (red time-range + app badge + thumbnails). For any visible employee (Timeline dropdown). |
 | **Reports console** | ✅ | Summary / Detailed / Weekly; filters RBAC-scoped (manager → team only); daily chart; Employees/Projects/Clients/Notes/Apps&URLs tabs. |
 | **Saved reports + CSV/PDF export** | ✅ | Per-user saved configs (+ org-shared); CSV (Excel) + browser-print PDF. |
 | **Weekly-limit visibility + enforcement** | ✅ | Roster "This week" cell shows `week / limit` (red when over); timer start blocked at the cap. |
@@ -37,7 +37,7 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 | **Automatic screenshot capture** | ✅ | On a cadence while tracking → API → disk; native OS toast when `screenshots.notify` is on. |
 | **Activity + app + URL capture** | ✅ | Idle-derived activity %, active-app intervals; URL via the browser extension (built, unverified in Chrome). |
 | **Employee Dashboard** | ✅ | Company-row table: one row per org the employee tracks for (org name + role badge + last-active screenshot + today/yesterday/week/month + weekly-limit). Powered by the now self-scoped `/v1/roster`. (Replaced the old stat-cards "My Home".) |
-| **Own Timeline + calendar strip** | ✅ | Own day timeline (screenshots + activity), navigated by the calendar day-strip (dots = own tracked days). |
+| **Own Timeline (Hubstaff-style)** | ✅ | Own day timeline (screenshots + activity), navigated by the month strip with per-day activity bars; summary card + Apps/URLs panel + 24h activity ruler. |
 | **Reports (self)** | ✅ | Reports console scoped to own data only; **Clients/Projects filter dropdowns hidden** for employees (server returns empty + UI hides them). |
 | **My Account** | 🟡 | Own profile ✅; edit/change-password/2FA/delete/API-token 🔴 (Phase 6). |
 | **Desktop OpsCore login** | ✅ | Loopback flow (browser → **prod** OpsCore → agent), **verified end-to-end**. (Email login removed from the desktop UI too.) |
