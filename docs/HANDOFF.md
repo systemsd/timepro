@@ -119,7 +119,7 @@ verifies locally (signature only) — sign-in does **not** call `OPSCORE_API_URL
 ## 5. API route inventory (`apps/api/src/routes/`)
 
 `auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today, profile) ·
-`projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw) · `team` · `timer` ·
+`projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw + **DELETE `:id`**, C9-gated) · `team` · `timer` ·
 `roster` (self-scoped for employees) · `timeline` (+ `:userId/activity` for the strip bars, `:userId/apps-urls` for the summary panel) · `clients` ·
 `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) · `ingest` (activity, app-usage, url-usage) ·
 `admin` (opscore/sync) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
@@ -133,7 +133,7 @@ manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/ac
 
 C1 managers manage own team · C2 OpsCore-authoritative read-only catalogs · C3 OpsCore owns project↔client ·
 C4 presence = 3 states · C5 settings = org default + per-user override (2-level) · C6 viewer/org timezone ·
-C8 break-glass local owner · C9 screenshot self-delete admin-configurable default-off.
+C8 break-glass local owner · C9 screenshot self-delete admin-configurable default-off — **implemented**: `DELETE /v1/screenshots/:id` (row + file) gated by the `screenshots.allow_self_delete` setting (default off); admins/managers may delete any screenshot of someone they manage. Timeline thumbnails have a trash button.
 **C7 (My Account vs Settings) is the one still-open conflict** (assumed: separate owner-only area later).
 
 ---

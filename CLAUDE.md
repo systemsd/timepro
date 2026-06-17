@@ -130,7 +130,10 @@ cd apps/desktop/src-tauri && cargo check
   A `.env` won't work for the shipped app — installers carry no env.
 - **Screenshots (MVP)** are written to the local filesystem under `STORAGE_DIR`
   (default `apps/api/data/screenshots/{org}/{date}/{id}.png`) and served via
-  `GET /v1/screenshots/:id/raw`. The S3 driver from [docs/07-storage.md](docs/07-storage.md) isn't wired yet.
+  `GET /v1/screenshots/:id/raw`. `DELETE /v1/screenshots/:id` removes the row + file
+  (admins/managers anytime within their visible set; employee self-delete gated by the
+  `screenshots.allow_self_delete` policy, default off — C9; trash button on Timeline thumbnails).
+  The S3 driver from [docs/07-storage.md](docs/07-storage.md) isn't wired yet.
 - **Screenshot capture cadence** is `screenshot_interval_sec` in `state.rs`, derived from the
   `screenshots.per_hour` setting on each `/settings/effective` refresh (`300`s fallback before first fetch).
   Capture only runs while a timer is active. The agent also enforces `screenshots.blur=always` (gaussian blur
@@ -163,7 +166,7 @@ UI uses line icons (`apps/web/src/components/icons.tsx`), no emojis.
 
 **Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
 - ✅ **Phase 0** (quick wins) — done.
-- ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`). **Enforcement live:** agent honors `screenshots.{enabled,per_hour,blur=always,notify}`, `activity.tracking`, `app_url.tracking`, `tracking.auto_pause_minutes` (idle auto-pause); server enforces `limits.weekly_hours`. Only `time.allow_offline` is unenforced (offline-time feature not built).
+- ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`). **Enforcement live:** agent honors `screenshots.{enabled,per_hour,blur=always,notify}`, `activity.tracking`, `app_url.tracking`, `tracking.auto_pause_minutes` (idle auto-pause); server enforces `limits.weekly_hours` and `screenshots.allow_self_delete` (C9 screenshot delete). Only `time.allow_offline` is unenforced (offline-time feature not built).
 - ✅ **Phase 2 — Presence (B3)** — done (agent heartbeat → in-memory store → 3-state dots + "N online").
 - ✅ **Phase 4 — Activity + App tracking (B4/B5)** — done (agent activity aggregator + app polling →
   `/v1/ingest/activity` + `/ingest/app-usage` + `/ingest/url-usage`; Timeline activity %/per-slot app; roster last-app;
