@@ -102,17 +102,20 @@ function MultiSelect({
   }, []);
   const toggle = (id: string) =>
     onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-  const label = selected.length === 0
-    ? placeholder
-    : selected.length === 1
-      ? options.find((o) => o.id === selected[0])?.name ?? `1 selected`
-      : `${selected.length} selected`;
+  const nameOf = (id: string) => options.find((o) => o.id === id)?.name ?? id;
   return (
     <div className="rep-ms" ref={ref}>
-      <button type="button" className={`rep-ms-btn ${selected.length ? 'has' : ''}`} onClick={() => setOpen((v) => !v)}>
-        <span>{label}</span>
+      <div className={`rep-ms-field ${selected.length ? 'has' : ''}`} onClick={() => setOpen((v) => !v)}>
+        {selected.length === 0 && <span className="rep-ms-ph">{placeholder}</span>}
+        {selected.map((id) => (
+          <span className="rep-ms-chip" key={id}>
+            <button type="button" aria-label={`Remove ${nameOf(id)}`}
+              onClick={(e) => { e.stopPropagation(); toggle(id); }}>×</button>
+            {nameOf(id)}
+          </span>
+        ))}
         <span className="rep-caret">▾</span>
-      </button>
+      </div>
       {open && (
         <div className="rep-ms-menu">
           {selected.length > 0 && (

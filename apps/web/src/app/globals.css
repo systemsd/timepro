@@ -520,6 +520,19 @@ body {
 .rep-ms-item:hover { background: var(--bg); }
 .rep-ms-clear { display: block; width: 100%; text-align: left; border: none; background: none; color: var(--accent); cursor: pointer; padding: 7px 8px; font-size: 13px; }
 .rep-ms-empty { padding: 8px; color: var(--muted); font-size: 14px; }
+/* multi-select field rendered as removable chips */
+.rep-ms-field {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 42px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: #fff; cursor: pointer;
+}
+.rep-ms-ph { color: var(--muted); font-size: 14px; }
+.rep-ms-chip {
+  display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 10px; font-size: 13px; color: var(--text);
+}
+.rep-ms-chip button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
+.rep-ms-chip button:hover { color: var(--text); }
+.rep-ms-field .rep-caret { margin-left: auto; }
 
 /* report type + group by */
 .rep-typerow { gap: 14px; }
