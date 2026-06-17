@@ -25,7 +25,7 @@ the prod-OpsCore nginx rewriting the handoff redirect), API **4001**. Sign-in is
 Recent UI shape:
 - **Manager dashboard** = 4-column team roster overview (today/yesterday/week/month).
 - **Employee dashboard** = company-row table (org name + role badge + last-active + period totals), powered by the now self-scoped `/v1/roster`.
-- **Timeline** (Hubstaff-style): month strip with per-day **activity bars**, summary card (day total + Week/Month + Apps/URLs panel), 24h activity ruler, screenshot slots.
+- **Timeline** (Hubstaff-style): month strip with per-day **activity bars**, summary card (day total + Week/Month + Apps/URLs panel + average-activity donut), 24h ruler with green run/stop bars, screenshot slots.
 - **Reports**: Clients/Projects filter dropdowns hidden for employees.
 - **My Account** (`/account`) via the avatar dropdown (Dashboard · My Account · Log out).
 - UI uses line icons, no emojis. Login is OpsCore-only.

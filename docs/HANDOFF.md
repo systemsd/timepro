@@ -33,7 +33,8 @@ web/desktop login, desktop→web "view online" handoff, Team management.
 company-row table (org + role badge + last-active + period totals; `/v1/roster` is now self-scoped for employees) ·
 **Timeline** redesigned Hubstaff-style (branch `feat/ui-enhancements`): month strip with per-day **activity bars** +
 weekday labels (weekends red) + yellow selected day · **summary card** (date · big day total · Week/Month/Activity) with an
-**Apps/URLs** usage panel + prev/next day stepper · **24h activity ruler** (green, opacity by activity) · screenshot slots
+**Apps/URLs** usage panel + prev/next day stepper + **average-activity donut** (+ dot/tooltip) · **24h ruler** with green
+**run/stop bars** from real tracked intervals (`timeline/:id` returns `intervals[]`) · screenshot slots
 (red time-range + app badge + thumbnails) · **My Account** page (`/account`) +
 avatar dropdown (Dashboard · My Account · Log out) · **Reports** hides Clients/Projects dropdowns for employees ·
 login is **OpsCore-only** (email/password removed) · line icons, no emojis.
