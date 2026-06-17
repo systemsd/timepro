@@ -235,11 +235,15 @@ function ValueEditor({
   );
 }
 
+// Honest per-feature enforcement notes (what actually applies the setting today).
 const ENFORCED: Record<string, string> = {
-  activity: '— takes effect once activity tracking ships',
-  app_url: '— takes effect once app & URL tracking ships',
-  offline_time: '— takes effect once offline time ships',
-  limits: '— enforcement ships with reports',
+  screenshots: '— enforced by the desktop agent',
+  activity: '— enforced by the desktop agent',
+  app_url: '— enforced by the desktop agent',
+  idle: '— enforced by the desktop agent (auto-pause on idle)',
+  notify: '— enforced by the desktop agent',
+  limits: '— enforced: blocks starting the timer at the weekly cap',
+  offline_time: '— not yet enforced (offline-time entry isn’t built yet)',
 };
 
 function display(def: SettingDef, value: SettingValue): string {

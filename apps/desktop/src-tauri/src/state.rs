@@ -87,6 +87,11 @@ struct Inner {
     notify_on_screenshot: bool,
     activity_tracking: bool,
     app_url_tracking: bool,
+    /// Stop tracking after this many seconds of input idle
+    /// (`tracking.auto_pause_minutes`). 0 = disabled until settings load.
+    auto_pause_sec: u64,
+    /// `screenshots.blur` policy: "allow" | "always" | "never".
+    blur_policy: String,
     last_screenshot_at: Option<DateTime<Utc>>,
     last_settings_fetch: Option<DateTime<Utc>>,
 }
@@ -104,6 +109,8 @@ impl AppState {
                 notify_on_screenshot: false,
                 activity_tracking: true,
                 app_url_tracking: true,
+                auto_pause_sec: 0, // disabled until the first settings fetch
+                blur_policy: "allow".to_string(),
                 last_screenshot_at: None,
                 last_settings_fetch: None,
             }),
@@ -130,10 +137,26 @@ impl AppState {
         if let Some(a) = m.get("app_url.tracking").and_then(|v| v.as_bool()) {
             g.app_url_tracking = a;
         }
+        if let Some(ap) = m.get("tracking.auto_pause_minutes").and_then(|v| v.as_f64()) {
+            g.auto_pause_sec = if ap > 0.0 { (ap * 60.0).round() as u64 } else { 0 };
+        }
+        if let Some(b) = m.get("screenshots.blur").and_then(|v| v.as_str()) {
+            g.blur_policy = b.to_string();
+        }
     }
 
     pub fn screenshots_enabled(&self) -> bool {
         self.inner.read().screenshots_enabled
+    }
+
+    /// Idle seconds after which tracking auto-pauses (0 = disabled).
+    pub fn auto_pause_sec(&self) -> u64 {
+        self.inner.read().auto_pause_sec
+    }
+
+    /// Whether captured screenshots must be blurred before upload.
+    pub fn blur_always(&self) -> bool {
+        self.inner.read().blur_policy == "always"
     }
 
     pub fn activity_tracking_enabled(&self) -> bool {
