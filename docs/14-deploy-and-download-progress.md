@@ -116,11 +116,13 @@ A0(DNS/host) → A1 → A2 → A3 → A4 → A5 ──┐
 - **Done when:** ✅ a real user can log into TimePro on the public web. *(Group A complete.)*
 - **Note:** once A6 (deploy workflow) is live, A5 is performed *by* the workflow (push to main) rather than by hand — this manual run is the first-time bring-up / fallback.
 
-### A6 · Backend deploy workflow (CI/CD on push to main) 🟡 *(authored 2026-06-16; needs server secrets to run)*
-- [x] `.github/workflows/deploy.yml` — on push to `main` (+ `workflow_dispatch`): SSH to `178.105.58.173` → `git reset --hard origin/main` (untracked env files preserved) → `docker compose -f infra/compose/docker-compose.prod.yml up -d --build` (migrate one-shot runs first) → poll `/readyz` until healthy → prune. `concurrency` group prevents overlapping deploys.
-- [x] **Validated:** YAML parses; `actionlint` clean.
-- [ ] **One-time host setup (the "server access" from the Slack thread):** clone repo on server, create env files, add deploy SSH key, deploy user in `docker` group, run nginx/certbot once (A3).
-- [ ] **GitHub secrets:** `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY`, `DEPLOY_SSH_PORT?`.
+### A6 · Backend deploy workflow (CI/CD on push to main) 🟡 *(rewritten to mirror OpsCore 2026-06-17; needs server + secrets to run)*
+- [x] `.github/workflows/deploy.yml` — **same shape as OpsCore's deploy** (uses `appleboy/ssh-action@v1.0.3` + `VPS_*` secrets). On push to `main` (+ `workflow_dispatch`), two jobs:
+  - **`verify-build`** — rsync `/var/www/timepro` → `/var/www/timepro-staging`, `git reset --hard origin/main`, `docker compose -f docker-compose.prod.yml build`. If it fails, deploy never runs (prod untouched).
+  - **`deploy`** (needs verify) — in `/var/www/timepro`: `git reset --hard origin/main` (untracked env files preserved) → `docker compose -f docker-compose.prod.yml up -d --build` (migrate one-shot first) → poll `/readyz` (dumps api logs + fails on timeout) → prune + clean staging. `concurrency` group prevents overlapping deploys; `command_timeout: 30m` for Docker builds.
+- [x] **Validated:** YAML parses clean (both workflows). Live run needs the VPS + secrets.
+- [ ] **One-time host setup:** clone repo to **`/var/www/timepro`**, create the env files (`infra/compose/.env` + `infra/compose/envs/api.env`, both gitignored), `VPS_USER` in the `docker` group, run nginx/certbot once (A3). ⚠️ **Docker daemon must be running** (`systemctl enable --now docker`) and the **`.env` must exist before `docker compose build`** — otherwise `POSTGRES_*`/`NEXT_PUBLIC_*` resolve blank.
+- [ ] **GitHub secrets** (TimePro repo — same values as OpsCore's, same VPS): `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.
 - [ ] Decision (pending): build-on-host (current) vs CI→GHCR→pull (scale-up).
 - **Done when:** a push to `main` auto-deploys and `/readyz` is green on the host.
 

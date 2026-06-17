@@ -2,9 +2,10 @@
 
 A production-grade, multi-tenant employee time-tracking and productivity-monitoring platform — comparable in scope to Hubstaff, Time Doctor, and ScreenshotMonitor.
 
-> **Status:** working MVP across web, API, and desktop agent — time tracking, automatic
-> screenshot capture, web dashboard, login, desktop→web auto-login, and team management.
-> Tracks the roadmap in [`docs/11-roadmap.md`](docs/11-roadmap.md).
+> **Status:** Phases 0–5 complete — time tracking, automatic screenshot + activity/app/URL capture,
+> web dashboard, OpsCore sign-in (web + desktop), desktop→web auto-login, Reports, Settings, and team
+> management all work end-to-end. Current state: [`docs/STATUS.md`](docs/STATUS.md); phased roadmap:
+> [`docs/13-opscore-feature-roadmap.md`](docs/13-opscore-feature-roadmap.md).
 >
 > Working on this repo with Claude Code? Read [`CLAUDE.md`](CLAUDE.md) first.
 
@@ -12,7 +13,7 @@ A production-grade, multi-tenant employee time-tracking and productivity-monitor
 
 ## What's in this repo
 
-- **`docs/`** — complete architecture documentation (13 documents). Start with [`docs/00-overview.md`](docs/00-overview.md).
+- **`docs/`** — complete architecture documentation. Start with [`docs/00-overview.md`](docs/00-overview.md); for live build status read [`docs/STATUS.md`](docs/STATUS.md) and [`docs/HANDOFF.md`](docs/HANDOFF.md).
 - **`apps/`** — `api` (Fastify), `web` (Next.js), `desktop` (Tauri + Rust + React). *Built.*
 - **`packages/`** — `db` (Drizzle), `tsconfig`, `eslint-config`. *Built.*
 - **`infra/`** — Docker Compose for local dev (Postgres, Redis, Minio, MailHog), OTel collector.
@@ -38,8 +39,18 @@ A production-grade, multi-tenant employee time-tracking and productivity-monitor
 | 08 | [Security](docs/08-security.md)                              | RBAC, audit, encryption, MFA, device trust            |
 | 09 | [Deployment](docs/09-deployment.md)                          | Docker, Nginx, CI/CD, backups, sizing                 |
 | 10 | [Scaling](docs/10-scaling.md)                                | Capacity model, costs from 100 → 10k orgs             |
-| 11 | [Roadmap](docs/11-roadmap.md)                                | MVP, Phase 2, Phase 3                                 |
+| 11 | [Roadmap](docs/11-roadmap.md)                                | MVP, Phase 2, Phase 3 (original plan)                 |
 | 12 | [Monorepo execution](docs/12-monorepo.md)                    | Concrete folder layout, dependencies, env vars        |
+| 13 | [OpsCore feature roadmap](docs/13-opscore-feature-roadmap.md)| Phased plan (0–9) driving current work                |
+| 14 | [Deploy & download progress](docs/14-deploy-and-download-progress.md) | Backend deploy pipeline + Download page tracker |
+
+**Living docs** (current state, updated as work lands):
+
+| Doc | What it covers |
+| --- | -------------- |
+| [STATUS](docs/STATUS.md)               | One-page brief + phase status snapshot |
+| [HANDOFF](docs/HANDOFF.md)             | How to run/resume all three apps, ports, gotchas, active work |
+| [feature-matrix](docs/feature-matrix.md) | What works vs stubbed, per role (manager/employee) |
 
 ---
 
@@ -62,21 +73,23 @@ pnpm db:migrate               # apply migrations (auto-creates citext + pgcrypto
 # No seed: the org is JIT-created on the first OpsCore login; employees/projects/clients sync from OpsCore.
 
 # 4. run the API and web (separate terminals)
-pnpm --filter @timepro/api dev      # → http://localhost:3001
-pnpm --filter @timepro/web dev      # → http://localhost:3000
+pnpm --filter @timepro/api dev      # → http://localhost:4001
+pnpm --filter @timepro/web dev      # → http://localhost:3005
 
 # 5. desktop agent (separate terminal; needs the API running)
+#    TIMEPRO_WEB_URL lets "Sign in with OpsCore" open the local web bridge (/desktop-auth)
 source "$HOME/.cargo/env"
-TIMEPRO_API_URL=http://localhost:3001 pnpm --filter @timepro/desktop tauri:dev
+TIMEPRO_API_URL=http://localhost:4001 TIMEPRO_WEB_URL=http://localhost:3005 \
+  pnpm --filter @timepro/desktop tauri:dev
 ```
 
 Sign in via **"Sign in with OpsCore"** — the first login JIT-creates the org and your
 membership, then run the Team page's **Sync from OpsCore** to pull employees/projects/clients.
 
-Local services when using the Compose stack:
+Local URLs:
 
-- Web: <http://localhost:3000> · API: <http://localhost:3001>
-- Minio console: <http://localhost:9001> (`minio` / `minio123`) · MailHog: <http://localhost:8025>
+- Web: <http://localhost:3005> · API: <http://localhost:4001> (OpsCore owns `:3001`; web moved off `:3000` — see [`CLAUDE.md`](CLAUDE.md) for the nginx-collision reason)
+- Compose-stack extras: Minio console <http://localhost:9001> (`minio` / `minio123`) · MailHog <http://localhost:8025>
 
 ---
 

@@ -1,16 +1,25 @@
 name: Deploy TimePro
 
-# Auto-deploy the backend stack (api + web, with a one-shot migrate) to the VPS
-# on every push to main. Same shape as OpsCore's deploy: verify the build in a
-# throwaway staging clone first, then deploy to production only if that passes.
-# TimePro runs as a Docker Compose stack; nginx + TLS are a one-time host setup
-# (infra/nginx/) and are NOT touched by deploys.
+# Auto-deploy the backend stack (api + web) to the VPS on every push to main.
+# Same shape as OpsCore's deploy: verify the build in a throwaway staging clone
+# first, then deploy to production only if that passes.
+#
+# TimePro runs as two PM2 processes (`timepro-api`, `timepro-web`) — NOT Docker,
+# for now (the Docker Compose path is parked behind an iptables/daemon issue on
+# the host and will be revisited later). nginx + TLS are a one-time host setup
+# (api.* → :4001, app.* → :3005) and are NOT touched by deploys.
 #
 # Required GitHub secrets (Settings → Secrets and variables → Actions):
 #   VPS_HOST     – the VPS hostname/IP   (same VPS as OpsCore)
-#   VPS_USER     – ssh user (in the `docker` group)
+#   VPS_USER     – ssh user (has pnpm + pm2 on PATH, like OpsCore's deploy user)
 #   VPS_SSH_KEY  – private key for that user
-# Required on the VPS (one-time): see the repo's deploy notes.
+#
+# Required on the VPS (one-time):
+#   • Node 20 + pnpm 9 + pm2 on the deploy user's PATH
+#   • Postgres reachable via DATABASE_URL (host or container)
+#   • /var/www/timepro/.env                  – API + DB + OpsCore secrets
+#   • /var/www/timepro/apps/web/.env.production – NEXT_PUBLIC_* (baked at build)
+#   These env files are untracked and preserved across `git reset --hard`.
 
 on:
   push:
@@ -24,8 +33,8 @@ concurrency:
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
-  # Stage 1: build the images in a throwaway staging clone. If the build fails
-  # here, the deploy job never runs and production is left untouched.
+  # Stage 1: build in a throwaway staging clone. If the build fails here, the
+  # deploy job never runs and production is left untouched.
   # ───────────────────────────────────────────────────────────────────────────
   verify-build:
     name: Verify Build (staging)
@@ -34,7 +43,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4.2.2
 
-      - name: Verify Docker build on VPS
+      - name: Verify build on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -47,6 +56,8 @@ jobs:
 
             STAGING=/var/www/timepro-staging
             PROD=/var/www/timepro
+
+            command -v pnpm >/dev/null || { echo "pnpm not found on PATH"; exit 1; }
 
             echo "──▶ Preparing staging directory at $STAGING"
             rm -rf "$STAGING"
@@ -64,9 +75,9 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            echo "──▶ Building images (no containers started)"
-            cd infra/compose
-            docker compose -f docker-compose.prod.yml build
+            echo "──▶ Installing deps + building (no processes started)"
+            pnpm install --frozen-lockfile
+            pnpm build
 
             echo "✅ Verification build succeeded"
 
@@ -95,15 +106,35 @@ jobs:
             PROD=/var/www/timepro
             STAGING=/var/www/timepro-staging
 
+            command -v pnpm >/dev/null || { echo "pnpm not found on PATH"; exit 1; }
+            command -v pm2  >/dev/null || { echo "pm2 not found on PATH";  exit 1; }
+
             echo "──▶ Pulling latest main into $PROD"
             cd "$PROD"
             git fetch --prune origin
             git checkout main
             git reset --hard origin/main   # untracked env files are preserved
 
-            echo "──▶ Building + starting the stack (migrate one-shot runs first)"
-            cd infra/compose
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            echo "──▶ Installing deps + building"
+            pnpm install --frozen-lockfile
+            pnpm build
+
+            echo "──▶ Applying database migrations"
+            # Inject the root .env so db:migrate (and the API below) see DATABASE_URL.
+            # The built API resolves the root .env relative to its *source* path,
+            # which breaks once tsup bundles to dist/ — so we put the vars on the
+            # process environment directly (the loader uses override:false).
+            set -a; . "$PROD/.env"; set +a
+            pnpm db:migrate
+
+            echo "──▶ (Re)starting PM2 processes"
+            # API inherits the sourced env above (--update-env re-reads it).
+            pm2 restart timepro-api --update-env \
+              || pm2 start "pnpm --filter @timepro/api start" --name timepro-api --update-env
+            # Web needs no root env at runtime (NEXT_PUBLIC_* baked at build time).
+            pm2 restart timepro-web --update-env \
+              || pm2 start "pnpm --filter @timepro/web start" --name timepro-web
+            pm2 save
 
             echo "──▶ Waiting for the API to report ready"
             for i in $(seq 1 30); do
@@ -112,14 +143,13 @@ jobs:
               fi
               if [ "$i" -eq 30 ]; then
                 echo "API did not become healthy in time — recent api logs:"
-                docker compose -f docker-compose.prod.yml logs --tail=50 api || true
+                pm2 logs timepro-api --lines 50 --nostream || true
                 exit 1
               fi
               sleep 2
             done
 
-            echo "──▶ Pruning dangling images + cleaning staging"
-            docker image prune -f >/dev/null 2>&1 || true
+            echo "──▶ Cleaning staging"
             rm -rf "$STAGING"
 
             echo "✅ Deploy complete"

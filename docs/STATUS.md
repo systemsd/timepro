@@ -1,6 +1,6 @@
 # TimePro — Project Brief & Status
 
-_Snapshot: 2026-06-16. Living docs: [HANDOFF](HANDOFF.md) (run/resume), [docs/13](13-opscore-feature-roadmap.md) (roadmap), [feature-matrix](feature-matrix.md) (per-role)._
+_Snapshot: 2026-06-17. Living docs: [HANDOFF](HANDOFF.md) (run/resume), [docs/13](13-opscore-feature-roadmap.md) (roadmap), [feature-matrix](feature-matrix.md) (per-role)._
 
 ## Brief
 
@@ -44,7 +44,7 @@ Recent UI / behavior:
 | **4** | Activity + App + **URL** tracking (B4/B5) — ingest + reporting + browser extension | ✅ Done |
 | **5** | Reports + realtime (B7/B10) — console, saved reports, CSV/PDF, **weekly-limit enforcement**, presence WS | ✅ Done |
 | **6** | **Multi-tenancy & real auth** | ⏸️ Paused (single-tenant focus) |
-| **7** | Ship pipeline (B9) — build/sign/host installers | 🔴 Not started |
+| **7** | Ship pipeline (B9) — build/sign/host installers | 🟡 In progress — backend deploy workflow + Download page wired ([docs/14](14-deploy-and-download-progress.md)); installers not built/signed |
 | **8** | Scale & storage — rollups, S3, worker/realtime | 🔴 Not started |
 | **9** | Billing & plans | 🔴 Not started |
 | **P** | Polish & UX | 🟡 2 of 4 |
@@ -57,7 +57,7 @@ Recent UI / behavior:
   - 6.3 Per-org OpsCore SSO — move OpsCore config off global env to per-org; route by org.
   - 6.4 RLS hardening — fail-closed Postgres RLS + app/BYPASSRLS DB role split.
   - 6.5 Tenant audit & UX — sweep raw `getDb()` usage; org context/switcher; isolation tests.
-- **Phase 7 — Ship pipeline (B9)**: cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs. _Credential-gated (Apple/Windows certs + hosting)._
+- **Phase 7 — Ship pipeline (B9)** _(in progress)_: backend deploy workflow (`.github/workflows/deploy.yml`, OpsCore-style, awaiting VPS + secrets) and the Download page (wired to the latest GitHub Release) are done; **remaining**: cross-platform CI installer builds, code-sign/notarize, host artifacts. _Credential-gated (Apple/Windows certs + hosting)._ Tracker: [docs/14](14-deploy-and-download-progress.md).
 - **Phase 8 — Scale & storage**: 8.1 reporting rollups + scheduler (B8) · 8.2 S3 storage + thumbnails · 8.3 worker/realtime services + Redis-backed presence.
 - **Phase 9 — Billing & plans**: seat/plan enforcement, metering, invoicing.
 - **Phase P — Polish**: ✅ native screenshot toast · ✅ desktop "weekly limit reached" message · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
@@ -68,7 +68,7 @@ _Deferred/cut: B8 rollups → Phase 8.1; absence model cut (only needed for the 
 
 No seed script — data populates at runtime from OpsCore. The first production OpsCore sign-in already
 **JIT-created the `Systemsd` org + the `Hamid` admin**; run Team → **Sync from OpsCore** to pull the rest of
-the directory (employees/projects/clients). Latest migration `0004_saved_reports`. (Earlier in the session
+the directory (employees/projects/clients). Latest migration `0004_friendly_nebula` (saved reports). (Earlier in the session
 all `public` tables were truncated for a clean multi-tenant start; the prod login has since seeded the one org.)
 
 ## ⚠️ Verification gaps
