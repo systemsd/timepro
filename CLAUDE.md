@@ -154,7 +154,7 @@ cd apps/desktop/src-tauri && cargo check
 **role-aware My Home** (admin/manager → team roster with realtime presence dots, employee → personal +
 weekly-limit banner); **Timeline** (Hubstaff-style: month strip with per-day activity bars, summary card with
 Week/Month totals + Apps/URLs panel + average-activity donut, 24h ruler with green run/stop bars (from `intervals[]`), screenshot slots — `/v1/timeline/:id` + `/activity` + `/apps-urls`);
-**Reports** console (Summary/Detailed/Weekly, saved reports, CSV/PDF export, Apps & URLs); **Team** page
+**Reports** console (Hubstaff-style filter bar — preset-link grid, report-type text links, group-by chip field; Summary/Detailed/Weekly, saved reports, CSV/PDF export, Apps & URLs); **Team** page
 (roles, project toggles, invite/pause/archive/delete, RBAC-scoped per C1); **Projects** + **Clients** pages;
 **Settings** (org defaults + per-user overrides); **My Account** page (`/account`, per-user profile via
 `/v1/me/profile`) reached from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page
