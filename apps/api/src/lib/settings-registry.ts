@@ -128,6 +128,22 @@ export const SETTINGS: SettingDef[] = [
     description: 'Admins and managers can always delete screenshots of people they manage (C9).',
   },
   {
+    key: 'screenshots.retention_days',
+    label: 'Keep screenshots for',
+    type: 'enum',
+    default: '90',
+    options: [
+      { value: '30', label: '1 month' },
+      { value: '90', label: '3 months' },
+      { value: '180', label: '6 months' },
+      { value: '365', label: '1 year' },
+      { value: '0', label: 'Forever' },
+    ],
+    overridable: false,
+    enforcedBy: 'screenshots',
+    description: 'Screenshots older than this are deleted automatically. "Forever" keeps them indefinitely.',
+  },
+  {
     key: 'display.week_starts_on',
     label: 'Week starts on',
     type: 'enum',

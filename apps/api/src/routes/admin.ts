@@ -5,6 +5,8 @@ import { getDb, schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, isAdmin, requesterRole } from '../lib/access';
 import { mapOpsCoreRole, opscoreApi } from '../lib/opscore';
+import { getEffectiveForUser } from '../lib/settings';
+import { pruneOrgScreenshots } from '../lib/retention';
 
 /** OpsCore ProjectStatus → TimePro project status. */
 function mapProjectStatus(s: string): string {
@@ -235,6 +237,31 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
         assignments,
         disabled,
       };
+    },
+  );
+
+  /**
+   * Manually run screenshot retention for the requester's org (admin-only).
+   * The same prune runs automatically on the server's in-process sweep; this
+   * lets an admin apply a just-changed retention setting immediately.
+   */
+  app.post(
+    '/admin/screenshots/prune',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        response: { 200: z.object({ deleted: z.number() }) },
+        tags: ['admin'],
+      },
+    },
+    async (req) => {
+      if (!isAdmin(await requesterRole(req))) forbid('Only owners and admins can prune screenshots');
+      return req.withTenantDb(async (tx) => {
+        const { effective } = await getEffectiveForUser(tx, req.organizationId!, req.userId!);
+        const days = Number(effective['screenshots.retention_days'] ?? 90);
+        const deleted = await pruneOrgScreenshots(tx, req.organizationId!, days);
+        return { deleted };
+      });
     },
   );
 };

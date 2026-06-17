@@ -4,6 +4,7 @@ loadRootEnv();
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { closeDb } from '@timepro/db';
+import { pruneAllOrgs } from './lib/retention';
 
 async function main() {
   const config = loadConfig();
@@ -18,6 +19,19 @@ async function main() {
     app.log.error({ err }, 'failed to start server');
     process.exit(1);
   }
+
+  // In-process screenshot-retention sweep (no scheduler service yet — Phase 8).
+  // Runs shortly after boot, then every 12h. `unref` so it never blocks shutdown.
+  const sweep = async () => {
+    try {
+      const deleted = await pruneAllOrgs();
+      if (deleted > 0) app.log.info({ deleted }, 'screenshot retention sweep');
+    } catch (err) {
+      app.log.error({ err }, 'screenshot retention sweep failed');
+    }
+  };
+  setTimeout(sweep, 30_000).unref();
+  setInterval(sweep, 12 * 60 * 60 * 1000).unref();
 
   const shutdown = async (signal: NodeJS.Signals) => {
     app.log.info({ signal }, 'shutting down');
