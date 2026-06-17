@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
-import { CloseIcon } from '@/components/icons';
+import { CloseIcon, TrashIcon } from '@/components/icons';
 import {
+  deleteScreenshot,
   getScreenshotObjectUrl,
   getTimeline,
   getTimelineActivity,
@@ -82,6 +83,10 @@ export default function TimelinePage() {
   const [shotIndex, setShotIndex] = useState<number | null>(null); // open screenshot (index into allShots)
   const [usage, setUsage] = useState<TimelineAppsUrls | null>(null);
   const [usageTab, setUsageTab] = useState<'apps' | 'urls'>('apps');
+  const [refreshTick, setRefreshTick] = useState(0); // bumped after a screenshot delete
+
+  // managers/admins can delete screenshots; employees gated server-side (C9)
+  const canDeleteShots = session?.role !== 'employee';
 
   // all of the day's screenshots, flattened + chronological — for modal nav
   const allShots = (data?.slots ?? [])
@@ -95,7 +100,7 @@ export default function TimelinePage() {
       .then((d) => { setData(d); setError(null); })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [checked, session, userId, date]);
+  }, [checked, session, userId, date, refreshTick]);
 
   useEffect(() => {
     if (!checked || !session) return;
@@ -271,6 +276,8 @@ export default function TimelinePage() {
                       id={s.id}
                       at={s.captured_at}
                       onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
+                      canDelete={canDeleteShots}
+                      onDeleted={() => setRefreshTick((t) => t + 1)}
                     />
                   ))}
                 </div>
@@ -346,15 +353,39 @@ function ScreenshotModal({
   );
 }
 
-function TLThumb({ id, at, onOpen }: { id: string; at: string; onOpen: () => void }) {
+function TLThumb({
+  id, at, onOpen, canDelete, onDeleted,
+}: {
+  id: string;
+  at: string;
+  onOpen: () => void;
+  canDelete: boolean;
+  onDeleted: () => void;
+}) {
   const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     let revoked: string | null = null;
     getScreenshotObjectUrl(id).then((u) => { revoked = u; setUrl(u); }).catch(() => {});
     return () => { if (revoked) URL.revokeObjectURL(revoked); };
   }, [id]);
+  const del = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('Delete this screenshot? This cannot be undone.')) return;
+    setBusy(true);
+    try { await deleteScreenshot(id); onDeleted(); } catch { setBusy(false); }
+  };
   return (
     <figure className="tl-thumb">
+      <div className="tl-thumb-bar">
+        <span className="tl-thumb-time">{time(at)}</span>
+        {canDelete && (
+          <button type="button" className="tl-thumb-del" onClick={del} disabled={busy}
+            title="Delete screenshot" aria-label="Delete screenshot">
+            <TrashIcon size={15} />
+          </button>
+        )}
+      </div>
       {url ? (
         <button type="button" className="tl-thumb-btn" onClick={onOpen} title="Open screenshot">
           <img src={url} alt="" />
@@ -362,7 +393,6 @@ function TLThumb({ id, at, onOpen }: { id: string; at: string; onOpen: () => voi
       ) : (
         <div className="tl-thumb-ph" />
       )}
-      <figcaption>{time(at)}</figcaption>
     </figure>
   );
 }

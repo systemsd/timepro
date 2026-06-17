@@ -423,14 +423,22 @@ body {
 }
 .tl-slot-act { font-size: 13px; font-weight: 600; margin-left: auto; }
 .tl-shots { display: flex; flex-wrap: wrap; gap: 14px; }
-.tl-thumb { margin: 0; position: relative; }
+.tl-thumb { margin: 0; width: 200px; }
+.tl-thumb-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #dfe3e7; border: 1px solid #d4d8dd; border-bottom: none;
+  border-radius: 6px 6px 0 0; padding: 3px 8px;
+}
+.tl-thumb-time { font-size: 12px; color: #3a3f45; }
+.tl-thumb-del {
+  border: none; background: none; cursor: pointer; color: #8a9097;
+  display: inline-flex; align-items: center; padding: 1px;
+}
+.tl-thumb-del:hover { color: #c0392b; }
+.tl-thumb-del:disabled { opacity: 0.5; cursor: default; }
 .tl-thumb img, .tl-thumb-ph {
   width: 200px; height: 125px; object-fit: cover;
-  border: 1px solid #d9dce0; border-radius: 6px; background: #eef0f2; display: block;
-}
-.tl-thumb figcaption {
-  position: absolute; top: 6px; left: 6px; font-size: 11px; color: #3a3f45;
-  background: rgba(255, 255, 255, 0.85); border-radius: 3px; padding: 1px 6px;
+  border: 1px solid #d4d8dd; border-radius: 0 0 6px 6px; background: #eef0f2; display: block;
 }
 
 /* ───────────── clients ───────────── */

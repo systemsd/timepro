@@ -119,6 +119,15 @@ export const SETTINGS: SettingDef[] = [
     enforcedBy: 'notify',
   },
   {
+    key: 'screenshots.allow_self_delete',
+    label: 'Allow employees to delete own screenshots',
+    type: 'bool',
+    default: false,
+    overridable: true,
+    enforcedBy: 'screenshots',
+    description: 'Admins and managers can always delete screenshots of people they manage (C9).',
+  },
+  {
     key: 'display.week_starts_on',
     label: 'Week starts on',
     type: 'enum',

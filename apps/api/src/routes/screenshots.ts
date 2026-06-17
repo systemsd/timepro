@@ -1,11 +1,13 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { and, desc, eq } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
+import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
+import { getEffectiveForUser } from '../lib/settings';
 import { loadConfig } from '../config';
 
 const ScreenshotResponse = z.object({
@@ -214,6 +216,60 @@ export const screenshotRoutes: FastifyPluginAsyncZod = async (app) => {
       reply.header('Content-Type', 'image/png');
       reply.header('Cache-Control', 'private, max-age=300');
       return reply.send(createReadStream(row.s3Key));
+    },
+  );
+
+  // Delete a screenshot (row + file). Admins/managers may delete any screenshot
+  // of someone they can view; employees may delete their own only when the
+  // `screenshots.allow_self_delete` policy is on (C9, default off).
+  app.delete(
+    '/screenshots/:id',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        response: { 200: z.object({ ok: z.boolean() }) },
+        tags: ['screenshots'],
+      },
+    },
+    async (req) => {
+      const visible = await visibleUsers(req);
+      const role = await requesterRole(req);
+      return req.withTenantDb(async (tx) => {
+        const [shot] = await tx
+          .select({ userId: schema.screenshots.userId, s3Key: schema.screenshots.s3Key })
+          .from(schema.screenshots)
+          .where(
+            and(
+              eq(schema.screenshots.organizationId, req.organizationId!),
+              eq(schema.screenshots.id, req.params.id),
+            ),
+          )
+          .limit(1);
+        if (!shot) {
+          throw Object.assign(new Error('screenshot not found'), { statusCode: 404, code: 'not_found' });
+        }
+        if (!canView(visible, shot.userId)) forbid('Not allowed to delete this screenshot');
+        // Employee self-delete is gated by org/user policy; admins & managers always may.
+        if (!isAdmin(role) && role !== 'manager') {
+          const { effective } = await getEffectiveForUser(tx, req.organizationId!, req.userId!);
+          if (!effective['screenshots.allow_self_delete']) {
+            forbid('Deleting your own screenshots is disabled by your team settings');
+          }
+        }
+        await tx
+          .delete(schema.screenshots)
+          .where(
+            and(
+              eq(schema.screenshots.organizationId, req.organizationId!),
+              eq(schema.screenshots.id, req.params.id),
+            ),
+          );
+        if (shot.s3Key) {
+          try { await unlink(shot.s3Key); } catch { /* file may already be gone */ }
+        }
+        return { ok: true };
+      });
     },
   );
 };

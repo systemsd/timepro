@@ -582,3 +582,12 @@ export async function getScreenshotObjectUrl(id: string): Promise<string> {
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
+
+export async function deleteScreenshot(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/v1/screenshots/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
