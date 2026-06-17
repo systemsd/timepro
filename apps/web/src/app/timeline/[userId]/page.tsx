@@ -5,7 +5,14 @@ import { useParams } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import { CloseIcon } from '@/components/icons';
-import { getScreenshotObjectUrl, getTimeline, getTimelineActivity, type Timeline } from '@/lib/api';
+import {
+  getScreenshotObjectUrl,
+  getTimeline,
+  getTimelineActivity,
+  getTimelineAppsUrls,
+  type Timeline,
+  type TimelineAppsUrls,
+} from '@/lib/api';
 
 // ---- calendar-strip helpers (viewer-local) ----
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -73,6 +80,8 @@ export default function TimelinePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [shotIndex, setShotIndex] = useState<number | null>(null); // open screenshot (index into allShots)
+  const [usage, setUsage] = useState<TimelineAppsUrls | null>(null);
+  const [usageTab, setUsageTab] = useState<'apps' | 'urls'>('apps');
 
   // all of the day's screenshots, flattened + chronological — for modal nav
   const allShots = (data?.slots ?? [])
@@ -95,6 +104,13 @@ export default function TimelinePage() {
       .catch(() => setDayActivity({}));
   }, [checked, session, userId, viewMonth]);
 
+  useEffect(() => {
+    if (!checked || !session) return;
+    getTimelineAppsUrls(userId, date)
+      .then(setUsage)
+      .catch(() => setUsage(null));
+  }, [checked, session, userId, date]);
+
   if (!checked || !session) return <div className="center muted">Loading…</div>;
 
   const today = todayLocal();
@@ -102,12 +118,27 @@ export default function TimelinePage() {
     setDate(today);
     setViewMonth(monthOf(today));
   };
+  const stepDay = (n: number) => {
+    const d = new Date(date + 'T00:00:00');
+    d.setDate(d.getDate() + n);
+    const next = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    if (next > today) return;
+    setDate(next);
+    setViewMonth(monthOf(next));
+  };
 
   const bandDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric',
   });
   const monthSeconds = Object.values(dayActivity).reduce((a, b) => a + b, 0);
   const weekSecs = weekSeconds(dayActivity, date);
+  // local midnight ms — for placing slot segments on the 24h ruler
+  const dayStartMs = new Date(date + 'T00:00:00').getTime();
+  const usageRows = (usageTab === 'apps'
+    ? (usage?.apps ?? []).map((a) => ({ label: a.name, seconds: a.seconds }))
+    : (usage?.urls ?? []).map((u) => ({ label: u.domain, seconds: u.seconds }))
+  );
+  const usageMax = usageRows.reduce((m, r) => Math.max(m, r.seconds), 0) || 1;
 
   return (
     <div className="page">
@@ -155,10 +186,10 @@ export default function TimelinePage() {
         )}
       </div>
 
-      <div className="tl-band">
-        <div className="tl-total">{hm(data?.tracked_seconds ?? 0)}</div>
-        <div className="tl-band-info">
-          <div className="tl-date-big">{bandDate}</div>
+      <div className="tl-card">
+        <div className="tl-card-main">
+          <div className="tl-card-date">{bandDate}</div>
+          <div className="tl-total">{hm(data?.tracked_seconds ?? 0)}</div>
           <div className="tl-subtotals">
             <span>Week <b>{hm(weekSecs)}</b></span>
             <span className="tl-dot-sep">•</span>
@@ -171,11 +202,42 @@ export default function TimelinePage() {
             )}
           </div>
         </div>
+        <div className="tl-card-side">
+          <div className="tl-tabs">
+            <button className={usageTab === 'apps' ? 'on' : ''} onClick={() => setUsageTab('apps')}>Apps</button>
+            <button className={usageTab === 'urls' ? 'on' : ''} onClick={() => setUsageTab('urls')}>URLs</button>
+          </div>
+          <div className="tl-usage">
+            {usageRows.length === 0 ? (
+              <p className="muted tl-usage-empty">No {usageTab === 'apps' ? 'app' : 'URL'} activity for this day.</p>
+            ) : (
+              usageRows.map((r) => (
+                <div className="tl-usage-row" key={r.label}>
+                  <span className="tl-usage-label" title={r.label}>{r.label}</span>
+                  <span className="tl-usage-time">{hm(r.seconds)}</span>
+                  <span className="tl-usage-bar"><i style={{ width: `${(r.seconds / usageMax) * 100}%` }} /></span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <button className="tl-step prev" onClick={() => stepDay(-1)} aria-label="Previous day">‹</button>
+        <button className="tl-step next" onClick={() => stepDay(1)} disabled={date >= today} aria-label="Next day">›</button>
       </div>
 
       <div className="tl-hours-wrap">
         <div className="tl-hours">
           {HOURS.map((h) => <span className="tl-hour" key={h}>{h}</span>)}
+          <div className="tl-track">
+            {(data?.slots ?? []).map((slot) => {
+              const startMs = new Date(slot.start).getTime();
+              const left = ((startMs - dayStartMs) / 86_400_000) * 100;
+              const width = ((new Date(slot.end).getTime() - startMs) / 86_400_000) * 100;
+              if (left < 0 || left >= 100) return null;
+              const op = slot.activity_score != null ? 0.35 + (slot.activity_score / 100) * 0.65 : 0.85;
+              return <span className="tl-seg" key={slot.start} style={{ left: `${left}%`, width: `${width}%`, opacity: op }} />;
+            })}
+          </div>
         </div>
       </div>
 
@@ -184,31 +246,29 @@ export default function TimelinePage() {
         {loading ? (
           <p className="muted">Loading…</p>
         ) : !data || data.slots.length === 0 ? (
-          <p className="muted">No screenshots for this day.</p>
+          <p className="muted">No activity for this day.</p>
         ) : (
           data.slots.map((slot) => (
             <div className="tl-slot" key={slot.start}>
-              <div className="tl-slot-time">
-                <div>{time(slot.start)} – {time(slot.end)}</div>
-                <div className="tl-slot-meta">
-                  {slot.activity_score != null && (
-                    <span className="tl-slot-act" style={{ color: actColor(slot.activity_score) }}>
-                      ● {slot.activity_score}%
-                    </span>
-                  )}
-                  {slot.app_name && <span className="tl-slot-app">{slot.app_name}</span>}
+              <div className="tl-slot-head">
+                <span className="tl-slot-range">{time(slot.start)} – {time(slot.end)}</span>
+                {slot.app_name && <span className="tl-slot-app">{slot.app_name}</span>}
+                {slot.activity_score != null && (
+                  <span className="tl-slot-act" style={{ color: actColor(slot.activity_score) }}>{slot.activity_score}%</span>
+                )}
+              </div>
+              {slot.screenshots.length > 0 && (
+                <div className="tl-shots">
+                  {slot.screenshots.map((s) => (
+                    <TLThumb
+                      key={s.id}
+                      id={s.id}
+                      at={s.captured_at}
+                      onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
+                    />
+                  ))}
                 </div>
-              </div>
-              <div className="tl-shots">
-                {slot.screenshots.map((s) => (
-                  <TLThumb
-                    key={s.id}
-                    id={s.id}
-                    at={s.captured_at}
-                    onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
-                  />
-                ))}
-              </div>
+              )}
             </div>
           ))
         )}

@@ -232,6 +232,22 @@ export async function getTimeline(userId: string, date: string): Promise<Timelin
   return res.json();
 }
 
+export interface TimelineAppsUrls {
+  apps: Array<{ name: string; seconds: number }>;
+  urls: Array<{ domain: string; seconds: number }>;
+}
+
+/** Apps + URLs used on one day for a user — Timeline summary-card panel. */
+export async function getTimelineAppsUrls(userId: string, date: string): Promise<TimelineAppsUrls> {
+  const tz = new Date().getTimezoneOffset();
+  const res = await fetch(
+    `${API_BASE}/v1/timeline/${userId}/apps-urls?date=${date}&tzOffsetMinutes=${tz}`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
 /** Per-day tracked seconds for one user across a month (YYYY-MM) — Timeline calendar dots. */
 export async function getTimelineActivity(
   userId: string,
