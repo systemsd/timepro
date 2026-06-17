@@ -9,7 +9,10 @@ import { getScreenshotObjectUrl, getTimeline, getTimelineActivity, type Timeline
 
 // ---- calendar-strip helpers (viewer-local) ----
 const pad = (n: number) => String(n).padStart(2, '0');
-const DOW = 'SMTWTFS'; // index 0=Sun … 6=Sat
+const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = Date.getDay()
+const FULL_DAY_SECONDS = 8 * 3600; // a "full" day bar = 8h tracked
+// 24-hour ruler labels: 12am, 1am … 11pm
+const HOURS = Array.from({ length: 24 }, (_, i) => `${i % 12 === 0 ? 12 : i % 12}${i < 12 ? 'am' : 'pm'}`);
 
 function todayLocal(): string {
   const d = new Date();
@@ -33,9 +36,29 @@ function monthDays(ym: string): Array<{ date: string; day: number; dow: string; 
   const cells = [];
   for (let d = 1; d <= count; d++) {
     const dow = new Date(y, m - 1, d).getDay();
-    cells.push({ date: `${y}-${pad(m)}-${pad(d)}`, day: d, dow: DOW[dow]!, weekend: dow === 0 || dow === 6 });
+    cells.push({ date: `${y}-${pad(m)}-${pad(d)}`, day: d, dow: DOW3[dow]!, weekend: dow === 0 || dow === 6 });
   }
   return cells;
+}
+/** Sum tracked seconds for the Mon–Sun week containing `date`, from the loaded month map. */
+function weekSeconds(activity: Record<string, number>, date: string): number {
+  const base = new Date(date + 'T00:00:00');
+  const mondayOffset = (base.getDay() + 6) % 7; // 0=Mon … 6=Sun
+  let total = 0;
+  for (let i = -mondayOffset; i <= 6 - mondayOffset; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    total += activity[`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`] ?? 0;
+  }
+  return total;
+}
+/** Viewer UTC offset, e.g. "UTC+5" / "UTC-4:30". */
+function tzLabel(): string {
+  const off = -new Date().getTimezoneOffset(); // minutes east of UTC
+  const sign = off >= 0 ? '+' : '-';
+  const h = Math.floor(Math.abs(off) / 60);
+  const m = Math.abs(off) % 60;
+  return `UTC${sign}${h}${m ? ':' + pad(m) : ''}`;
 }
 
 export default function TimelinePage() {
@@ -80,13 +103,21 @@ export default function TimelinePage() {
     setViewMonth(monthOf(today));
   };
 
-  const pretty = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  const bandDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric',
   });
+  const monthSeconds = Object.values(dayActivity).reduce((a, b) => a + b, 0);
+  const weekSecs = weekSeconds(dayActivity, date);
 
   return (
     <div className="page">
       <TopNav session={session} active="timeline" />
+
+      <div className="tl-user">
+        <span className="tl-user-dot" />
+        <span className="tl-user-name">{data?.display_name ?? '…'}</span>
+        <span className="tl-user-tz">All times are {tzLabel()}</span>
+      </div>
 
       <div className="cal">
         <div className="cal-head">
@@ -99,6 +130,7 @@ export default function TimelinePage() {
           {monthDays(viewMonth).map((c) => {
             const future = c.date > today;
             const secs = dayActivity[c.date] ?? 0;
+            const pct = secs > 0 ? Math.max(8, Math.min(100, (secs / FULL_DAY_SECONDS) * 100)) : 0;
             return (
               <button
                 key={c.date}
@@ -113,7 +145,7 @@ export default function TimelinePage() {
               >
                 <span className="cal-dow">{c.dow}</span>
                 <span className="cal-num">{c.day}</span>
-                <span className={`cal-dot${secs > 0 ? ' on' : ''}`} />
+                <span className="cal-bar"><span className="cal-bar-fill" style={{ width: `${pct}%` }} /></span>
               </button>
             );
           })}
@@ -124,18 +156,26 @@ export default function TimelinePage() {
       </div>
 
       <div className="tl-band">
-        <div className="tl-head">
-          <span className="tl-who">{data?.display_name ?? '…'}</span>
-          <span className="tl-date">{pretty}</span>
+        <div className="tl-total">{hm(data?.tracked_seconds ?? 0)}</div>
+        <div className="tl-band-info">
+          <div className="tl-date-big">{bandDate}</div>
+          <div className="tl-subtotals">
+            <span>Week <b>{hm(weekSecs)}</b></span>
+            <span className="tl-dot-sep">•</span>
+            <span>Month <b>{hm(monthSeconds)}</b></span>
+            {data?.activity_score != null && (
+              <>
+                <span className="tl-dot-sep">•</span>
+                <span>Activity <b style={{ color: actColor(data.activity_score) }}>{data.activity_score}%</b></span>
+              </>
+            )}
+          </div>
         </div>
-        <div className="tl-totals">
-          <div className="tl-total">{hm(data?.tracked_seconds ?? 0)}</div>
-          {data?.activity_score != null && (
-            <div className="tl-activity" title="Average activity">
-              <span className="tl-act-bar"><span className="tl-act-fill" style={{ width: `${data.activity_score}%`, background: actColor(data.activity_score) }} /></span>
-              <span className="tl-act-pct">{data.activity_score}%</span>
-            </div>
-          )}
+      </div>
+
+      <div className="tl-hours-wrap">
+        <div className="tl-hours">
+          {HOURS.map((h) => <span className="tl-hour" key={h}>{h}</span>)}
         </div>
       </div>
 
