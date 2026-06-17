@@ -24,13 +24,13 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 - A3 ✅ `infra/nginx/timepro.systemsd.co.conf` + runbook — `nginx -t` validated
 - B1 ✅ baked prod URLs into `apps/desktop/src-tauri/src/state.rs`
 - B2/B3 ✅ `.github/workflows/desktop-release.yml` (tag `v*` → installers)
-- A6 ✅ `.github/workflows/deploy.yml` (push main → SSH → compose up → /readyz gate)
+- A6 ✅ `.github/workflows/deploy.yml` — **rewritten to mirror OpsCore** (2026-06-17): `appleboy/ssh-action` + `VPS_*` secrets, two jobs (verify-build in `/var/www/timepro-staging` → deploy in `/var/www/timepro`: `git reset --hard` → `docker compose up -d --build` → `/readyz` gate → prune)
 
 **Proven locally:** full stack + native desktop app both build & run; download→track→visible chain confirmed via a simulated agent session (cleaned up after).
 
 **Pending (~1 day, mostly setup, no big coding):**
-1. One-time **server setup** (needs Hamid/server access): clone repo, create env files, deploy SSH key, run nginx/certbot once.
-2. **GitHub secrets:** `DEPLOY_HOST/USER/PATH/SSH_KEY`.
+1. One-time **server setup** (needs Hamid/server access): clone repo to **`/var/www/timepro`**, create env files (`infra/compose/.env` + `envs/api.env`, gitignored), `VPS_USER` in `docker` group, **Docker daemon running** (`systemctl enable --now docker`), run nginx/certbot once. ⚠️ `.env` must exist before `docker compose build` or `POSTGRES_*`/`NEXT_PUBLIC_*` resolve blank.
+2. **GitHub secrets** (TimePro repo, same values as OpsCore — same VPS): `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.
 3. **A4:** set OpsCore prod `TIMEPRO_URL=https://timepro.systemsd.co` + restart.
 4. **Push branch + tag `v0.1.0`** → CI builds installers, then **publish the draft Release** (drafts are invisible to the Download page's public API call).
 5. ~~**B4:** wire Download page~~ ✅ done (2026-06-17) — resolves installers from the latest GitHub Release at runtime.

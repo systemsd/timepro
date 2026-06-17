@@ -62,11 +62,15 @@ CMD ["dist/server.js"]
 
 Single Nginx in front of every service. TLS termination, routing by host + path, rate limiting.
 
+> **This is the target multi-instance topology.** The live single-tenant config is
+> [`infra/nginx/timepro.systemsd.co.conf`](../infra/nginx/timepro.systemsd.co.conf) (one API on `127.0.0.1:4001`,
+> one web on `127.0.0.1:3005`). Ports below match those (API **4001**, web **3005**).
+
 ```nginx
 # /etc/nginx/conf.d/timepro.conf
 
-upstream tf_api      { least_conn; server api1:3001; server api2:3001; server api3:3001; }
-upstream tf_web      { least_conn; server web1:3000; server web2:3000; }
+upstream tf_api      { least_conn; server api1:4001; server api2:4001; server api3:4001; }
+upstream tf_web      { least_conn; server web1:3005; server web2:3005; }
 upstream tf_realtime { ip_hash;    server rt1:3010; server rt2:3010; }
 
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }

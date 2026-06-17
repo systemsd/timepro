@@ -33,18 +33,20 @@ Status legend: ✅ built · 🟡 partial · 🔴 not built · ⏳ blocked on inp
 Most specs are thin UI on top of a few cross-cutting capabilities. Build these once; many features
 light up together.
 
+_Status reflects current build state; see §3 for the phased detail._
+
 | Block | Powers | Status |
 | ----- | ------ | ------ |
-| **B1 — OpsCore sync engine** | users (S1), projects (S6/S9), clients (S10) — one engine, three entity types | 🔴 |
-| **B2 — OpsCore OIDC auth** | web + desktop login (S1); brings **real JWT/session auth** (replaces dev shim) | 🔴 |
-| **B3 — Presence / heartbeat** | online dots in My Home (S2) + Timeline dropdown (S4) + "N online" headlines | 🔴 (`devices.last_seen_at` exists) |
-| **B4 — Activity tracking** | activity % + strip (S3), "Activity Level" setting (S11), activity column (S2) | 🔴 (`activity_samples` table exists, unused) |
-| **B5 — App & URL tracking** | last app/URL column (S2), per-slot app/URL (S3), "App & URL" setting (S11), browser extension (S12) | 🔴 (no tables) |
-| **B6 — Settings engine** | Settings page (S11), Team per-user overrides (S7), agent behavior | 🔴 (`settings_scoped` exists) |
-| **B7 — Reports** | time-per-client (S10), weekly-limit enforcement (S11), team totals at scale (S2) | 🔴 |
-| **B8 — Rollups + scheduler** | scale-out of S2/S3 aggregation; recurring OpsCore sync (B1) | 🔴 |
-| **B9 — Build/sign/host pipeline** | Download page artifacts (S12) | 🔴 (local macOS build only) |
-| **B10 — Realtime (WS)** | live presence/roster updates (S2/S4) | 🔴 |
+| **B1 — OpsCore sync engine** | users (S1), projects (S6/S9), clients (S10) — one engine, three entity types | ✅ (auto-disables members absent from the sync) |
+| **B2 — OpsCore handoff-JWT auth** | web + desktop login (S1) via **handoff-JWT** (HS256, *not* OIDC) + service-API sync; `x-dev-*` shim kept for dev | ✅ (web + desktop loopback; real password/JWT auth is Phase 6) |
+| **B3 — Presence / heartbeat** | online dots in My Home (S2) + Timeline dropdown (S4) + "N online" headlines | ✅ |
+| **B4 — Activity tracking** | activity % + strip (S3), "Activity Level" setting (S11), activity column (S2) | ✅ |
+| **B5 — App & URL tracking** | last app/URL column (S2), per-slot app/URL (S3), "App & URL" setting (S11), browser extension (S12) | ✅ (extension built, unverified in a real browser) |
+| **B6 — Settings engine** | Settings page (S11), Team per-user overrides (S7), agent behavior | ✅ |
+| **B7 — Reports** | time-per-client (S10), weekly-limit enforcement (S11), team totals at scale (S2) | ✅ |
+| **B8 — Rollups + scheduler** | scale-out of S2/S3 aggregation; recurring OpsCore sync (B1) | 🔴 (deferred to Phase 8.1) |
+| **B9 — Build/sign/host pipeline** | Download page artifacts (S12) | 🟡 (backend deploy pipeline in progress — see [docs/14](14-deploy-and-download-progress.md); installers not built) |
+| **B10 — Realtime (WS)** | live presence/roster updates (S2/S4) | ✅ |
 
 ---
 
@@ -92,7 +94,7 @@ Ordered by dependency and value. Each phase is shippable.
 >   "Sync from OpsCore" button on the Team page.
 > - ⛔ **C8 break-glass — SUPERSEDED.** Decision reversed: **no local break-glass owner**. OpsCore is the only auth source; the TimePro org is **JIT-created on the first OpsCore login** (`OPSCORE_ORG_SLUG` / `OPSCORE_ORG_NAME`) and all users/projects/clients flow from the OpsCore sync. The `db:seed` script was removed. Trade-off: an OpsCore outage means no one can sign in.
 > - Code: OpsCore `lib/timepro.ts` + `app/api/timepro/*`; TimePro `lib/opscore.ts`, `routes/auth.ts` (exchange), `routes/admin.ts` (sync).
-> - ⚙️ **Port note:** OpsCore owns `:3001`, so the **TimePro API moved to `:4001`** (web stays `:3000`).
+> - ⚙️ **Port note:** OpsCore owns `:3001`, so the **TimePro API moved to `:4001`**; the **web moved to `:3005`** (off `:3000`, because prod OpsCore's nginx rewrites a `localhost:3000` `Location` and would clobber the handoff redirect — see [`CLAUDE.md`](../CLAUDE.md)).
 
 ### Phase 4 — Capture expansion (B4 + B5) — ✅ BUILT (URL via extension deferred)
 - ✅ **B4** Activity tracking — agent activity aggregator (idle-derived per-minute samples → `activity_samples`, `POST /v1/ingest/activity`); Timeline day + per-slot activity %; roster avg; the "Activity Level" setting now gates the agent. *(Keyboard/mouse event counts need low-level input hooks — a later enhancement; the active/idle ratio gives a real 0–100 score now.)*
@@ -204,6 +206,10 @@ These are real inconsistencies across the specs (or against earlier decisions) �
 
 ## 5. Open questions (need your input, not contradictions)
 
+> _Captured **before** the build. Most are now resolved (loopback redirect, role mapping, API-key
+> service auth, single OpsCore org JIT-created on login, and handoff-JWT instead of OIDC) — see the
+> §3 "BUILT" banners and [`CLAUDE.md`](../CLAUDE.md) for the as-shipped answers. Kept for history._
+
 ### Settings catalog specifics (S11)
 1. **Value ranges**: screenshots/hr range (0–60?); blur options (allow / always / none?); week-start (Mon/Sun/…); currency list (which symbols?).
 2. **"Employee desktop application settings"** sub-category — what settings are in it?
@@ -244,11 +250,11 @@ These are real inconsistencies across the specs (or against earlier decisions) �
 | `client_name` text on projects (to normalize) | S10 |
 | Desktop build (`tauri:build`), baked API base | S12 |
 
-| Net-new / not started | Spec |
+| Net-new (planned then — **now built**, see §3) | Spec |
 | --------------------- | ---- |
 | `clients` table + `project.client_id` | S10 |
 | `opscore_*` id columns + sync engine | S1, S6, S9, S10 |
-| OIDC client + callback + JWT sessions | S1 |
+| OpsCore **handoff-JWT** login + exchange + device sessions (not OIDC) | S1 |
 | Heartbeat endpoint + presence | S2, S4 |
 | `app_usage` / `url_usage` tables + capture + extension | S2, S3, S5(app/url setting), S12 |
 | Settings API + resolver | S7, S11 |
