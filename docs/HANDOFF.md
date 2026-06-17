@@ -32,8 +32,8 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 1. One-time **server setup** (needs Hamid/server access): clone repo, create env files, deploy SSH key, run nginx/certbot once.
 2. **GitHub secrets:** `DEPLOY_HOST/USER/PATH/SSH_KEY`.
 3. **A4:** set OpsCore prod `TIMEPRO_URL=https://timepro.systemsd.co` + restart.
-4. **Push branch + tag `v0.1.0`** → CI builds installers.
-5. **B4:** wire Download page (`apps/web/src/app/download/page.tsx`) to release URLs.
+4. **Push branch + tag `v0.1.0`** → CI builds installers, then **publish the draft Release** (drafts are invisible to the Download page's public API call).
+5. ~~**B4:** wire Download page~~ ✅ done (2026-06-17) — resolves installers from the latest GitHub Release at runtime.
 6. **B5:** verify on a clean machine.
 
 **Deploy-specific gotchas:** turbo pinned `2.9.16` in Dockerfiles (prune determinism); `@timepro/db` bundled into api via `apps/api/tsup.config.ts` (pg/uuid kept external so the ESM bundle boots); api runs distroless `nonroot` so the screenshot volume dir is seeded in the image for ownership; compose ports bind `127.0.0.1` (nginx fronts them); no Redis container (`REDIS_URL` is declared-but-unused).

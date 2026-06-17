@@ -10,7 +10,7 @@
 > Maps to **Phase 7 — Ship pipeline (B9)** in [docs/13-opscore-feature-roadmap.md](13-opscore-feature-roadmap.md).
 > Read [CLAUDE.md](../CLAUDE.md) + [docs/HANDOFF.md](HANDOFF.md) first for ground truth.
 
-**Status:** 🟡 In progress — all off-server work built & validated (A1/A2/A3/A6, B1/B2); local dry-run proved download→track→visible. Remaining is server setup + CI runs (see §0.1 + table below).
+**Status:** 🟡 In progress — all off-server work built & validated (A1/A2/A3/A6, B1/B2/B4); local dry-run proved download→track→visible. Remaining is server setup + CI runs (see §0.1 + table below).
 **Last updated:** 2026-06-16.
 
 Status legend: ✅ done · 🟡 in progress · 🔴 not started · ⏳ blocked (needs input/credential) · ⛔ cut/deferred.
@@ -142,10 +142,10 @@ A0(DNS/host) → A1 → A2 → A3 → A4 → A5 ──┐
 - [ ] **NEEDS GITHUB:** push to a GitHub remote with Actions enabled, then push a `v0.1.0` tag (or run `workflow_dispatch`) to produce the first Release. (CI can't run locally.)
 - **Done when:** tagging `vX.Y.Z` produces a draft Release with installers for all four targets.
 
-### B4 · Wire the Download page 🔴
-- [ ] Replace `#` placeholders in `apps/web/src/app/download/page.tsx` with `…/releases/latest/download/<asset>` URLs.
-- [ ] Swap interim "build locally" copy → real buttons + "unsigned, approve in Gatekeeper/SmartScreen" note.
-- **Done when:** the live Download page hands out working installers.
+### B4 · Wire the Download page ✅ *(done 2026-06-17)*
+- [x] `apps/web/src/app/download/page.tsx` now resolves installer URLs from the **latest published GitHub Release** at runtime (`api.github.com/repos/systemsd/timepro/releases/latest`), matching assets by pattern (`.dmg`+`aarch64` → Apple Silicon, `.dmg`+`x64` → Intel, `.exe`/`.msi` → Windows, `.AppImage`/`.deb` → Linux). **Why not static `releases/latest/download/<asset>`:** Tauri bundle names embed the version (`TimePro_0.1.0_aarch64.dmg`), so a literal path breaks on every version bump; pattern-matching the latest release stays correct. Browser extension links to `apps/extension` on GitHub (loaded unpacked, not a release artifact).
+- [x] Swapped interim "build locally" copy → real buttons + **unsigned Gatekeeper/SmartScreen** approval note (shows latest tag). Loading + "no release yet / build-locally" fallback states; disabled placeholder buttons for targets without an asset. ✅ `pnpm --filter @timepro/web typecheck` clean.
+- **Done when:** ✅ the live Download page hands out working installers — *fully wired; resolves live once the first `v0.1.0` Release is published (drafts are invisible to the public API, as expected).*
 
 ### B5 · End-to-end verification on a clean machine 🔴 *(also satisfies group C "tracking visible")*
 - [ ] Download from live page → install → OpsCore loopback login → start timer.
@@ -177,6 +177,7 @@ Append dated entries as work lands.
 - **2026-06-16** — Committed A3 (`a09a9db`). **B1 done** — baked `*.systemsd.co` hosts into `state.rs`. **B2/B3 authored** — `desktop-release.yml` (4-target matrix, unsigned, drafts a GitHub Release); YAML + actionlint clean. First CI run needs a GitHub remote + a `v*` tag. Remote exists: `github.com:systemsd/timepro.git`.
 - **2026-06-16** — A0 DNS verified resolving (`@1.1.1.1` → `178.105.58.173`).
 - **2026-06-16** — **A6 authored** — `deploy.yml` (push-to-main → SSH → compose up --build → /readyz health-gate). Per manager's CI/CD direction. YAML + actionlint clean. Needs one-time host setup + GitHub secrets. Domain re-verified: `timepro` resolves, `timppro` (Slack typo) does not.
+- **2026-06-17** — **B4 done.** Wired `download/page.tsx` to the latest GitHub Release via the public API (pattern-matched assets, version-agnostic), real unsigned-installer copy + loading/fallback states; typecheck clean. Resolves live once the first release is published.
 - **2026-06-16** — **Local dry-run (Path B)** — pre-validates the "tracking is visible" chain (B5/C1) on this Mac without the server. Local stack already running (API:4001/web:3005/pg container). Simulated the desktop agent for **Muhammad Anas** via the API (dev-header auth): `timer/start` → `agent/heartbeat` → `ingest/activity` (2 samples) → `screenshots` (a real 6.9 MB `screencapture` PNG → DB + disk). Verified visible: `/v1/roster` (as admin) returns `Muhammad Anas | presence=tracking | last_screenshot=True`; screenshot servable `[200] image/png`. **Note:** Rust toolchain was NOT installed on this machine (native desktop app couldn't launch) — installing it for Path A (real native-app run).
 </content>
 </invoke>
