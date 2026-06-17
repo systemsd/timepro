@@ -219,6 +219,7 @@ export interface Timeline {
   date: string;
   tracked_seconds: number;
   activity_score: number | null;
+  intervals: Array<{ start: string; end: string }>;
   slots: TimelineSlot[];
 }
 

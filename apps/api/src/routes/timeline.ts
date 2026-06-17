@@ -27,6 +27,8 @@ const TimelineResponse = z.object({
   date: z.string(),
   tracked_seconds: z.number(),
   activity_score: z.number().nullable(),
+  // tracked tracker run/stop segments (clipped to the day) — the ruler "green bar"
+  intervals: z.array(z.object({ start: z.string(), end: z.string() })),
   slots: z.array(Slot),
 });
 
@@ -84,11 +86,16 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           );
 
         let tracked = 0;
+        const intervals: Array<{ start: string; end: string }> = [];
         for (const e of entries) {
           const s = Math.max(e.startedAt.getTime(), dayStartMs);
           const en = Math.min(e.endedAt ? e.endedAt.getTime() : Date.now(), dayStartMs + 86_400_000);
-          if (en > s) tracked += Math.floor((en - s) / 1000);
+          if (en > s) {
+            tracked += Math.floor((en - s) / 1000);
+            intervals.push({ start: new Date(s).toISOString(), end: new Date(en).toISOString() });
+          }
         }
+        intervals.sort((a, b) => (a.start < b.start ? -1 : 1));
 
         const shots = await tx
           .select({
@@ -201,6 +208,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           date: req.query.date,
           tracked_seconds: tracked,
           activity_score: dayScore,
+          intervals,
           slots,
         };
       });

@@ -188,18 +188,24 @@ export default function TimelinePage() {
 
       <div className="tl-card">
         <div className="tl-card-main">
-          <div className="tl-card-date">{bandDate}</div>
-          <div className="tl-total">{hm(data?.tracked_seconds ?? 0)}</div>
+          <div className="tl-card-date">
+            {bandDate}
+            {data?.activity_score != null && (
+              <span
+                className="tl-act-dot"
+                style={{ background: actColor(data.activity_score) }}
+                title={`Average Activity Level: ${data.activity_score}%`}
+              />
+            )}
+          </div>
+          <div className="tl-total-row">
+            <span className="tl-total">{hm(data?.tracked_seconds ?? 0)}</span>
+            {data?.activity_score != null && <ActivityDonut score={data.activity_score} />}
+          </div>
           <div className="tl-subtotals">
             <span>Week <b>{hm(weekSecs)}</b></span>
             <span className="tl-dot-sep">•</span>
             <span>Month <b>{hm(monthSeconds)}</b></span>
-            {data?.activity_score != null && (
-              <>
-                <span className="tl-dot-sep">•</span>
-                <span>Activity <b style={{ color: actColor(data.activity_score) }}>{data.activity_score}%</b></span>
-              </>
-            )}
           </div>
         </div>
         <div className="tl-card-side">
@@ -229,13 +235,13 @@ export default function TimelinePage() {
         <div className="tl-hours">
           {HOURS.map((h) => <span className="tl-hour" key={h}>{h}</span>)}
           <div className="tl-track">
-            {(data?.slots ?? []).map((slot) => {
-              const startMs = new Date(slot.start).getTime();
+            {(data?.intervals ?? []).map((iv) => {
+              const startMs = new Date(iv.start).getTime();
               const left = ((startMs - dayStartMs) / 86_400_000) * 100;
-              const width = ((new Date(slot.end).getTime() - startMs) / 86_400_000) * 100;
+              const width = Math.max(0.3, ((new Date(iv.end).getTime() - startMs) / 86_400_000) * 100);
               if (left < 0 || left >= 100) return null;
-              const op = slot.activity_score != null ? 0.35 + (slot.activity_score / 100) * 0.65 : 0.85;
-              return <span className="tl-seg" key={slot.start} style={{ left: `${left}%`, width: `${width}%`, opacity: op }} />;
+              const from = time(iv.start), to = time(iv.end);
+              return <span className="tl-seg" key={iv.start} style={{ left: `${left}%`, width: `${width}%` }} title={`${from} – ${to}`} />;
             })}
           </div>
         </div>
@@ -358,6 +364,24 @@ function TLThumb({ id, at, onOpen }: { id: string; at: string; onOpen: () => voi
       )}
       <figcaption>{time(at)}</figcaption>
     </figure>
+  );
+}
+
+/** Small donut showing the day's average activity level. */
+function ActivityDonut({ score }: { score: number }) {
+  const r = 17;
+  const circ = 2 * Math.PI * r;
+  const on = (Math.max(0, Math.min(100, score)) / 100) * circ;
+  return (
+    <svg className="tl-donut" width="46" height="46" viewBox="0 0 46 46" role="img"
+      aria-label={`Average activity ${score}%`}>
+      <title>Average Activity Level: {score}%</title>
+      <circle cx="23" cy="23" r={r} fill="none" stroke="#e3e5e8" strokeWidth="7" />
+      <circle cx="23" cy="23" r={r} fill="none" stroke={actColor(score)} strokeWidth="7"
+        strokeDasharray={`${on} ${circ - on}`} strokeLinecap="round" transform="rotate(-90 23 23)" />
+      <text x="23" y="23" textAnchor="middle" dominantBaseline="central"
+        fontSize="11" fontWeight="600" fill="#5a6068">{score}%</text>
+    </svg>
   );
 }
 

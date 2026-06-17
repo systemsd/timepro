@@ -365,7 +365,10 @@ body {
   flex: 1 1 48%; display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; padding: 26px 24px; gap: 4px;
 }
-.tl-card-date { font-size: 16px; font-weight: 700; color: #5a6068; }
+.tl-card-date { font-size: 16px; font-weight: 700; color: #5a6068; display: inline-flex; align-items: center; }
+.tl-act-dot { width: 11px; height: 11px; border-radius: 50%; margin-left: 9px; cursor: help; }
+.tl-total-row { display: flex; align-items: center; gap: 14px; }
+.tl-donut { flex: none; }
 .tl-total { font-size: 60px; font-weight: 300; color: #4a4f55; line-height: 1.05; }
 .tl-subtotals { font-size: 14px; color: var(--muted); }
 .tl-subtotals b { color: var(--accent); font-weight: 600; }
