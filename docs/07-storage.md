@@ -144,7 +144,13 @@ Reasons fulls do not go through CDN:
 
 ## 8. Retention & Deletion
 
-Two layers:
+> ✅ **Built (interim, local-disk):** the org-wide `screenshots.retention_days` setting (1/3/6/12 months or Forever;
+> default 3 months) drives `apps/api/src/lib/retention.ts`, which hard-deletes old screenshot rows **and unlinks the
+> local files**. With no scheduler/worker yet (Phase 8), the sweep runs **in-process** from `server.ts` (~30s after
+> boot, then every 12h); `POST /v1/admin/screenshots/prune` triggers it on demand. The target design below
+> (soft-delete window + S3 lifecycle tiers + a `retention.sweep` worker) supersedes this once object storage lands.
+
+Target design (two layers):
 
 1. **Logical**: `screenshots.status = 'deleted'`, hidden from UI immediately, kept for 30-day soft-delete window.
 2. **Physical**: `retention.sweep` worker deletes the underlying S3 objects + DB rows after the soft-delete window or lifecycle expiry.

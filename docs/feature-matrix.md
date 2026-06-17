@@ -36,6 +36,7 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 | **Desktop time tracking** | ✅ | Start/stop timer; idempotent; weekly-limit 409 surfaces a clear message. |
 | **Automatic screenshot capture** | ✅ | On a cadence while tracking → API → disk; native OS toast when `screenshots.notify` is on. |
 | **Delete screenshots** | ✅ | Trash button on Timeline thumbnails → `DELETE /v1/screenshots/:id` (row + file). Admins/managers anytime (within visible set); employees on their own only when `screenshots.allow_self_delete` is on (default off — C9). |
+| **Screenshot retention** | ✅ | Org-wide `screenshots.retention_days` (1/3/6/12 months or Forever; default 3 months). Auto-prunes old screenshots (rows + files) via an in-process sweep (`lib/retention.ts`; 12h cadence, no scheduler yet); `POST /v1/admin/screenshots/prune` for on-demand. Reports unaffected. |
 | **Activity + app + URL capture** | ✅ | Idle-derived activity %, active-app intervals; URL via the browser extension (built, unverified in Chrome). |
 | **Employee Dashboard** | ✅ | Company-row table: one row per org the employee tracks for (org name + role badge + last-active screenshot + today/yesterday/week/month + weekly-limit). Powered by the now self-scoped `/v1/roster`. (Replaced the old stat-cards "My Home".) |
 | **Own Timeline (Hubstaff-style)** | ✅ | Own day timeline (screenshots + activity), navigated by the month strip with per-day activity bars; summary card + Apps/URLs panel + average-activity donut + 24h run/stop ruler. |

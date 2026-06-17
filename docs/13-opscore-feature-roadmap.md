@@ -63,7 +63,7 @@ Ordered by dependency and value. Each phase is shippable.
 - ✅ **S10** Clients table + `project.client_id` + page (`/v1/clients`); interim local create.
 
 ### Phase 1 — Settings engine (B6) — ✅ BUILT
-- ✅ **S11** Settings catalog registry (`lib/settings-registry.ts`, 12 settings incl. `screenshots.allow_self_delete` for C9), resolver (org default ← user override, `lib/settings.ts`), Settings page UI (catalog list + typed editors + "Individual settings" per-user toggles), API (`/v1/settings`, `/settings/user/:id`, `/settings/effective`).
+- ✅ **S11** Settings catalog registry (`lib/settings-registry.ts`, 13 settings incl. `screenshots.allow_self_delete` for C9 + `screenshots.retention_days` for auto-prune), resolver (org default ← user override, `lib/settings.ts`), Settings page UI (catalog list + typed editors + "Individual settings" per-user toggles), API (`/v1/settings`, `/settings/user/:id`, `/settings/effective`).
 - ✅ **S7** Team per-user overrides — same engine; Team "effective settings" now resolver-backed.
 - ✅ Agent consumes `/v1/settings/effective` (refresh ~60s) and **enforces**: `screenshots.per_hour` → capture interval, `screenshots.enabled`, `screenshots.blur=always` (gaussian blur before upload), `screenshots.notify` (toast), `activity.tracking`, `app_url.tracking`, `tracking.auto_pause_minutes` (idle auto-pause → `timer/stop`). Server enforces `limits.weekly_hours` (blocks `timer/start`).
 - 🔴 Only `time.allow_offline` is unenforced — the offline-time entry feature isn't built (honestly flagged in the Settings UI). All other settings store, resolve, **and act**.

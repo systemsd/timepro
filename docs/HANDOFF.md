@@ -122,7 +122,7 @@ verifies locally (signature only) — sign-in does **not** call `OPSCORE_API_URL
 `projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw + **DELETE `:id`**, C9-gated) · `team` · `timer` ·
 `roster` (self-scoped for employees) · `timeline` (+ `:userId/activity` for the strip bars, `:userId/apps-urls` for the summary panel) · `clients` ·
 `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) · `ingest` (activity, app-usage, url-usage) ·
-`admin` (opscore/sync) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
+`admin` (opscore/sync, screenshots/prune) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
 
 **Auth shim:** `requireAuth` accepts `x-dev-org` + `x-dev-user` headers (non-prod). RBAC scoping (admin=all /
 manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/access.ts`.
