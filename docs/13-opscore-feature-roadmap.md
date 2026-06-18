@@ -45,7 +45,7 @@ _Status reflects current build state; see §3 for the phased detail._
 | **B6 — Settings engine** | Settings page (S11), Team per-user overrides (S7), agent behavior | ✅ (registry + resolver + API + UI + agent enforcement; only offline-time unbuilt) |
 | **B7 — Reports** | time-per-client (S10), weekly-limit enforcement (S11), team totals at scale (S2) | ✅ |
 | **B8 — Rollups + scheduler** | scale-out of S2/S3 aggregation; recurring OpsCore sync (B1) | 🔴 (deferred to Phase 8.1) |
-| **B9 — Build/sign/host pipeline** | Download page artifacts (S12) | 🟡 (backend deploy pipeline live; installers not built) |
+| **B9 — Build/sign/host pipeline** | Download page artifacts (S12) | 🟡 (CI builds 4 targets → publishes to a separate **public** `timepro-downloads` repo; local build verified; first tag/publish pending; unsigned) |
 | **B10 — Realtime (WS)** | live presence/roster updates (S2/S4) | ✅ |
 
 ---

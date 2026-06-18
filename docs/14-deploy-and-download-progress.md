@@ -26,7 +26,7 @@ All four chosen to **mirror what's already in use** (the sibling app **OpsCore**
 | 1 | **Hosting** | Single **Ubuntu + Docker + nginx + Let's Encrypt** host | What `docs/09-deployment.md` prescribes; OpsCore is deployed this way. AWS/ECS is the doc's "at-scale" target, not in repo. |
 | 2 | **Domain** | `*.systemsd.co` subdomains: web `timepro.systemsd.co`, API `api.timepro.systemsd.co` | Mirrors OpsCore (`opscore.systemsd.co`) on a domain already owned. Exact labels confirmable at A0. |
 | 3 | **Code signing** | **Unsigned interim** (Gatekeeper/SmartScreen click-through) | Nothing signing-related exists; Download page already carries interim copy. No cert procurement. Signing = separate future task. |
-| 4 | **Installer hosting** | **GitHub Releases** | CI is already GitHub-centric (GHCR, `gh` CLI). Zero new infra. CloudFront/`updates.timepro.app` is the at-scale target, not in use. |
+| 4 | **Installer hosting** | **GitHub Releases — in a separate PUBLIC repo `systemsd/timepro-downloads`** (revised 2026-06-18) | Code repo is private; release downloads inherit repo visibility, so installers go in a binaries-only public repo. CI is already GitHub-centric. CloudFront/`updates.timepro.app` is the at-scale target, not in use. |
 
 > ⚠️ **Consequence of decision 2:** the desktop binary currently bakes `api.timepro.app` / `app.timepro.app`.
 > **B1 must rewrite** `PRODUCTION_API_BASE` / `PRODUCTION_WEB_BASE` in `state.rs` to the `*.systemsd.co` names,
@@ -136,18 +136,27 @@ A0(DNS/host) → A1 → A2 → A3 → A4 → A5 ──┐
 - [x] Note: the webview CSP `connect-src` still lists `http://localhost:3001` — harmless, because the UI calls Rust via `invoke()` and never hits the API directly (Rust does all HTTP). Re-verify at B5.
 - **Done when:** ✅ prod hosts are baked. The actual installer is produced by B2's CI (building a real installer locally needs the full Rust/Tauri toolchain and yields only a mac artifact here).
 
-### B2 + B3 · Cross-platform CI build → GitHub Releases 🟡 *(workflow written & lint-clean; first real run needs GitHub)*
-- [x] `.github/workflows/desktop-release.yml` — `tauri-apps/tauri-action`, matrix: `macos-latest` ×2 (aarch64 + x86_64), `ubuntu-22.04`, `windows-latest`; trigger on `v*` tag (+ `workflow_dispatch`). Installs pnpm 9.15.0 + Node 22 + Rust (per-target) + Linux webkit2gtk-4.1 deps + rust-cache.
-- [x] **Unsigned** (no signing secrets) — release body tells users how to approve in Gatekeeper/SmartScreen.
-- [x] Bakes `TIMEPRO_API_URL`/`TIMEPRO_WEB_URL` at compile time (reinforces B1 constants). `releaseDraft: true` → drafts a GitHub Release and uploads `.dmg`/`.app`, `.msi`/`.exe`, `.deb`/`.AppImage`.
-- [x] **Validated:** YAML parses; `actionlint` clean (no findings).
-- [ ] **NEEDS GITHUB:** push to a GitHub remote with Actions enabled, then push a `v0.1.0` tag (or run `workflow_dispatch`) to produce the first Release. (CI can't run locally.)
-- **Done when:** tagging `vX.Y.Z` produces a draft Release with installers for all four targets.
+> ⚠️ **Hosting revision (2026-06-18):** the code repo `systemsd/timepro` is **private**, and GitHub release
+> downloads **inherit repo visibility** — so a private repo's installers can't be fetched by the page's
+> unauthenticated API call *or* downloaded by employees (who aren't GitHub users). There's no "public releases on
+> a private repo" toggle. **Fix:** publish installers to a **separate PUBLIC repo `systemsd/timepro-downloads`**
+> (binaries only, no source); the code repo stays private. Considered alternatives — server proxy w/ token (B),
+> host on server/S3 (C) — but A′ (separate public repo) is the least infra and keeps GitHub as the artifact store.
 
-### B4 · Wire the Download page ✅ *(done 2026-06-17)*
-- [x] `apps/web/src/app/download/page.tsx` now resolves installer URLs from the **latest published GitHub Release** at runtime (`api.github.com/repos/systemsd/timepro/releases/latest`), matching assets by pattern (`.dmg`+`aarch64` → Apple Silicon, `.dmg`+`x64` → Intel, `.exe`/`.msi` → Windows, `.AppImage`/`.deb` → Linux). **Why not static `releases/latest/download/<asset>`:** Tauri bundle names embed the version (`TimePro_0.1.0_aarch64.dmg`), so a literal path breaks on every version bump; pattern-matching the latest release stays correct. Browser extension links to `apps/extension` on GitHub (loaded unpacked, not a release artifact).
+### B2 + B3 · Cross-platform CI build → public downloads repo 🟡 *(reworked 2026-06-18; first real run needs a `v*` tag)*
+- [x] `.github/workflows/desktop-release.yml` — **two-phase** (private GITHUB_TOKEN can't write cross-repo):
+  - **build** (matrix: `macos-latest` ×2 aarch64+x86_64, `ubuntu-22.04`, `windows-latest`) → `tauri-action` builds installers (no `tagName` → build-only) → `upload-artifact` each platform's bundles.
+  - **publish** (single job) → `download-artifact` all → `softprops/action-gh-release` creates ONE draft Release in **`systemsd/timepro-downloads`** via `secrets.RELEASES_REPO_TOKEN` (fine-grained PAT, Contents:write on the downloads repo).
+- [x] **Unsigned** (no signing secrets) — release body tells users how to approve in Gatekeeper/SmartScreen. Bakes `TIMEPRO_API_URL`/`TIMEPRO_WEB_URL` at compile time (reinforces B1 constants).
+- [x] **Validated:** YAML parses (`build`→`publish`, `publish` needs `build`). **Local build proven** (2026-06-18): `tauri build` on Intel mac → `TimePro.app` + `TimePro_0.1.0_x64.dmg` (5.75 MB); the built app launches, OpsCore loopback login works, authenticates against **prod** — so the CI artifacts will be functional.
+- **Setup done by Hamid:** public repo `timepro-downloads` created (+ a README commit so a release tag has a target), fine-grained PAT added as `RELEASES_REPO_TOKEN` in the `timepro` repo.
+- [ ] **NEEDS:** this branch merged to `main` (tag triggers run from the default branch), then push `v0.1.0` → builds 4 targets → **publish the draft Release**.
+- **Done when:** tagging `vX.Y.Z` produces a draft Release **in `timepro-downloads`** with installers for all four targets.
+
+### B4 · Wire the Download page ✅ *(done 2026-06-17; repointed 2026-06-18)*
+- [x] `apps/web/src/app/download/page.tsx` resolves installer URLs from the **latest published Release of `systemsd/timepro-downloads`** (public → the page's anonymous `api.github.com/repos/systemsd/timepro-downloads/releases/latest` works for employees), matching assets by pattern (`.dmg`+`aarch64` → Apple Silicon, `.dmg`+`x64` → Intel, `.exe`/`.msi` → Windows, `.AppImage`/`.deb` → Linux). **Why not static `releases/latest/download/<asset>`:** Tauri bundle names embed the version (`TimePro_0.1.0_x64.dmg`), so a literal path breaks on every version bump; pattern-matching the latest release stays correct. Browser extension link still points at `apps/extension` in the private code repo (separate concern — extension is loaded unpacked).
 - [x] Swapped interim "build locally" copy → real buttons + **unsigned Gatekeeper/SmartScreen** approval note (shows latest tag). Loading + "no release yet / build-locally" fallback states; disabled placeholder buttons for targets without an asset. ✅ `pnpm --filter @timepro/web typecheck` clean.
-- **Done when:** ✅ the live Download page hands out working installers — *fully wired; resolves live once the first `v0.1.0` Release is published (drafts are invisible to the public API, as expected).*
+- **Done when:** ✅ the live Download page hands out working installers — *fully wired; resolves live once the first `v0.1.0` Release is published to `timepro-downloads` (drafts are invisible to the public API, as expected).*
 
 ### B5 · End-to-end verification on a clean machine 🔴 *(also satisfies group C "tracking visible")*
 - [ ] Download from live page → install → OpsCore loopback login → start timer.
@@ -181,5 +190,6 @@ Append dated entries as work lands.
 - **2026-06-16** — **A6 authored** — `deploy.yml` (push-to-main → SSH → compose up --build → /readyz health-gate). Per manager's CI/CD direction. YAML + actionlint clean. Needs one-time host setup + GitHub secrets. Domain re-verified: `timepro` resolves, `timppro` (Slack typo) does not.
 - **2026-06-17** — **B4 done.** Wired `download/page.tsx` to the latest GitHub Release via the public API (pattern-matched assets, version-agnostic), real unsigned-installer copy + loading/fallback states; typecheck clean. Resolves live once the first release is published.
 - **2026-06-16** — **Local dry-run (Path B)** — pre-validates the "tracking is visible" chain (B5/C1) on this Mac without the server. Local stack already running (API:4001/web:3005/pg container). Simulated the desktop agent for **Muhammad Anas** via the API (dev-header auth): `timer/start` → `agent/heartbeat` → `ingest/activity` (2 samples) → `screenshots` (a real 6.9 MB `screencapture` PNG → DB + disk). Verified visible: `/v1/roster` (as admin) returns `Muhammad Anas | presence=tracking | last_screenshot=True`; screenshot servable `[200] image/png`. **Note:** Rust toolchain was NOT installed on this machine (native desktop app couldn't launch) — installing it for Path A (real native-app run).
+- **2026-06-18** — **Backend deploy live + Download repointed.** Prod is up (`timepro.systemsd.co` web / `api.timepro.systemsd.co` `readyz` db:ok), OpsCore login handoff verified end-to-end (after Hamid fixed OpsCore `TIMEPRO_URL`). Branch `feat/timeline-reports-settings-revamp` merged to `main` and auto-deployed. **Download hosting revised** (branch `feat/download-installers`): private-repo gap surfaced → installers move to a separate **public** repo `systemsd/timepro-downloads`; `desktop-release.yml` reworked to two-phase (build artifacts → publish to downloads repo via `RELEASES_REPO_TOKEN` PAT), `download/page.tsx` repointed there. **Local `tauri build` verified** → `TimePro_0.1.0_x64.dmg` (5.75 MB); built app launches + OpsCore login + auth against prod. Remaining: merge `feat/download-installers` → `main`, push `v0.1.0`, publish the draft Release.
 </content>
 </invoke>
