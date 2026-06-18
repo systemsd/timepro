@@ -25,7 +25,7 @@ the prod-OpsCore nginx rewriting the handoff redirect), API **4001**. Sign-in is
 Recent UI / behavior:
 - **Manager dashboard** = 4-column team roster overview (today/yesterday/week/month).
 - **Employee dashboard** = company-row table (org name + role badge + last-active + period totals), powered by the now self-scoped `/v1/roster`.
-- **Timeline** carries the **calendar day-strip** date nav (per-user activity dots + `00h 00m` hover tooltip); clicking a screenshot opens a **lightbox** with prev/next.
+- **Timeline** (Hubstaff-style): month strip with per-day **activity bars**, summary card (day total + Week/Month + Apps/URLs panel + average-activity donut), 24h ruler with green run/stop bars, screenshot slots (trash to delete); click a thumbnail → **lightbox** with prev/next. Screenshot retention auto-prunes old screenshots (default 3 months).
 - **Desktop**: project picker is **member-scoped** (only your active assignments); timer colon "beats" while tracking.
 - **OpsCore sync** auto-disables members no longer in the directory (→ suspended; re-activates returners).
 - **Reports**: Clients/Projects filter dropdowns hidden for employees.
@@ -79,7 +79,7 @@ all `public` tables were truncated for a clean multi-tenant start; the prod logi
 
 Built and typecheck/`cargo check`-clean but **layout not eyeballed in a browser this session** (API paths verified by curl):
 
-- Manager 4-column roster, **employee company-row dashboard**, Timeline **calendar strip** (+ dots), Reports employee gating.
+- Manager 4-column roster, **employee company-row dashboard**, Timeline **redesign** (strip activity bars + summary card + Apps/URLs panel + 24h ruler), Reports employee gating.
 - Reports console, realtime presence dots, weekly-limit UI, My Account page + avatar dropdown + line icons.
 - Browser extension (manifest/JS valid; not loaded in Chrome).
 

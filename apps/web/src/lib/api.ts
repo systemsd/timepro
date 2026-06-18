@@ -219,6 +219,7 @@ export interface Timeline {
   date: string;
   tracked_seconds: number;
   activity_score: number | null;
+  intervals: Array<{ start: string; end: string }>;
   slots: TimelineSlot[];
 }
 
@@ -226,6 +227,22 @@ export async function getTimeline(userId: string, date: string): Promise<Timelin
   const tz = new Date().getTimezoneOffset();
   const res = await fetch(
     `${API_BASE}/v1/timeline/${userId}?date=${date}&tzOffsetMinutes=${tz}`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export interface TimelineAppsUrls {
+  apps: Array<{ name: string; seconds: number }>;
+  urls: Array<{ domain: string; seconds: number }>;
+}
+
+/** Apps + URLs used on one day for a user — Timeline summary-card panel. */
+export async function getTimelineAppsUrls(userId: string, date: string): Promise<TimelineAppsUrls> {
+  const tz = new Date().getTimezoneOffset();
+  const res = await fetch(
+    `${API_BASE}/v1/timeline/${userId}/apps-urls?date=${date}&tzOffsetMinutes=${tz}`,
     { headers: authHeaders() },
   );
   if (!res.ok) return asError(res);
@@ -330,6 +347,14 @@ export async function getSettingsCatalog(): Promise<{
   const res = await fetch(`${API_BASE}/v1/settings`, { headers: authHeaders() });
   if (!res.ok) return asError(res);
   return res.json();
+}
+
+/** The current user's own effective settings (what policies apply to them). */
+export async function getMyEffectiveSettings(): Promise<Record<string, SettingValue>> {
+  const res = await fetch(`${API_BASE}/v1/settings/effective`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  const json = (await res.json()) as { effective: Record<string, SettingValue> };
+  return json.effective;
 }
 
 export async function setOrgSetting(key: string, value: SettingValue): Promise<void> {
@@ -564,4 +589,13 @@ export async function getScreenshotObjectUrl(id: string): Promise<string> {
   if (!res.ok) return asError(res);
   const blob = await res.blob();
   return URL.createObjectURL(blob);
+}
+
+export async function deleteScreenshot(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/v1/screenshots/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
 }

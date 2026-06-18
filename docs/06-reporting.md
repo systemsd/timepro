@@ -2,7 +2,7 @@
 
 > **Implementation status** — ✅ built · ⛔ planned.
 >
-> - ✅ Computed **on the fly** (no rollups yet): `GET /v1/me/today` (today's tracked time/status/screenshots), `GET /v1/roster` (per-employee today/yesterday/week/month totals + last screenshot, viewer-tz), `GET /v1/timeline/:userId` (a day's screenshots in 10-min slots + day total).
+> - ✅ Computed **on the fly** (no rollups yet): `GET /v1/me/today` (today's tracked time/status/screenshots), `GET /v1/roster` (per-employee today/yesterday/week/month totals + last screenshot, viewer-tz), `GET /v1/timeline/:userId` (a day's screenshots/activity in 10-min slots + day total + average activity + `intervals[]` tracker run/stop segments for the ruler), `GET /v1/timeline/:userId/activity` (per-day tracked seconds for a month — the Timeline strip bars), `GET /v1/timeline/:userId/apps-urls` (a day's app + domain usage — the Timeline summary-card Apps/URLs panel).
 > - 📐 **Reports Console** (§0) — UI/feature **spec'd** from the reference screenshots; **not built**. The "Reports ▾" nav tab is disabled today. This is the Phase 5 / **B7** deliverable.
 > - ⛔ Still planned: `reports_hourly/daily/weekly/monthly` rollup tables, rollup jobs, materialized views, exports, caching, and the time-per-client report. No scheduled aggregation runs yet — on-the-fly compute is fine at current scale and moves to rollups in Phase 5.
 
@@ -14,7 +14,7 @@ Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard r
 
 > **Status: 5A + 5B + 5C built; 5D–5F pending.** Phase 5 / **B7** deliverable. The Reports nav tab is **live**.
 > - ✅ **5A — query API**: `GET /v1/reports/filters` (RBAC-scoped employees + client/project catalogs) and `POST /v1/reports/run` (Summary/Detailed/Weekly, computed on-the-fly from `time_entries`, viewer-tz). See `apps/api/src/routes/reports.ts`.
-> - ✅ **5B — console UI**: `apps/web/src/app/reports/page.tsx` — filter bar, Summary/Detailed/Weekly/Saved dropdown, daily-totals chart (red weekends), result tabs, expand/collapse group tables.
+> - ✅ **5B — console UI**: `apps/web/src/app/reports/page.tsx` — Hubstaff-style filter bar (2×4 preset-link grid, stacked employee/projects/clients/note fields, **report-type text links** [Summary by project/employee · Weekly · Detailed · Apps & URLs · Saved] mapping to engine mode + default grouping + result tab, **group-by chip field**), daily-totals chart (red weekends), result tabs, expand/collapse group tables.
 > - ✅ **5C — saved reports + exports**: `saved_reports` table (migration `0004`, per-user + `is_shared` org-visible), CRUD at `/v1/reports/saved`; "Saved Report" dropdown lists/loads/deletes; **Excel** = client-side CSV, **PDF** = browser print (`@media print`). **Shareable public links deferred** (use `is_shared` for org-visibility).
 > - ✅ **5E — realtime presence (B10)**: websocket `GET /v1/realtime/presence` (snapshot + live `update` frames from the in-process presence pub/sub); web `useRealtimePresence` (shared socket, role-gated) overlays live dots on the dashboard roster + Timeline nav, replacing the 30s presence poll (totals poll now 60s). `apps/api/src/routes/realtime.ts`, `lib/presence.ts`.
 > - ✅ **Weekly-limit enforcement**: effective `limits.weekly_hours` (org default ← per-user override) vs current-week tracked time (`apps/api/src/lib/limits.ts`). Enforced at **timer start** (409 `weekly_limit_reached` at/over the cap); surfaced on the manager roster (`week / limit ⚠`) and My Home (week stat + over-limit banner). `0` = unlimited.
@@ -22,8 +22,9 @@ Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard r
 >
 > Open questions are flagged inline with **⚠️**.
 
-The Reports console is one page: a **filter/builder bar** up top, a **report-type dropdown**, and a
-**result area** (daily-totals chart + tabbed tables). The flow: pick a report type → set filters →
+The Reports console is one page: a **filter/builder bar** up top (preset-link grid · stacked filter fields ·
+**report-type text links** · group-by chip field), and a **result area** (daily-totals chart + tabbed
+tables). The flow: pick a report type → set filters →
 **Show report** → results render below, exportable (Excel/PDF) and saveable.
 
 ### 0.1 Report-type dropdown
@@ -37,10 +38,10 @@ The top-level selector. Four entries:
 | **Weekly Report** | employee | flat employee → Duration (per ISO week) | ☐ **Include absences** |
 | **Saved Report** | (loads a saved config) | re-runs a previously **Saved report** | picks from the saved list |
 
-⚠️ The reference UI also shows quick-link presets — *Summary by project · Summary by client · Summary by
-employee · Daily by employee · Detailed · Apps & URLs*. **Decision needed:** are these (a) shortcuts that
-just set the dropdown + group-by, or (b) a row kept alongside the dropdown? Assumed **(a)** — presets over
-Summary/Detailed.
+✅ **Resolved (2026-06-17):** the report types are **text links** — *Summary by project · Summary by
+employee · Weekly · Detailed · Apps & URLs · Saved* — each a shortcut that sets the engine mode + default
+group-by + which result tab to open. *Daily by employee*, *Summary by client*, and a Money/$ column are
+deferred (need date/note grouping + pay rates in the engine).
 
 ### 0.2 Filter / builder bar (shared by all report types)
 
@@ -50,7 +51,7 @@ Summary/Detailed.
 - **Select clients** — multi-select (clients = OpsCore business partners).
 - **Select projects** — multi-select.
 - **Note contains text** — free-text filter on time-entry notes.
-- **Group by** — multi-select chips (`Group by employee`, `Group by project`, …); defaults per report type (0.1). ⚠️ Confirm the full option set (employee, project, client, date?).
+- **Group by** — **chip field** with removable `Group by employee` / `Group by project` / `Group by client` chips + a dropdown to add more; defaults per report type (0.1). (date/note grouping deferred — engine supports employee/project/client.)
 - **Toggles** — ☐ Only offline activities · ☐ Exclude archived · ☐ Include absences *(Weekly only)*.
 
 ### 0.3 Actions

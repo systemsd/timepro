@@ -27,6 +27,8 @@ const TimelineResponse = z.object({
   date: z.string(),
   tracked_seconds: z.number(),
   activity_score: z.number().nullable(),
+  // tracked tracker run/stop segments (clipped to the day) — the ruler "green bar"
+  intervals: z.array(z.object({ start: z.string(), end: z.string() })),
   slots: z.array(Slot),
 });
 
@@ -84,11 +86,16 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           );
 
         let tracked = 0;
+        const intervals: Array<{ start: string; end: string }> = [];
         for (const e of entries) {
           const s = Math.max(e.startedAt.getTime(), dayStartMs);
           const en = Math.min(e.endedAt ? e.endedAt.getTime() : Date.now(), dayStartMs + 86_400_000);
-          if (en > s) tracked += Math.floor((en - s) / 1000);
+          if (en > s) {
+            tracked += Math.floor((en - s) / 1000);
+            intervals.push({ start: new Date(s).toISOString(), end: new Date(en).toISOString() });
+          }
         }
+        intervals.sort((a, b) => (a.start < b.start ? -1 : 1));
 
         const shots = await tx
           .select({
@@ -201,6 +208,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           date: req.query.date,
           tracked_seconds: tracked,
           activity_score: dayScore,
+          intervals,
           slots,
         };
       });
@@ -277,6 +285,86 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           .map(([date, seconds]) => ({ date, seconds }))
           .sort((a, b) => (a.date < b.date ? -1 : 1));
         return { days };
+      });
+    },
+  );
+
+  // Apps + URLs used on a given day for one user — drives the Timeline
+  // summary card's "Apps & URLs" panel. Aggregated by app name / domain.
+  app.get(
+    '/timeline/:userId/apps-urls',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        params: z.object({ userId: z.string().uuid() }),
+        querystring: z.object({
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          tzOffsetMinutes: z.coerce.number().default(0),
+        }),
+        response: {
+          200: z.object({
+            apps: z.array(z.object({ name: z.string(), seconds: z.number() })),
+            urls: z.array(z.object({ domain: z.string(), seconds: z.number() })),
+          }),
+        },
+        tags: ['timeline'],
+      },
+    },
+    async (req) => {
+      const visible = await visibleUsers(req);
+      if (!canView(visible, req.params.userId)) forbid('Not allowed to view this timeline');
+
+      const [yy, mm, dd] = req.query.date.split('-').map(Number) as [number, number, number];
+      const tz = req.query.tzOffsetMinutes;
+      const dayStartMs = Date.UTC(yy, mm - 1, dd) + tz * 60_000;
+      const dayStart = new Date(dayStartMs);
+      const dayEnd = new Date(dayStartMs + 86_400_000);
+      const overlap = (s: number, e: number) =>
+        Math.max(0, Math.min(e, dayStartMs + 86_400_000) - Math.max(s, dayStartMs)) / 1000;
+
+      return req.withTenantDb(async (tx) => {
+        const appRows = await tx
+          .select({
+            key: schema.appUsage.appName,
+            startedAt: schema.appUsage.startedAt,
+            endedAt: schema.appUsage.endedAt,
+          })
+          .from(schema.appUsage)
+          .where(
+            and(
+              eq(schema.appUsage.organizationId, req.organizationId!),
+              eq(schema.appUsage.userId, req.params.userId),
+              lt(schema.appUsage.startedAt, dayEnd),
+              gte(schema.appUsage.endedAt, dayStart),
+            ),
+          );
+        const urlRows = await tx
+          .select({
+            key: schema.urlUsage.domain,
+            startedAt: schema.urlUsage.startedAt,
+            endedAt: schema.urlUsage.endedAt,
+          })
+          .from(schema.urlUsage)
+          .where(
+            and(
+              eq(schema.urlUsage.organizationId, req.organizationId!),
+              eq(schema.urlUsage.userId, req.params.userId),
+              lt(schema.urlUsage.startedAt, dayEnd),
+              gte(schema.urlUsage.endedAt, dayStart),
+            ),
+          );
+        const agg = (rows: Array<{ key: string; startedAt: Date; endedAt: Date }>) => {
+          const m = new Map<string, number>();
+          for (const r of rows) {
+            const secs = Math.round(overlap(r.startedAt.getTime(), r.endedAt.getTime()));
+            if (secs > 0) m.set(r.key, (m.get(r.key) ?? 0) + secs);
+          }
+          return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+        };
+        return {
+          apps: agg(appRows).map(([name, seconds]) => ({ name, seconds })),
+          urls: agg(urlRows).map(([domain, seconds]) => ({ domain, seconds })),
+        };
       });
     },
   );

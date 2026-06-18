@@ -29,3 +29,27 @@ pub fn capture_primary_monitor() -> Result<CapturedShot> {
 
     Ok(CapturedShot { png: buf, width, height })
 }
+
+/// Gaussian-blur a PNG in memory (for the `screenshots.blur = always` policy).
+/// On any decode/encode failure the original bytes are returned unchanged so a
+/// blur error never drops a screenshot.
+pub fn blur_png_or_original(png: Vec<u8>) -> Vec<u8> {
+    match blur_inner(&png) {
+        Ok(out) => out,
+        Err(err) => {
+            tracing::warn!(error = ?err, "screenshot blur failed; uploading unblurred");
+            png
+        }
+    }
+}
+
+fn blur_inner(png: &[u8]) -> Result<Vec<u8>> {
+    let img = image::load_from_memory_with_format(png, ImageFormat::Png)
+        .context("decode png for blur")?;
+    let blurred = img.blur(12.0);
+    let mut buf = Vec::with_capacity(png.len());
+    blurred
+        .write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)
+        .context("encode blurred png")?;
+    Ok(buf)
+}

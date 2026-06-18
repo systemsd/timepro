@@ -57,7 +57,7 @@ Monorepo: Turborepo + pnpm, Node 20. Apps: `api`, `web`, `desktop`. Packages: `d
 | Phase | Status | What's working |
 | ----- | ------ | -------------- |
 | **Phase 0** — quick wins | ✅ | role-aware My Home roster, employee Timeline, Projects/Clients pages, Download page, ☰ menu, RBAC scoping (C1) |
-| **Phase 1** — Settings engine (B6) | ✅ | catalog registry + resolver (org default ← user override), Settings page, Team per-user overrides, agent consumes `/settings/effective` |
+| **Phase 1** — Settings engine (B6) | ✅ | catalog registry + resolver (org default ← user override), Settings page, Team per-user overrides, agent consumes `/settings/effective`. **Enforced:** screenshots (enabled/per-hour/blur=always/notify), activity + app/URL tracking, idle auto-pause, weekly limit (server). Only `time.allow_offline` unbuilt. |
 | **Phase 2** — Presence (B3) | ✅ | agent heartbeat → in-memory store → 3-state dots (offline/connected/tracking) + "N online" |
 | **Phase 4** — Activity + App + URL tracking (B4/B5) | ✅ | agent activity aggregator (idle-derived) + app polling → ingest; Timeline activity %/per-slot app; roster last-app; **URL** ingest + Reports "Apps & URLs" + browser extension (`apps/extension`) |
 | **Phase 3** — OpsCore (B1/B2) | ✅ web + desktop | handoff-JWT login + Bearer service-API sync. **Desktop OpsCore login done** (loopback flow via the web `/desktop-auth` bridge). |
@@ -68,11 +68,16 @@ web/desktop login, desktop→web "view online" handoff, Team management.
 
 **Recent UI / behavior:** **Manager dashboard** = 4-column team roster overview · **Employee dashboard** =
 company-row table (org + role badge + last-active + period totals; `/v1/roster` is now self-scoped for employees) ·
-**Timeline** date nav is a **calendar day-strip** (per-user activity dots + hover tooltip `00h 00m`); clicking a
-screenshot opens a **lightbox modal** with prev/next (← →) · desktop timer colon "beats" (digital-clock blink) while
-tracking · desktop **project picker is member-scoped** (only your active assignments) · **OpsCore sync disables members
-absent from the directory** (→ suspended) · **My Account** page (`/account`) + avatar dropdown (Dashboard · My Account ·
-Log out) · **Reports** hides Clients/Projects dropdowns for employees · login is **OpsCore-only** · line icons, no emojis.
+**Timeline** redesigned Hubstaff-style: month strip with per-day **activity bars** + weekday labels (weekends red) +
+yellow selected day · **summary card** (date · big day total · Week/Month/Activity) with an **Apps/URLs** usage panel +
+prev/next day stepper + **average-activity donut** (+ dot/tooltip) · **24h ruler** with green **run/stop bars** from real
+tracked intervals (`timeline/:id` returns `intervals[]`) · screenshot slots (red time-range + app badge + thumbnails,
+**trash to delete** [C9]); clicking a thumbnail opens a **lightbox** with prev/next (← →) · **screenshot retention**
+auto-prunes old screenshots (default 3 months) · desktop timer colon "beats" while tracking · desktop **project picker
+is member-scoped** (only your active assignments) · **OpsCore sync disables members absent from the directory** (→
+suspended) · **My Account** page (`/account`) + avatar dropdown (Dashboard · My Account · Log out) · **Reports** has a
+Hubstaff-style filter bar (preset grid, type links, group-by chips) + hides Clients/Projects dropdowns for employees ·
+login is **OpsCore-only** · line icons, no emojis.
 **Desktop agent verified end-to-end against prod** (loopback login → directory → track → real capture → upload).
 
 ### 🔴 Pending — phased (full detail in [docs/13 §3](13-opscore-feature-roadmap.md))
@@ -80,7 +85,7 @@ Log out) · **Reports** hides Clients/Projects dropdowns for employees · login 
 - **Phase 7 — Ship pipeline (B9)**: cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs. *Credential-gated.*
 - **Phase 8 — Scale & storage**: 8.1 reporting rollups + scheduler (B8) · 8.2 S3 storage + thumbnails · 8.3 worker/realtime services + Redis-backed presence.
 - **Phase 9 — Billing & plans**.
-- **Phase P — Polish & UX** *(small, anytime)*: ✅ native screenshot-notification toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links. *(Both ✅ compile via `cargo check`; not yet run in the GUI.)*
+- **Phase P — Polish & UX** *(small, anytime)*: ✅ native screenshot-notification toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 · ✅ idle auto-pause (`tracking.auto_pause_minutes`) + `screenshots.blur=always` enforcement · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links. *(Agent bits ✅ compile via `cargo check`; not yet run in the GUI.)*
 
 ---
 
@@ -155,10 +160,10 @@ verifies locally (signature only) — sign-in does **not** call `OPSCORE_API_URL
 ## 5. API route inventory (`apps/api/src/routes/`)
 
 `auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today, profile) ·
-`projects` (list is **member-scoped** to the caller's active assignments; + manage, :id/members) · `screenshots` (ingest + list + raw) ·
-`team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ :userId/activity for the calendar dots) · `clients` ·
+`projects` (list is **member-scoped** to the caller's active assignments; + manage, :id/members) · `screenshots` (ingest + list + raw + **DELETE `:id`**, C9-gated) ·
+`team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ `:userId/activity` for the strip bars, `:userId/apps-urls` for the summary panel) · `clients` ·
 `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) · `ingest` (activity, app-usage, url-usage) ·
-`admin` (opscore/sync — **disables members absent from the response**, re-activates returners) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
+`admin` (opscore/sync — **disables members absent from the response**, re-activates returners; **screenshots/prune**) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
 
 **Auth shim:** `requireAuth` accepts `x-dev-org` + `x-dev-user` headers (non-prod). RBAC scoping (admin=all /
 manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/access.ts`.
@@ -169,7 +174,7 @@ manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/ac
 
 C1 managers manage own team · C2 OpsCore-authoritative read-only catalogs · C3 OpsCore owns project↔client ·
 C4 presence = 3 states · C5 settings = org default + per-user override (2-level) · C6 viewer/org timezone ·
-C8 break-glass local owner · C9 screenshot self-delete admin-configurable default-off.
+C8 break-glass local owner · C9 screenshot self-delete admin-configurable default-off — **implemented**: `DELETE /v1/screenshots/:id` (row + file) gated by the `screenshots.allow_self_delete` setting (default off); admins/managers may delete any screenshot of someone they manage. Timeline thumbnails have a trash button.
 **C7 (My Account vs Settings) is the one still-open conflict** (assumed: separate owner-only area later).
 
 ---

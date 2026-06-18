@@ -82,11 +82,36 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
 
         let entry_id = timer.time_entry_id.clone();
         let now_ev = Utc::now();
+        let idle_secs = idle::seconds_idle();
+
+        // Auto-pause: stop tracking once the user has been idle past the
+        // configured threshold (`tracking.auto_pause_minutes`; 0 = disabled).
+        let auto_pause = state.auto_pause_sec();
+        if auto_pause > 0 && idle_secs >= auto_pause {
+            let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+            if client.timer_stop(&Uuid::new_v4().to_string()).await.is_ok() {
+                state.clear_timer();
+                // flush any open app interval before stopping
+                if let Some((name, title, started)) = current_app.take() {
+                    let _ = client
+                        .ingest_app_usage(
+                            &name,
+                            title.as_deref(),
+                            &started.to_rfc3339(),
+                            &now_ev.to_rfc3339(),
+                            Some(entry_id.clone()),
+                        )
+                        .await;
+                }
+                let _ = app.emit("timer:auto-paused", idle_secs);
+                info!(idle_secs, "auto-paused tracking (idle threshold reached)");
+            }
+            continue;
+        }
 
         // B4 — activity (idle-derived, per-minute samples).
         if state.activity_tracking_enabled() {
-            let idle = idle::seconds_idle();
-            if let Some(sample) = activity.tick(now_ev, idle, 5) {
+            if let Some(sample) = activity.tick(now_ev, idle_secs, 5) {
                 let client = ApiClient::new(api_base.clone(), Some(session.clone()));
                 let _ = client.ingest_activity(std::slice::from_ref(&sample), Some(entry_id.clone())).await;
             }
@@ -146,6 +171,20 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 warn!(error = ?err, "screenshot capture failed");
                 continue;
             }
+        };
+
+        // Apply the `screenshots.blur = always` policy before upload (CPU work
+        // off the async runtime). Falls back to the original on blur failure.
+        let bytes = if state.blur_always() {
+            match tokio::task::spawn_blocking(move || screenshot::blur_png_or_original(bytes)).await {
+                Ok(b) => b,
+                Err(err) => {
+                    warn!(error = ?err, "blur task panicked; skipping this capture");
+                    continue;
+                }
+            }
+        } else {
+            bytes
         };
 
         let meta = ScreenshotMeta {

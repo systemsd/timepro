@@ -134,9 +134,18 @@ employees get no clients/projects) · `realtime` (ws presence).
   A `.env` won't work for the shipped app — installers carry no env.
 - **Screenshots (MVP)** are written to the local filesystem under `STORAGE_DIR`
   (default `apps/api/data/screenshots/{org}/{date}/{id}.png`) and served via
-  `GET /v1/screenshots/:id/raw`. The S3 driver from [docs/07-storage.md](docs/07-storage.md) isn't wired yet.
-- **Screenshot capture cadence** is `screenshot_interval_sec` in `state.rs` (currently `300` = 12/hr,
-  matching the Settings team policy). Capture only runs while a timer is active.
+  `GET /v1/screenshots/:id/raw`. `DELETE /v1/screenshots/:id` removes the row + file
+  (admins/managers anytime within their visible set; employee self-delete gated by the
+  `screenshots.allow_self_delete` policy, default off — C9; trash button on Timeline thumbnails).
+  The S3 driver from [docs/07-storage.md](docs/07-storage.md) isn't wired yet.
+- **Screenshot retention** — the org-wide `screenshots.retention_days` setting (default 90 = 3 months; `0` = forever)
+  auto-prunes older screenshots (rows + files) via `apps/api/src/lib/retention.ts`. No scheduler yet (Phase 8), so
+  `server.ts` runs an **in-process sweep** ~30s after boot then every 12h; `POST /v1/admin/screenshots/prune` applies a
+  changed retention immediately. **Reports are unaffected** — they read `time_entries`/`app_usage`/`url_usage`, never `screenshots`.
+- **Screenshot capture cadence** is `screenshot_interval_sec` in `state.rs`, derived from the
+  `screenshots.per_hour` setting on each `/settings/effective` refresh (`300`s fallback before first fetch).
+  Capture only runs while a timer is active. The agent also enforces `screenshots.blur=always` (gaussian blur
+  before upload) and `tracking.auto_pause_minutes` (stops the timer after that many seconds of input idle).
 - **Migrations are expand-only / forward-only.** Never roll back the DB; write a new migration.
 - **Web is on :3005, not :3000 — prod-OpsCore/nginx collision.** Prod OpsCore (`https://opscore.systemsd.co`)
   runs behind nginx with its own app on `:3000`; nginx rewrites any `Location: http://localhost:3000/…` (its
@@ -156,17 +165,21 @@ sync → time tracking → real screen capture → API → DB + disk (native OS 
 timer colon "beats" while tracking); the agent **project picker shows only the user's active assignments**.
 **Role-aware home** — admin/manager → 4-column team roster with realtime presence dots; **employee → company-row
 dashboard** (org + role badge + last-active + period totals, via the self-scoped `/v1/roster`).
-**Timeline** (screenshot slots + activity % + day total) with a **calendar day-strip** date nav (per-user activity
-dots + `00h 00m` hover tooltip) and a **screenshot lightbox** (click → modal with prev/next).
-**Reports** console (Summary/Detailed/Weekly, saved reports, CSV/PDF, Apps & URLs; Clients/Projects filters hidden
-for employees); **Team** page (RBAC-scoped per C1; **OpsCore sync auto-disables members absent from the directory**);
+**Timeline** (Hubstaff-style: month strip with per-day activity bars + weekday labels (weekends red) + yellow selected
+day; summary card with Week/Month totals + Apps/URLs panel + average-activity donut; 24h ruler with green run/stop bars
+from `intervals[]`; screenshot slots with red time-range + app badge + thumbnails, trash to delete; click a thumbnail →
+**lightbox** with prev/next) — `/v1/timeline/:id` + `/activity` + `/apps-urls`.
+**Reports** console (Hubstaff-style filter bar — preset-link grid, report-type text links, group-by chip field;
+Summary/Detailed/Weekly, saved reports, CSV/PDF, Apps & URLs; Clients/Projects filters hidden for employees);
+**Team** page (RBAC-scoped per C1; **OpsCore sync auto-disables members absent from the directory**);
 **Projects** + **Clients** pages; **Settings** (org + per-user overrides); **My Account** (`/account`, via `/v1/me/profile`)
-from the **avatar dropdown** (Dashboard · My Account · Log out); ☰ menu (role-filtered). Weekly-limit enforcement
-blocks `timer/start` at the cap. UI uses line icons (`apps/web/src/components/icons.tsx`), no emojis. Login is OpsCore-only.
+from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page (resolves the latest GitHub Release);
+☰ menu (role-filtered). Weekly-limit enforcement blocks `timer/start` at the cap. UI uses line icons
+(`apps/web/src/components/icons.tsx`), no emojis. Login is OpsCore-only.
 
 **Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
 - ✅ **Phase 0** (quick wins) — done.
-- ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`).
+- ✅ **Phase 1 — Settings engine (B6)** — done (registry + resolver + API + Settings page + Team overrides + agent consumes `/settings/effective`). **Enforcement live:** agent honors `screenshots.{enabled,per_hour,blur=always,notify}`, `activity.tracking`, `app_url.tracking`, `tracking.auto_pause_minutes` (idle auto-pause); server enforces `limits.weekly_hours`, `screenshots.allow_self_delete` (C9 delete), and `screenshots.retention_days` (auto-prune). Only `time.allow_offline` is unenforced (offline-time feature not built).
 - ✅ **Phase 2 — Presence (B3)** — done (agent heartbeat → in-memory store → 3-state dots + "N online").
 - ✅ **Phase 4 — Activity + App tracking (B4/B5)** — done (agent activity aggregator + app polling →
   `/v1/ingest/activity` + `/ingest/app-usage` + `/ingest/url-usage`; Timeline activity %/per-slot app; roster last-app;
@@ -184,6 +197,6 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 - 🔴 **Phase 7 — Ship pipeline (B9)** — cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs (credential-gated).
 - 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
 - 🔴 **Phase 9 — Billing & plans**.
-- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
+- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle auto-pause (`tracking.auto_pause_minutes`) + `screenshots.blur=always` enforcement · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
 
 See also [docs/11-roadmap.md](docs/11-roadmap.md) (original MVP/P2/P3) and the per-doc status banners.

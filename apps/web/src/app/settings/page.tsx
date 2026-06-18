@@ -187,6 +187,48 @@ function IndividualRow({
   );
 }
 
+/**
+ * Number editor controlled by its own text so leading zeros are stripped as you
+ * type (a plain `value={Number(value)}` input leaves "020" stuck in the DOM
+ * because "020" and "20" parse to the same number, so React skips the update).
+ */
+function NumberField({
+  def,
+  value,
+  onChange,
+  compact,
+}: {
+  def: SettingDef;
+  value: SettingValue;
+  onChange: (v: SettingValue) => void;
+  compact?: boolean;
+}) {
+  const [text, setText] = useState(String(Number(value)));
+  useEffect(() => { setText(String(Number(value))); }, [value]);
+  return (
+    <span className="set-num">
+      <input
+        className="set-input"
+        type="number"
+        min={def.min}
+        max={def.max}
+        value={text}
+        style={{ width: compact ? 70 : 90 }}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === '') { setText(''); return; }
+          const n = Number(raw);
+          if (!Number.isFinite(n)) return;
+          setText(String(n)); // normalize → strips leading zeros immediately
+          onChange(n);
+        }}
+        onBlur={() => { if (text === '') { const n = def.min ?? 0; setText(String(n)); onChange(n); } }}
+      />
+      {def.unit && <span className="set-unit">{def.unit}</span>}
+    </span>
+  );
+}
+
 function ValueEditor({
   def,
   value,
@@ -211,20 +253,7 @@ function ValueEditor({
     );
   }
   if (def.type === 'number') {
-    return (
-      <span className="set-num">
-        <input
-          className="set-input"
-          type="number"
-          min={def.min}
-          max={def.max}
-          value={Number(value)}
-          style={{ width: compact ? 70 : 90 }}
-          onChange={(e) => onChange(Number(e.target.value))}
-        />
-        {def.unit && <span className="set-unit">{def.unit}</span>}
-      </span>
-    );
+    return <NumberField def={def} value={value} onChange={onChange} compact={compact} />;
   }
   return (
     <select className="set-input" value={String(value)} onChange={(e) => onChange(e.target.value)}>
@@ -235,11 +264,15 @@ function ValueEditor({
   );
 }
 
+// Honest per-feature enforcement notes (what actually applies the setting today).
 const ENFORCED: Record<string, string> = {
-  activity: '— takes effect once activity tracking ships',
-  app_url: '— takes effect once app & URL tracking ships',
-  offline_time: '— takes effect once offline time ships',
-  limits: '— enforcement ships with reports',
+  screenshots: '— enforced by the desktop agent',
+  activity: '— enforced by the desktop agent',
+  app_url: '— enforced by the desktop agent',
+  idle: '— enforced by the desktop agent (auto-pause on idle)',
+  notify: '— enforced by the desktop agent',
+  limits: '— enforced: blocks starting the timer at the weekly cap',
+  offline_time: '— not yet enforced (offline-time entry isn’t built yet)',
 };
 
 function display(def: SettingDef, value: SettingValue): string {
