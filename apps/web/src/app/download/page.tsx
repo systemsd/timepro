@@ -4,15 +4,17 @@ import { useEffect, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 
-// Installers are published to GitHub Releases by `.github/workflows/desktop-release.yml`
-// (tag `v*` → Tauri bundles for all four targets). The bundle filenames embed the version
-// (e.g. `TimePro_0.1.0_aarch64.dmg`), so we resolve the *latest* release's assets by pattern
-// at runtime rather than hard-coding a version into the URL — the page stays correct across releases.
-const REPO = 'systemsd/timepro';
-const RELEASES_URL = `https://github.com/${REPO}/releases`;
-const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+// Installer binaries are published to a SEPARATE PUBLIC repo (`timepro-downloads`)
+// by `.github/workflows/desktop-release.yml`, so anonymous employees can download
+// them while the code repo (`systemsd/timepro`) stays private — GitHub release
+// downloads inherit repo visibility, so they must come from a public repo.
+// The bundle filenames embed the version (e.g. `TimePro_0.1.0_aarch64.dmg`), so we
+// resolve the *latest* release's assets by pattern rather than hard-coding a version.
+const DOWNLOADS_REPO = 'systemsd/timepro-downloads';
+const RELEASES_URL = `https://github.com/${DOWNLOADS_REPO}/releases`;
+const LATEST_API = `https://api.github.com/repos/${DOWNLOADS_REPO}/releases/latest`;
 // The browser extension is loaded unpacked (MV3, no build) — it isn't a release artifact.
-const EXTENSION_URL = `https://github.com/${REPO}/tree/main/apps/extension`;
+const EXTENSION_URL = `https://github.com/systemsd/timepro/tree/main/apps/extension`;
 
 type Assets = {
   macArm?: string;
