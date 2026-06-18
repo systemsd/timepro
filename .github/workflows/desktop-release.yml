@@ -63,6 +63,8 @@ jobs:
             patchelf \
             libssl-dev \
             libxss-dev \
+            libpipewire-0.3-dev \
+            libdbus-1-dev \
             build-essential \
             file
 
