@@ -173,7 +173,7 @@ from `intervals[]`; screenshot slots with red time-range + app badge + thumbnail
 Summary/Detailed/Weekly, saved reports, CSV/PDF, Apps & URLs; Clients/Projects filters hidden for employees);
 **Team** page (RBAC-scoped per C1; **OpsCore sync auto-disables members absent from the directory**);
 **Projects** + **Clients** pages; **Settings** (org + per-user overrides); **My Account** (`/account`, via `/v1/me/profile`)
-from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page (resolves the latest GitHub Release);
+from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page (resolves the latest Release from the separate **public** `systemsd/timepro-downloads` repo);
 ☰ menu (role-filtered). Weekly-limit enforcement blocks `timer/start` at the cap. UI uses line icons
 (`apps/web/src/components/icons.tsx`), no emojis. Login is OpsCore-only.
 

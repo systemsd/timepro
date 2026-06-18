@@ -27,7 +27,7 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 | **Reports shareable links** | 🔴 | Deferred (org-shared saved reports exist; public links don't). |
 | **Real login (password/JWT/MFA)** | 🔴 | Dev `x-dev-*` shim + OpsCore handoff only. Phase 6. |
 | **Org onboarding / multi-tenant switch** | 🔴 | Single global OpsCore org today; multi-tenant is Phase 6. |
-| **Installer downloads** | 🟡 | Download page is wired to the **latest GitHub Release** (auto-resolves per-OS assets); real signed installers aren't built/published yet (Phase 7 — B9). |
+| **Installer downloads** | 🟡 | Download page resolves the **latest Release of the separate PUBLIC `timepro-downloads` repo** (code repo stays private; release downloads inherit repo visibility). CI (`desktop-release.yml`) builds 4 targets and publishes there via a PAT. Local `tauri build` verified (mac x64 dmg runs + OpsCore login against prod); first `v0.1.0` tag + draft-publish still pending; unsigned (Phase 7 — B9). |
 
 ## Employee
 
@@ -46,7 +46,7 @@ Legend: ✅ working · 🟡 partial · 🔴 not built (stubbed/disabled).
 | **Desktop → web "view online" handoff** | ✅ | One-time code opens the web dashboard already signed in. |
 | **Team / roster / other employees** | 🔴 (by design) | Employees have no team/roster access (RBAC). |
 | **Real login (password/JWT/MFA)** | 🔴 | Phase 6. |
-| **Installer download** | 🟡 | Download page resolves the latest GitHub Release; signed installers not published yet (Phase 7). |
+| **Installer download** | 🟡 | Download page resolves the latest Release from the public `timepro-downloads` repo; signed installers not published yet (Phase 7). |
 
 ## Cross-cutting "not working yet"
 

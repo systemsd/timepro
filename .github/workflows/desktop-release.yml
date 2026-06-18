@@ -1,13 +1,20 @@
 name: Desktop Release
 
 # Cross-platform installers for the TimePro desktop agent.
-# Trigger: push a tag like `v0.1.0` (or run manually). The job builds the
-# Tauri app on each OS and uploads the installers to a GitHub Release.
+# Trigger: push a tag like `v0.1.0` (or run manually).
+#
+# The code lives in this PRIVATE repo, but installers are published to a SEPARATE
+# PUBLIC repo (`systemsd/timepro-downloads`) so anonymous employees can download
+# them while the source stays private. GitHub's default GITHUB_TOKEN can only
+# write to THIS repo, so cross-repo publishing uses a fine-grained PAT
+# (`RELEASES_REPO_TOKEN`, Contents: write on timepro-downloads).
+#
+# Flow: each OS builds its installers (no release) → uploads them as workflow
+# artifacts → a single `publish` job collects all four and creates ONE draft
+# Release in timepro-downloads. (Two phases avoid a race on release creation.)
 #
 # Interim policy: builds are UNSIGNED (no Apple Developer ID / Windows cert yet),
-# so users approve the app in Gatekeeper/SmartScreen on first launch. Code
-# signing + notarization is a later task — when certs exist, add the signing
-# secrets to the tauri-action env below.
+# so users approve the app in Gatekeeper/SmartScreen on first launch.
 
 on:
   push:
@@ -16,10 +23,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # create the GitHub Release + upload assets
+  contents: read # we publish to ANOTHER repo via PAT, not this one
+
+env:
+  DOWNLOADS_REPO: systemsd/timepro-downloads
 
 jobs:
-  release:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -79,24 +89,55 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and release
+      # Build only (no tagName → tauri-action does not create a release; it just
+      # builds and exposes the built files via the `artifactPaths` output).
+      - name: Build installers
+        id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Bake the production hosts into the binary at compile time
           # (option_env! in state.rs); reinforces the PRODUCTION_*_BASE constants.
           TIMEPRO_API_URL: https://api.timepro.systemsd.co
           TIMEPRO_WEB_URL: https://timepro.systemsd.co
         with:
           projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: "TimePro Desktop ${{ github.ref_name }}"
-          releaseBody: |
+          args: ${{ matrix.args }}
+
+      - name: Upload installers as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}-${{ matrix.target }}
+          path: ${{ join(fromJSON(steps.tauri.outputs.artifactPaths), '\n') }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List collected installers
+        run: find dist -type f -print
+
+      # Publish ONE draft Release to the public downloads repo using the PAT.
+      - name: Publish draft release to downloads repo
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ env.DOWNLOADS_REPO }}
+          token: ${{ secrets.RELEASES_REPO_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: "TimePro Desktop ${{ github.ref_name }}"
+          body: |
             TimePro desktop agent ${{ github.ref_name }}.
 
             These installers are **unsigned** — on first launch:
             - macOS: right-click → Open (or allow in System Settings → Privacy & Security).
             - Windows: More info → Run anyway (SmartScreen).
-          releaseDraft: true
+          draft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          files: dist/**/*
+          fail_on_unmatched_files: true
