@@ -75,6 +75,12 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            # Match production: web inlines NEXT_PUBLIC_* at build (non-secret URLs).
+            {
+              echo "NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'https://api.timepro.systemsd.co' }}"
+              echo "NEXT_PUBLIC_OPSCORE_URL=${{ vars.NEXT_PUBLIC_OPSCORE_URL || 'https://opscore.systemsd.co' }}"
+            } > "$STAGING/apps/web/.env.production"
+
             echo "──▶ Installing deps + building (no processes started)"
             pnpm install --frozen-lockfile
             pnpm build
@@ -115,9 +121,29 @@ jobs:
             git checkout main
             git reset --hard origin/main   # untracked env files are preserved
 
+            # Web inlines NEXT_PUBLIC_* at BUILD time and reads them from apps/web/,
+            # NOT the root .env. These are non-secret public URLs, so write them here
+            # (overridable via repo Variables) — otherwise the bundle bakes the
+            # localhost fallbacks (api.ts: NEXT_PUBLIC_OPSCORE_URL ?? localhost:3001).
+            WEB_API_URL="${{ vars.NEXT_PUBLIC_API_URL || 'https://api.timepro.systemsd.co' }}"
+            WEB_OPSCORE_URL="${{ vars.NEXT_PUBLIC_OPSCORE_URL || 'https://opscore.systemsd.co' }}"
+            echo "──▶ Writing apps/web/.env.production (api=$WEB_API_URL opscore=$WEB_OPSCORE_URL)"
+            {
+              echo "NEXT_PUBLIC_API_URL=$WEB_API_URL"
+              echo "NEXT_PUBLIC_OPSCORE_URL=$WEB_OPSCORE_URL"
+            } > "$PROD/apps/web/.env.production"
+
             echo "──▶ Installing deps + building"
             pnpm install --frozen-lockfile
             pnpm build
+            # Rebuild web explicitly so the NEXT_PUBLIC_* above are baked into the
+            # client bundle (bypasses any turbo cache that ignores env changes).
+            pnpm --filter @timepro/web build
+
+            echo "──▶ Verifying web bundle baked the production URLs"
+            grep -rqs "${WEB_OPSCORE_URL#http*://}" "$PROD/apps/web/.next" \
+              || { echo "❌ web bundle still on localhost — apps/web/.env.production not applied at build"; exit 1; }
+            echo "✅ web bundle baked: $WEB_OPSCORE_URL"
 
             echo "──▶ Applying database migrations"
             # Inject the root .env so db:migrate (and the API below) see DATABASE_URL.
@@ -139,7 +165,7 @@ jobs:
             echo "──▶ Waiting for the API to report ready"
             for i in $(seq 1 30); do
               if curl -fsS http://127.0.0.1:4001/readyz >/dev/null 2>&1; then
-                echo "API healthy"; break
+                echo "API ready"; break
               fi
               if [ "$i" -eq 30 ]; then
                 echo "API did not become healthy in time — recent api logs:"
@@ -148,6 +174,14 @@ jobs:
               fi
               sleep 2
             done
+
+            echo "──▶ Verifying API"
+            curl -fsS http://127.0.0.1:4001/healthz | grep -q '"ok":true' \
+              || { echo "❌ /healthz did not return ok"; exit 1; }
+            ready="$(curl -fsS http://127.0.0.1:4001/readyz)"
+            echo "$ready" | grep -q '"db":"ok"' \
+              || { echo "❌ /readyz reports DB not ok: $ready"; exit 1; }
+            echo "✅ API healthy: $ready"
 
             echo "──▶ Cleaning staging"
             rm -rf "$STAGING"
