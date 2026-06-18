@@ -5,6 +5,43 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
+## 🚧 ACTIVE WORK (2026-06-16) — Deploy & Download feature
+
+> Continuing work on making the desktop app **downloadable** + **deploying its backend**.
+> **Source of truth: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md)** (full tracker).
+
+**Goal:** "Make the app downloadable so users start tracking, and tracking is visible." Scope = Group A (deploy backend) + Group B (downloadable installers).
+
+**Locked decisions (all mirror sibling app OpsCore):**
+- Host: single Ubuntu box `178.105.58.173` (co-located with OpsCore), Docker + nginx + Let's Encrypt.
+- Domain: `timepro.systemsd.co` (web) + `api.timepro.systemsd.co` (api) — **single-p `timepro`**, DNS verified. (`timppro` was a Slack typo.)
+- Installers: unsigned interim, hosted on GitHub Releases.
+- CI/CD: manager (Hamid) wants **push to `main` → auto-deploy**.
+
+**Branch `feat/backend-deploy-pipeline`** (⚠️ **NOT pushed yet**), 5 commits authored as **Hamid Ali** (repo-local git config = `alihamidali2@gmail.com` — keep using it):
+- A1 ✅ prod Dockerfiles (api/web/migrate) — built + boot-tested
+- A2 ✅ `infra/compose/docker-compose.prod.yml` + env templates — full stack ran locally, `/readyz` db:ok
+- A3 ✅ `infra/nginx/timepro.systemsd.co.conf` + runbook — `nginx -t` validated
+- B1 ✅ baked prod URLs into `apps/desktop/src-tauri/src/state.rs`
+- B2/B3 ✅ `.github/workflows/desktop-release.yml` (tag `v*` → installers)
+- A6 ✅ `.github/workflows/deploy.yml` — **rewritten to mirror OpsCore** (2026-06-17): `appleboy/ssh-action` + `VPS_*` secrets, two jobs (verify-build in `/var/www/timepro-staging` → deploy in `/var/www/timepro`: `git reset --hard` → `docker compose up -d --build` → `/readyz` gate → prune)
+
+**Proven locally:** full stack + native desktop app both build & run; download→track→visible chain confirmed via a simulated agent session (cleaned up after).
+
+**Pending (~1 day, mostly setup, no big coding):**
+1. One-time **server setup** (needs Hamid/server access): clone repo to **`/var/www/timepro`**, create env files (`infra/compose/.env` + `envs/api.env`, gitignored), `VPS_USER` in `docker` group, **Docker daemon running** (`systemctl enable --now docker`), run nginx/certbot once. ⚠️ `.env` must exist before `docker compose build` or `POSTGRES_*`/`NEXT_PUBLIC_*` resolve blank.
+2. **GitHub secrets** (TimePro repo, same values as OpsCore — same VPS): `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.
+3. **A4:** set OpsCore prod `TIMEPRO_URL=https://timepro.systemsd.co` + restart.
+4. **Push branch + tag `v0.1.0`** → CI builds installers, then **publish the draft Release** (drafts are invisible to the Download page's public API call).
+5. ~~**B4:** wire Download page~~ ✅ done (2026-06-17) — resolves installers from the latest GitHub Release at runtime.
+6. **B5:** verify on a clean machine.
+
+**Deploy-specific gotchas:** turbo pinned `2.9.16` in Dockerfiles (prune determinism); `@timepro/db` bundled into api via `apps/api/tsup.config.ts` (pg/uuid kept external so the ESM bundle boots); api runs distroless `nonroot` so the screenshot volume dir is seeded in the image for ownership; compose ports bind `127.0.0.1` (nginx fronts them); no Redis container (`REDIS_URL` is declared-but-unused).
+
+**Untouched pre-existing changes (leave them):** `apps/web/src/app/login/page.tsx` (modified) + `List` (stray, untracked).
+
+---
+
 ## 1. What this is
 
 TimePro — employee time-tracking + screenshot monitoring (Hubstaff/Time-Doctor/ScreenshotMonitor class).
@@ -29,18 +66,22 @@ Monorepo: Turborepo + pnpm, Node 20. Apps: `api`, `web`, `desktop`. Packages: `d
 **Original MVP (pre-OpsCore) also done:** time tracking, automatic screenshot capture → API → disk,
 web/desktop login, desktop→web "view online" handoff, Team management.
 
-**Recent UI (this session):** **Manager dashboard** = 4-column team roster overview · **Employee dashboard** =
+**Recent UI / behavior:** **Manager dashboard** = 4-column team roster overview · **Employee dashboard** =
 company-row table (org + role badge + last-active + period totals; `/v1/roster` is now self-scoped for employees) ·
-**Timeline** redesigned Hubstaff-style (branch `feat/ui-enhancements`): month strip with per-day **activity bars** +
-weekday labels (weekends red) + yellow selected day · **summary card** (date · big day total · Week/Month/Activity) with an
-**Apps/URLs** usage panel + prev/next day stepper + **average-activity donut** (+ dot/tooltip) · **24h ruler** with green
-**run/stop bars** from real tracked intervals (`timeline/:id` returns `intervals[]`) · screenshot slots
-(red time-range + app badge + thumbnails) · **My Account** page (`/account`) +
-avatar dropdown (Dashboard · My Account · Log out) · **Reports** hides Clients/Projects dropdowns for employees ·
-login is **OpsCore-only** (email/password removed) · line icons, no emojis.
+**Timeline** redesigned Hubstaff-style: month strip with per-day **activity bars** + weekday labels (weekends red) +
+yellow selected day · **summary card** (date · big day total · Week/Month/Activity) with an **Apps/URLs** usage panel +
+prev/next day stepper + **average-activity donut** (+ dot/tooltip) · **24h ruler** with green **run/stop bars** from real
+tracked intervals (`timeline/:id` returns `intervals[]`) · screenshot slots (red time-range + app badge + thumbnails,
+**trash to delete** [C9]); clicking a thumbnail opens a **lightbox** with prev/next (← →) · **screenshot retention**
+auto-prunes old screenshots (default 3 months) · desktop timer colon "beats" while tracking · desktop **project picker
+is member-scoped** (only your active assignments) · **OpsCore sync disables members absent from the directory** (→
+suspended) · **My Account** page (`/account`) + avatar dropdown (Dashboard · My Account · Log out) · **Reports** has a
+Hubstaff-style filter bar (preset grid, type links, group-by chips) + hides Clients/Projects dropdowns for employees ·
+login is **OpsCore-only** · line icons, no emojis.
+**Desktop agent verified end-to-end against prod** (loopback login → directory → track → real capture → upload).
 
 ### 🔴 Pending — phased (full detail in [docs/13 §3](13-opscore-feature-roadmap.md))
-- **Phase 6 — Multi-tenancy & real auth** *(next; agreed direction)*: one shared DB, many orgs. 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO (config moves off global env) · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX. *Folds in the old "real auth / MFA" and "RLS / partitioning" items.*
+- **Phase 6 — Multi-tenancy & real auth** *(⏸️ PAUSED — single-tenant Systemsd is the current focus)*: one shared DB, many orgs. 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO (config moves off global env) · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX. *Folds in the old "real auth / MFA" and "RLS / partitioning" items.*
 - **Phase 7 — Ship pipeline (B9)**: cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs. *Credential-gated.*
 - **Phase 8 — Scale & storage**: 8.1 reporting rollups + scheduler (B8) · 8.2 S3 storage + thumbnails · 8.3 worker/realtime services + Redis-backed presence.
 - **Phase 9 — Billing & plans**.
@@ -119,10 +160,10 @@ verifies locally (signature only) — sign-in does **not** call `OPSCORE_API_URL
 ## 5. API route inventory (`apps/api/src/routes/`)
 
 `auth` (dev-login, opscore/exchange, handoff, handoff/exchange) · `health` · `me` (today, profile) ·
-`projects` (+ manage, :id/members) · `screenshots` (ingest + list + raw + **DELETE `:id`**, C9-gated) · `team` · `timer` ·
-`roster` (self-scoped for employees) · `timeline` (+ `:userId/activity` for the strip bars, `:userId/apps-urls` for the summary panel) · `clients` ·
+`projects` (list is **member-scoped** to the caller's active assignments; + manage, :id/members) · `screenshots` (ingest + list + raw + **DELETE `:id`**, C9-gated) ·
+`team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ `:userId/activity` for the strip bars, `:userId/apps-urls` for the summary panel) · `clients` ·
 `settings` (+ /effective, /user/:id) · `presence` (agent/heartbeat) · `ingest` (activity, app-usage, url-usage) ·
-`admin` (opscore/sync, screenshots/prune) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
+`admin` (opscore/sync — **disables members absent from the response**, re-activates returners; **screenshots/prune**) · `reports` (filters [no clients/projects for employees], run, saved CRUD) · `realtime` (ws presence).
 
 **Auth shim:** `requireAuth` accepts `x-dev-org` + `x-dev-user` headers (non-prod). RBAC scoping (admin=all /
 manager=own team / employee=self, **C1**) is centralized in `apps/api/src/lib/access.ts`.
@@ -169,13 +210,14 @@ C8 break-glass local owner · C9 screenshot self-delete admin-configurable defau
 
 ## 9. Recommended next steps
 
-Phases 0–5 are done. The remaining work is phased in [docs/13 §3](13-opscore-feature-roadmap.md):
+Phases 0–5 are done; **Phase 6 (multi-tenancy) is PAUSED** — the focus is the single-tenant Systemsd product,
+which is **live against production OpsCore and verified end-to-end** (web + desktop). Sensible next work:
 
-1. **Phase 6 — Multi-tenancy & real auth** *(recommended next)* — start with **6.1 real auth** (Argon2 + JWT, retire the `x-dev-*` shim); it's the foundation for everything multi-tenant. Open sub-decisions: multi-org membership vs single-org, public signup vs invite-only.
-2. **Phase P — Polish** — quick, parallelizable wins (screenshot toast, desktop weekly-limit 409 message).
-3. **Phase 7 — Ship pipeline** — installer sign/notarize/host (needs signing creds + hosting).
-4. **Phase 8 / 9** — scale & storage, then billing.
+1. **Verify & polish the built UIs** in a browser (employee dashboard, Timeline strip + screenshot modal, Reports, My Account) + remaining **Phase P** wins (keyboard/mouse activity counts, Reports shareable links).
+2. **Phase 7 — Ship pipeline** — installer sign/notarize/host so the agent can be distributed (needs signing creds + hosting).
+3. **Phase 8 / 9** — scale & storage (rollups, S3), then billing — only when needed.
+4. **Phase 6 (multi-tenancy)** — resume if/when going multi-company (real auth + onboarding + RLS).
 
-> **DB note:** all `public` tables were **truncated** (schema + migration journal intact) for a clean multi-tenant start.
+> **DB note:** the production OpsCore login + sync populated the `Systemsd` org (employees/projects/clients); the migration journal is intact.
 
 Everything verified this session is reproducible via the commands in §3.

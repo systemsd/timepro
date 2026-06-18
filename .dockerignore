@@ -1,0 +1,29 @@
+# Keep the Docker build context small and reproducible.
+# turbo prune (inside the image) regenerates a pruned workspace from source,
+# so we only need source + manifests + lockfile here — never build artifacts.
+
+# Dependencies & build outputs
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+
+# Rust desktop build output (gigabytes — must never enter the context)
+apps/desktop/src-tauri/target
+
+# Runtime data (local screenshots, etc.)
+**/data
+
+# Secrets — never bake env into images (compose provides env at runtime)
+**/.env
+**/.env.*
+!**/.env.example
+
+# VCS & misc
+.git
+.gitignore
+**/*.log
+**/.DS_Store
+.vscode
+.idea

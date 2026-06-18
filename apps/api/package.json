@@ -6,7 +6,7 @@
   "main": "./dist/server.js",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
-    "build": "tsup src/server.ts --format esm --target node20 --clean --sourcemap",
+    "build": "tsup",
     "start": "node dist/server.js",
     "lint": "echo '[api] lint stub — wire @timepro/eslint-config later' && exit 0",
     "typecheck": "tsc --noEmit",
@@ -27,7 +27,9 @@
     "fastify-plugin": "^5.0.0",
     "fastify-type-provider-zod": "^4.0.0",
     "jose": "^6.2.3",
+    "pg": "^8.13.0",
     "pino-pretty": "^11.3.0",
+    "uuid": "^10.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

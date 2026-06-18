@@ -1,0 +1,189 @@
+name: Deploy TimePro
+
+# Auto-deploy the backend stack (api + web) to the VPS on every push to main.
+# Same shape as OpsCore's deploy: verify the build in a throwaway staging clone
+# first, then deploy to production only if that passes.
+#
+# TimePro runs as two PM2 processes (`timepro-api`, `timepro-web`) — NOT Docker,
+# for now (the Docker Compose path is parked behind an iptables/daemon issue on
+# the host and will be revisited later). nginx + TLS are a one-time host setup
+# (api.* → :4001, app.* → :3005) and are NOT touched by deploys.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST     – the VPS hostname/IP   (same VPS as OpsCore)
+#   VPS_USER     – ssh user (has pnpm + pm2 on PATH, like OpsCore's deploy user)
+#   VPS_SSH_KEY  – private key for that user
+#
+# Required on the VPS (one-time):
+#   • Node 20 + pnpm 9 + pm2 on the deploy user's PATH
+#   • Postgres reachable via DATABASE_URL (host or container)
+#   • /var/www/timepro/.env                  – API + DB + OpsCore secrets
+#   • /var/www/timepro/apps/web/.env.production – NEXT_PUBLIC_* (baked at build)
+#   These env files are untracked and preserved across `git reset --hard`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; let an in-flight one finish.
+concurrency:
+  group: deploy-timepro
+  cancel-in-progress: false
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 1: build in a throwaway staging clone. If the build fails here, the
+  # deploy job never runs and production is left untouched.
+  # ───────────────────────────────────────────────────────────────────────────
+  verify-build:
+    name: Verify Build (staging)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Verify build on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+
+            STAGING=/var/www/timepro-staging
+            PROD=/var/www/timepro
+
+            command -v pnpm >/dev/null || { echo "pnpm not found on PATH"; exit 1; }
+
+            echo "──▶ Preparing staging directory at $STAGING"
+            rm -rf "$STAGING"
+            mkdir -p "$STAGING"
+
+            # Fast local copy of the production tree (skip heavy dirs), then
+            # sync to the latest main from origin.
+            rsync -a \
+              --exclude='node_modules' \
+              --exclude='.next' \
+              --exclude='dist' \
+              "$PROD"/ "$STAGING"/
+
+            cd "$STAGING"
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Match production: web inlines NEXT_PUBLIC_* at build (non-secret URLs).
+            {
+              echo "NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'https://api.timepro.systemsd.co' }}"
+              echo "NEXT_PUBLIC_OPSCORE_URL=${{ vars.NEXT_PUBLIC_OPSCORE_URL || 'https://opscore.systemsd.co' }}"
+            } > "$STAGING/apps/web/.env.production"
+
+            echo "──▶ Installing deps + building (no processes started)"
+            pnpm install --frozen-lockfile
+            pnpm build
+
+            echo "✅ Verification build succeeded"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 2: real deployment. Only runs when verify-build passes.
+  # ───────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: verify-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Deploy to production on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+
+            PROD=/var/www/timepro
+            STAGING=/var/www/timepro-staging
+
+            command -v pnpm >/dev/null || { echo "pnpm not found on PATH"; exit 1; }
+            command -v pm2  >/dev/null || { echo "pm2 not found on PATH";  exit 1; }
+
+            echo "──▶ Pulling latest main into $PROD"
+            cd "$PROD"
+            git fetch --prune origin
+            git checkout main
+            git reset --hard origin/main   # untracked env files are preserved
+
+            # Web inlines NEXT_PUBLIC_* at BUILD time and reads them from apps/web/,
+            # NOT the root .env. These are non-secret public URLs, so write them here
+            # (overridable via repo Variables) — otherwise the bundle bakes the
+            # localhost fallbacks (api.ts: NEXT_PUBLIC_OPSCORE_URL ?? localhost:3001).
+            WEB_API_URL="${{ vars.NEXT_PUBLIC_API_URL || 'https://api.timepro.systemsd.co' }}"
+            WEB_OPSCORE_URL="${{ vars.NEXT_PUBLIC_OPSCORE_URL || 'https://opscore.systemsd.co' }}"
+            echo "──▶ Writing apps/web/.env.production (api=$WEB_API_URL opscore=$WEB_OPSCORE_URL)"
+            {
+              echo "NEXT_PUBLIC_API_URL=$WEB_API_URL"
+              echo "NEXT_PUBLIC_OPSCORE_URL=$WEB_OPSCORE_URL"
+            } > "$PROD/apps/web/.env.production"
+
+            echo "──▶ Installing deps + building"
+            pnpm install --frozen-lockfile
+            pnpm build
+            # Rebuild web explicitly so the NEXT_PUBLIC_* above are baked into the
+            # client bundle (bypasses any turbo cache that ignores env changes).
+            pnpm --filter @timepro/web build
+
+            echo "──▶ Verifying web bundle baked the production URLs"
+            grep -rqs "${WEB_OPSCORE_URL#http*://}" "$PROD/apps/web/.next" \
+              || { echo "❌ web bundle still on localhost — apps/web/.env.production not applied at build"; exit 1; }
+            echo "✅ web bundle baked: $WEB_OPSCORE_URL"
+
+            echo "──▶ Applying database migrations"
+            # Inject the root .env so db:migrate (and the API below) see DATABASE_URL.
+            # The built API resolves the root .env relative to its *source* path,
+            # which breaks once tsup bundles to dist/ — so we put the vars on the
+            # process environment directly (the loader uses override:false).
+            set -a; . "$PROD/.env"; set +a
+            pnpm db:migrate
+
+            echo "──▶ (Re)starting PM2 processes"
+            # API inherits the sourced env above (--update-env re-reads it).
+            pm2 restart timepro-api --update-env \
+              || pm2 start "pnpm --filter @timepro/api start" --name timepro-api --update-env
+            # Web needs no root env at runtime (NEXT_PUBLIC_* baked at build time).
+            pm2 restart timepro-web --update-env \
+              || pm2 start "pnpm --filter @timepro/web start" --name timepro-web
+            pm2 save
+
+            echo "──▶ Waiting for the API to report ready"
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:4001/readyz >/dev/null 2>&1; then
+                echo "API ready"; break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "API did not become healthy in time — recent api logs:"
+                pm2 logs timepro-api --lines 50 --nostream || true
+                exit 1
+              fi
+              sleep 2
+            done
+
+            echo "──▶ Verifying API"
+            curl -fsS http://127.0.0.1:4001/healthz | grep -q '"ok":true' \
+              || { echo "❌ /healthz did not return ok"; exit 1; }
+            ready="$(curl -fsS http://127.0.0.1:4001/readyz)"
+            echo "$ready" | grep -q '"db":"ok"' \
+              || { echo "❌ /readyz reports DB not ok: $ready"; exit 1; }
+            echo "✅ API healthy: $ready"
+
+            echo "──▶ Cleaning staging"
+            rm -rf "$STAGING"
+
+            echo "✅ Deploy complete"

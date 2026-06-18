@@ -4,18 +4,31 @@ import { useEffect, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 
-// Placeholder URLs until the build/sign/host pipeline lands (Phase 6).
-const DL = {
-  macArm: '#',
-  macIntel: '#',
-  windows: '#',
-  linux: '#',
-  extension: '#',
+// Installers are published to GitHub Releases by `.github/workflows/desktop-release.yml`
+// (tag `v*` → Tauri bundles for all four targets). The bundle filenames embed the version
+// (e.g. `TimePro_0.1.0_aarch64.dmg`), so we resolve the *latest* release's assets by pattern
+// at runtime rather than hard-coding a version into the URL — the page stays correct across releases.
+const REPO = 'systemsd/timepro';
+const RELEASES_URL = `https://github.com/${REPO}/releases`;
+const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+// The browser extension is loaded unpacked (MV3, no build) — it isn't a release artifact.
+const EXTENSION_URL = `https://github.com/${REPO}/tree/main/apps/extension`;
+
+type Assets = {
+  macArm?: string;
+  macIntel?: string;
+  windows?: string;
+  linux?: string;
 };
+
+type ReleaseAsset = { name: string; browser_download_url: string };
 
 export default function DownloadPage() {
   const { session, checked } = useSession();
   const [os, setOs] = useState<'mac' | 'windows' | 'linux' | 'other'>('other');
+  const [assets, setAssets] = useState<Assets>({});
+  const [tag, setTag] = useState<string | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
 
   useEffect(() => {
     const p = navigator.platform.toLowerCase() + ' ' + navigator.userAgent.toLowerCase();
@@ -24,7 +37,51 @@ export default function DownloadPage() {
     else if (p.includes('linux')) setOs('linux');
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(LATEST_API, { headers: { Accept: 'application/vnd.github+json' } });
+        if (!res.ok) throw new Error(`github ${res.status}`);
+        const data = (await res.json()) as { tag_name?: string; assets?: ReleaseAsset[] };
+        const list = data.assets ?? [];
+        const url = (pred: (a: ReleaseAsset) => boolean) => list.find(pred)?.browser_download_url;
+        const next: Assets = {
+          macArm: url((a) => a.name.endsWith('.dmg') && a.name.includes('aarch64')),
+          macIntel: url((a) => a.name.endsWith('.dmg') && /x64|x86_64/.test(a.name)),
+          windows: url((a) => a.name.endsWith('.exe')) ?? url((a) => a.name.endsWith('.msi')),
+          linux: url((a) => a.name.endsWith('.AppImage')) ?? url((a) => a.name.endsWith('.deb')),
+        };
+        if (cancelled) return;
+        const any = Object.values(next).some(Boolean);
+        setAssets(next);
+        setTag(data.tag_name ?? null);
+        setState(any ? 'ready' : 'unavailable');
+      } catch {
+        if (!cancelled) setState('unavailable');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (!checked || !session) return <div className="center muted">Loading…</div>;
+
+  // Render an enabled download button, or a disabled placeholder when that target has no asset yet.
+  const btn = (url: string | undefined, label: string) =>
+    url ? (
+      <a className="dl-btn" href={url}>
+        ↓ {label}
+      </a>
+    ) : (
+      <span className="dl-btn" style={{ opacity: 0.5, cursor: 'not-allowed' }} aria-disabled="true">
+        ↓ {label}
+      </span>
+    );
+
+  const sideLink = (url: string | undefined, label: string) =>
+    url ? <a href={url}>{label}</a> : <span className="muted">{label} — not yet available</span>;
 
   return (
     <div className="page">
@@ -39,20 +96,28 @@ export default function DownloadPage() {
             can see the recorded time and screenshots right on this website.
           </p>
 
-          {os === 'mac' ? (
+          {state === 'loading' ? (
+            <p className="muted">Checking for the latest release…</p>
+          ) : state === 'unavailable' ? (
+            <p className="hint">
+              No published release is available yet. You can grab the latest installers from the{' '}
+              <a href={RELEASES_URL}>GitHub Releases page</a>, or build locally with{' '}
+              <code>pnpm --filter @timepro/desktop tauri:build</code>.
+            </p>
+          ) : os === 'mac' ? (
             <div className="dl-buttons">
-              <a className="dl-btn" href={DL.macArm}>↓ Download for Apple Silicon</a>
-              <a className="dl-btn" href={DL.macIntel}>↓ Download for Intel Macs</a>
+              {btn(assets.macArm, 'Download for Apple Silicon')}
+              {btn(assets.macIntel, 'Download for Intel Macs')}
             </div>
           ) : os === 'windows' ? (
-            <div className="dl-buttons"><a className="dl-btn" href={DL.windows}>↓ Download for Windows</a></div>
+            <div className="dl-buttons">{btn(assets.windows, 'Download for Windows')}</div>
           ) : os === 'linux' ? (
-            <div className="dl-buttons"><a className="dl-btn" href={DL.linux}>↓ Download for Linux</a></div>
+            <div className="dl-buttons">{btn(assets.linux, 'Download for Linux')}</div>
           ) : (
             <div className="dl-buttons">
-              <a className="dl-btn" href={DL.macArm}>↓ macOS</a>
-              <a className="dl-btn" href={DL.windows}>↓ Windows</a>
-              <a className="dl-btn" href={DL.linux}>↓ Linux</a>
+              {btn(assets.macArm, 'macOS')}
+              {btn(assets.windows, 'Windows')}
+              {btn(assets.linux, 'Linux')}
             </div>
           )}
 
@@ -72,15 +137,17 @@ export default function DownloadPage() {
           </p>
 
           <p className="hint">
-            Installers are not yet hosted/signed — download links are placeholders until the build
-            pipeline ships. Build locally with <code>pnpm --filter @timepro/desktop tauri:build</code>.
+            These installers are <strong>unsigned</strong>. On first launch, approve the app: on macOS
+            right-click the app → <strong>Open</strong> (or allow it in System Settings → Privacy &amp;
+            Security); on Windows click <strong>More info</strong> → <strong>Run anyway</strong> in SmartScreen.
+            {tag ? <> Latest release: <strong>{tag}</strong>.</> : null}
           </p>
         </main>
 
         <aside className="dl-side">
-          <div className="dl-side-item"><div className="dl-side-h">Need Windows version?</div><a href={DL.windows}>Download Windows application</a></div>
-          <div className="dl-side-item"><div className="dl-side-h">Need Linux version?</div><a href={DL.linux}>Download Linux application</a></div>
-          <div className="dl-side-item"><div className="dl-side-h">Need browser extension?</div><a href={DL.extension}>Download extension</a></div>
+          <div className="dl-side-item"><div className="dl-side-h">Need Windows version?</div>{sideLink(assets.windows, 'Download Windows application')}</div>
+          <div className="dl-side-item"><div className="dl-side-h">Need Linux version?</div>{sideLink(assets.linux, 'Download Linux application')}</div>
+          <div className="dl-side-item"><div className="dl-side-h">Need browser extension?</div><a href={EXTENSION_URL}>Get the browser extension</a></div>
         </aside>
       </div>
     </div>

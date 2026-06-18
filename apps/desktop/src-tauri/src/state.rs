@@ -27,7 +27,7 @@ pub struct RunningTimer {
 
 /// Production API base baked into shipped builds (.dmg / .exe / .AppImage).
 /// Change this to your real API host before release.
-const PRODUCTION_API_BASE: &str = "https://api.timepro.app";
+const PRODUCTION_API_BASE: &str = "https://api.timepro.systemsd.co";
 
 /// Resolve the API base URL. The user never enters this — it ships with the
 /// binary. Resolution order:
@@ -53,7 +53,7 @@ fn default_api_base() -> String {
 
 /// Production web base — where the OpsCore login bridge (`/desktop-auth`) lives.
 /// Change before release. Same resolution order as the API base.
-const PRODUCTION_WEB_BASE: &str = "https://app.timepro.app";
+const PRODUCTION_WEB_BASE: &str = "https://timepro.systemsd.co";
 
 fn default_web_base() -> String {
     if let Ok(v) = std::env::var("TIMEPRO_WEB_URL") {
