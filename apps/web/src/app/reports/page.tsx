@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import {
@@ -263,7 +264,18 @@ function GroupByField({ value, onChange }: { value: GroupDim[]; onChange: (v: Gr
 type Tab = 'timeline' | 'employees' | 'projects' | 'clients' | 'notes' | 'apps';
 
 export default function ReportsPage() {
+  // useSearchParams (in ReportsInner) requires a Suspense boundary for the build.
+  return (
+    <Suspense fallback={<div className="center muted">Loading…</div>}>
+      <ReportsInner />
+    </Suspense>
+  );
+}
+
+function ReportsInner() {
   const { session, checked } = useSession();
+  const searchParams = useSearchParams();
+  const appliedParams = useRef(false);
 
   const [mode, setMode] = useState<ReportType | 'saved'>('summary');
   const init = presetRange('last_week');
@@ -304,6 +316,32 @@ export default function ReportsPage() {
     getReportFilters().then(setFilters).catch(() => setFilters({ employees: [], clients: [], projects: [] }));
     reloadSaved();
   }, [checked, session]);
+
+  // Deep-link from the Timeline's Week/Month totals: ?from&to&user&run=1 →
+  // pre-fill the filters for that period + user and run the report immediately.
+  useEffect(() => {
+    if (!checked || !session || appliedParams.current) return;
+    const qFrom = searchParams.get('from');
+    const qTo = searchParams.get('to');
+    const qUser = searchParams.get('user');
+    if (!qFrom || !qTo) return;
+    appliedParams.current = true;
+    setFrom(qFrom);
+    setTo(qTo);
+    setActivePreset(null);
+    const uids = qUser ? [qUser] : [];
+    if (qUser) setUserIds(uids);
+    if (searchParams.get('run') === '1') {
+      void execute({
+        type: 'summary',
+        from: qFrom,
+        to: qTo,
+        userIds: uids.length ? uids : undefined,
+        groupBy: ['employee'],
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checked, session, searchParams]);
 
   const setPreset = (p: Preset) => {
     const r = presetRange(p);
