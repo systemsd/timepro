@@ -326,6 +326,9 @@ impl ApiClient {
             .post(self.url("/v1/screenshots"))
             .header("x-dev-org", &s.organization_id)
             .header("x-dev-user", &s.user_id)
+            // Screenshot uploads are larger than other calls — give them more than
+            // the client's default 15s so they don't time out on slower links.
+            .timeout(Duration::from_secs(60))
             .multipart(form)
             .send()
             .await?;

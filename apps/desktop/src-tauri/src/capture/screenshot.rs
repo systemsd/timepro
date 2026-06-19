@@ -10,6 +10,13 @@ pub struct CapturedShot {
     pub height: u32,
 }
 
+/// Cap the longest side of a captured screenshot. A full Retina screen is a
+/// multi-megabyte PNG, and those uploads time out (15s) on slower links — so
+/// most screenshots were silently dropped. Downscaling to this keeps each one
+/// well under ~1 MB (still readable for monitoring) so uploads succeed reliably
+/// and the configured per-hour rate is actually delivered.
+const MAX_LONGEST_SIDE: u32 = 1440;
+
 pub fn capture_primary_monitor() -> Result<CapturedShot> {
     let monitors = xcap::Monitor::all().context("enumerate monitors")?;
     let primary = monitors
@@ -18,13 +25,21 @@ pub fn capture_primary_monitor() -> Result<CapturedShot> {
         .or_else(|| xcap::Monitor::all().ok().and_then(|m| m.into_iter().next()))
         .ok_or_else(|| anyhow!("no monitor available"))?;
 
-    let image = primary.capture_image().context("capture image")?;
-    let width = image.width();
-    let height = image.height();
+    let raw = primary.capture_image().context("capture image")?;
+    let mut img = image::DynamicImage::ImageRgba8(raw);
+    if img.width().max(img.height()) > MAX_LONGEST_SIDE {
+        // `resize` preserves aspect ratio, fitting within the bounding box.
+        img = img.resize(
+            MAX_LONGEST_SIDE,
+            MAX_LONGEST_SIDE,
+            image::imageops::FilterType::Triangle,
+        );
+    }
+    let width = img.width();
+    let height = img.height();
 
     let mut buf = Vec::with_capacity(256 * 1024);
-    image
-        .write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)
+    img.write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)
         .context("encode png")?;
 
     Ok(CapturedShot { png: buf, width, height })
