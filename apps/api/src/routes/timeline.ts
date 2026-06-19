@@ -305,6 +305,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           200: z.object({
             apps: z.array(z.object({ name: z.string(), seconds: z.number() })),
             urls: z.array(z.object({ domain: z.string(), seconds: z.number() })),
+            tasks: z.array(z.object({ description: z.string(), seconds: z.number() })),
           }),
         },
         tags: ['timeline'],
@@ -361,9 +362,43 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           }
           return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
         };
+
+        // Tasks = the day's time entries grouped by their "What are you working
+        // on?" description (entries without one are omitted). A running entry
+        // (no endedAt) counts up to now.
+        const taskRows = await tx
+          .select({
+            description: schema.timeEntries.description,
+            startedAt: schema.timeEntries.startedAt,
+            endedAt: schema.timeEntries.endedAt,
+          })
+          .from(schema.timeEntries)
+          .where(
+            and(
+              eq(schema.timeEntries.organizationId, req.organizationId!),
+              eq(schema.timeEntries.userId, req.params.userId),
+              isNull(schema.timeEntries.deletedAt),
+              lt(schema.timeEntries.startedAt, dayEnd),
+              or(isNull(schema.timeEntries.endedAt), gte(schema.timeEntries.endedAt, dayStart)),
+            ),
+          );
+        const nowMs = Date.now();
+        const taskMap = new Map<string, number>();
+        for (const r of taskRows) {
+          const desc = (r.description ?? '').trim();
+          if (!desc) continue;
+          const endMs = r.endedAt ? r.endedAt.getTime() : nowMs;
+          const secs = Math.round(overlap(r.startedAt.getTime(), endMs));
+          if (secs > 0) taskMap.set(desc, (taskMap.get(desc) ?? 0) + secs);
+        }
+        const tasks = Array.from(taskMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([description, seconds]) => ({ description, seconds }));
+
         return {
           apps: agg(appRows).map(([name, seconds]) => ({ name, seconds })),
           urls: agg(urlRows).map(([domain, seconds]) => ({ domain, seconds })),
+          tasks,
         };
       });
     },
