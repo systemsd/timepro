@@ -84,7 +84,7 @@ export default function TimelinePage() {
   const [loading, setLoading] = useState(true);
   const [shotIndex, setShotIndex] = useState<number | null>(null); // open screenshot (index into allShots)
   const [usage, setUsage] = useState<TimelineAppsUrls | null>(null);
-  const [usageTab, setUsageTab] = useState<'apps' | 'urls' | 'tasks'>('apps');
+  const [usageTab, setUsageTab] = useState<'apps' | 'urls' | 'tasks'>('tasks');
   const [refreshTick, setRefreshTick] = useState(0); // bumped after a screenshot delete
   const [allowSelfDelete, setAllowSelfDelete] = useState(false);
 
@@ -246,9 +246,9 @@ export default function TimelinePage() {
         </div>
         <div className="tl-card-side">
           <div className="tl-tabs">
+            <button className={usageTab === 'tasks' ? 'on' : ''} onClick={() => setUsageTab('tasks')}>Tasks</button>
             <button className={usageTab === 'apps' ? 'on' : ''} onClick={() => setUsageTab('apps')}>Apps</button>
             <button className={usageTab === 'urls' ? 'on' : ''} onClick={() => setUsageTab('urls')}>URLs</button>
-            <button className={usageTab === 'tasks' ? 'on' : ''} onClick={() => setUsageTab('tasks')}>Tasks</button>
           </div>
           <div className="tl-usage">
             {usageRows.length === 0 ? (
