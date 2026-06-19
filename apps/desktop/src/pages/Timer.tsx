@@ -74,15 +74,25 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     return () => clearInterval(id);
   }, [timer]);
 
-  // auto-capture notifications from the Rust capture loop
+  // auto-capture + auto-pause notifications from the Rust capture loop
   useEffect(() => {
-    let unlisten = () => {};
+    const unlisteners: Array<() => void> = [];
     (async () => {
-      unlisten = await listen<ScreenshotUploadEvent>('screenshot:uploaded', () => {
-        showToast('Screenshot taken');
-      });
+      unlisteners.push(
+        await listen<ScreenshotUploadEvent>('screenshot:uploaded', () => {
+          showToast('Screenshot taken');
+        }),
+      );
+      // Idle auto-pause stops the timer server-side; reflect that here so the
+      // window doesn't keep showing "running" (which then errors on Stop).
+      unlisteners.push(
+        await listen<number>('timer:auto-paused', () => {
+          setTimer(null);
+          showToast('Tracking paused — you were idle');
+        }),
+      );
     })();
-    return () => unlisten();
+    return () => unlisteners.forEach((u) => u());
   }, []);
 
   // persist task + project selection
@@ -132,7 +142,15 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
       await ipc.timerStop();
       setTimer(null);
     } catch (err) {
-      setError(asMessage(err));
+      const msg = asMessage(err);
+      // If the timer was already closed (e.g. idle auto-pause stopped it
+      // server-side), Stop is effectively a no-op — just reset to Stopped
+      // instead of surfacing a scary "no_running_timer" error.
+      if (/no_running_timer/i.test(msg)) {
+        setTimer(null);
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
