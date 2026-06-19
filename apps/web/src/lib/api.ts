@@ -236,6 +236,7 @@ export async function getTimeline(userId: string, date: string): Promise<Timelin
 export interface TimelineAppsUrls {
   apps: Array<{ name: string; seconds: number }>;
   urls: Array<{ domain: string; seconds: number }>;
+  tasks: Array<{ description: string; seconds: number }>;
 }
 
 /** Apps + URLs used on one day for a user — Timeline summary-card panel. */

@@ -84,7 +84,7 @@ export default function TimelinePage() {
   const [loading, setLoading] = useState(true);
   const [shotIndex, setShotIndex] = useState<number | null>(null); // open screenshot (index into allShots)
   const [usage, setUsage] = useState<TimelineAppsUrls | null>(null);
-  const [usageTab, setUsageTab] = useState<'apps' | 'urls'>('apps');
+  const [usageTab, setUsageTab] = useState<'apps' | 'urls' | 'tasks'>('apps');
   const [refreshTick, setRefreshTick] = useState(0); // bumped after a screenshot delete
   const [allowSelfDelete, setAllowSelfDelete] = useState(false);
 
@@ -166,7 +166,9 @@ export default function TimelinePage() {
   const dayStartMs = new Date(date + 'T00:00:00').getTime();
   const usageRows = (usageTab === 'apps'
     ? (usage?.apps ?? []).map((a) => ({ label: a.name, seconds: a.seconds }))
-    : (usage?.urls ?? []).map((u) => ({ label: u.domain, seconds: u.seconds }))
+    : usageTab === 'urls'
+    ? (usage?.urls ?? []).map((u) => ({ label: u.domain, seconds: u.seconds }))
+    : (usage?.tasks ?? []).map((t) => ({ label: t.description, seconds: t.seconds }))
   );
   const usageMax = usageRows.reduce((m, r) => Math.max(m, r.seconds), 0) || 1;
 
@@ -246,10 +248,13 @@ export default function TimelinePage() {
           <div className="tl-tabs">
             <button className={usageTab === 'apps' ? 'on' : ''} onClick={() => setUsageTab('apps')}>Apps</button>
             <button className={usageTab === 'urls' ? 'on' : ''} onClick={() => setUsageTab('urls')}>URLs</button>
+            <button className={usageTab === 'tasks' ? 'on' : ''} onClick={() => setUsageTab('tasks')}>Tasks</button>
           </div>
           <div className="tl-usage">
             {usageRows.length === 0 ? (
-              <p className="muted tl-usage-empty">No {usageTab === 'apps' ? 'app' : 'URL'} activity for this day.</p>
+              <p className="muted tl-usage-empty">
+                No {usageTab === 'apps' ? 'app' : usageTab === 'urls' ? 'URL' : 'task'} activity for this day.
+              </p>
             ) : (
               usageRows.map((r) => (
                 <div className="tl-usage-row" key={r.label}>
