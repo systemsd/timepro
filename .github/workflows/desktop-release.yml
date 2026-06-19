@@ -1,26 +1,36 @@
 name: Desktop Release
 
-# Cross-platform installers for the TimePro desktop agent.
-# Trigger: push a tag like `v0.1.0` (or run manually).
+# Version-driven desktop installer release.
+#
+# Trigger: a push to `main` that touches `apps/desktop/**` (or this workflow).
+# A `version-check` job reads the version from `apps/desktop/src-tauri/tauri.conf.json`
+# and asks the downloads repo whether a Release `v<version>` already exists:
+#   - exists  → skip (no rebuild).
+#   - missing → build + publish.
+# So a release happens ONLY when you bump `version` in tauri.conf.json and merge.
+# (`workflow_dispatch` with `force: true` rebuilds even if the version exists.)
 #
 # The code lives in this PRIVATE repo, but installers are published to a SEPARATE
 # PUBLIC repo (`systemsd/timepro-downloads`) so anonymous employees can download
-# them while the source stays private. GitHub's default GITHUB_TOKEN can only
-# write to THIS repo, so cross-repo publishing uses a fine-grained PAT
-# (`RELEASES_REPO_TOKEN`, Contents: write on timepro-downloads).
+# them while the source stays private. Cross-repo publishing uses a fine-grained
+# PAT (`RELEASES_REPO_TOKEN`, Contents: write on timepro-downloads). Because we
+# never push a tag from CI, the GITHUB_TOKEN "no re-trigger" rule doesn't apply.
 #
-# Flow: each OS builds its installers (no release) → uploads them as workflow
-# artifacts → a single `publish` job collects all four and creates ONE draft
-# Release in timepro-downloads. (Two phases avoid a race on release creation.)
-#
-# Interim policy: builds are UNSIGNED (no Apple Developer ID / Windows cert yet),
-# so users approve the app in Gatekeeper/SmartScreen on first launch.
+# Builds are UNSIGNED (no Apple Developer ID / Windows cert yet) — users approve
+# the app in Gatekeeper/SmartScreen on first launch.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-release.yml"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Build & publish even if this version is already released"
+        type: boolean
+        default: false
 
 permissions:
   contents: read # we publish to ANOTHER repo via PAT, not this one
@@ -29,7 +39,46 @@ env:
   DOWNLOADS_REPO: systemsd/timepro-downloads
 
 jobs:
+  # Resolve the desktop version and decide whether a release is needed.
+  version-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version + check if already released
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          VERSION="v$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Desktop version: $VERSION"
+          if [ "$FORCE" = "true" ]; then
+            echo "Force requested → will build & publish."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # List releases (drafts included when authenticated) and look for the tag.
+          EXISTS=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${DOWNLOADS_REPO}/releases?per_page=100" \
+            | VERSION="$VERSION" node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const r=JSON.parse(s);process.stdout.write(Array.isArray(r)&&r.some(x=>x.tag_name===process.env.VERSION)?'yes':'no')}catch(e){process.stdout.write('no')}})")
+          if [ "$EXISTS" = "yes" ]; then
+            echo "Release $VERSION already exists → skipping."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release $VERSION yet → will build & publish."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: version-check
+    if: needs.version-check.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -127,7 +176,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [version-check, build]
+    if: needs.version-check.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download all installers
@@ -140,15 +190,16 @@ jobs:
         run: find dist -type f -print
 
       # Publish ONE draft Release to the public downloads repo using the PAT.
+      # (Flip `draft: false` for fully hands-off publishing.)
       - name: Publish draft release to downloads repo
         uses: softprops/action-gh-release@v2
         with:
           repository: ${{ env.DOWNLOADS_REPO }}
           token: ${{ secrets.RELEASES_REPO_TOKEN }}
-          tag_name: ${{ github.ref_name }}
-          name: "TimePro Desktop ${{ github.ref_name }}"
+          tag_name: ${{ needs.version-check.outputs.version }}
+          name: "TimePro Desktop ${{ needs.version-check.outputs.version }}"
           body: |
-            TimePro desktop agent ${{ github.ref_name }}.
+            TimePro desktop agent ${{ needs.version-check.outputs.version }}.
 
             These installers are **unsigned** — on first launch:
             - macOS: right-click → Open (or allow in System Settings → Privacy & Security).
