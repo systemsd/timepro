@@ -24,6 +24,14 @@ name: Deploy TimePro
 on:
   push:
     branches: [main]
+    # Skip a redeploy when a merge touches ONLY desktop / docs / markdown — none
+    # of those affect the deployed backend (api + web). Any backend/web/infra/
+    # package/lockfile change still triggers a deploy. (paths-ignore skips a push
+    # only when *every* changed file matches, so mixed PRs still deploy.)
+    paths-ignore:
+      - "apps/desktop/**"
+      - "docs/**"
+      - "**.md"
   workflow_dispatch:
 
 # Never run two deploys at once; let an in-flight one finish.
