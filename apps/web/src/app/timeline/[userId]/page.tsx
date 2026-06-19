@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import { CloseIcon, TrashIcon } from '@/components/icons';
@@ -148,6 +149,19 @@ export default function TimelinePage() {
   });
   const monthSeconds = Object.values(dayActivity).reduce((a, b) => a + b, 0);
   const weekSecs = weekSeconds(dayActivity, date);
+  // Report deep-links for the Week/Month totals (Mon–Sun week of the selected
+  // day; full viewed month) → open Reports pre-filtered to this user + period.
+  const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const wkBase = new Date(date + 'T00:00:00');
+  const wkMon = new Date(wkBase);
+  wkMon.setDate(wkBase.getDate() - ((wkBase.getDay() + 6) % 7));
+  const wkSun = new Date(wkMon);
+  wkSun.setDate(wkMon.getDate() + 6);
+  const [vy, vm] = viewMonth.split('-').map(Number) as [number, number];
+  const monthFrom = `${vy}-${pad(vm)}-01`;
+  const monthTo = `${vy}-${pad(vm)}-${pad(new Date(vy, vm, 0).getDate())}`;
+  const reportHref = (from: string, to: string) =>
+    `/reports?from=${from}&to=${to}&user=${userId}&run=1`;
   // local midnight ms — for placing slot segments on the 24h ruler
   const dayStartMs = new Date(date + 'T00:00:00').getTime();
   const usageRows = (usageTab === 'apps'
@@ -219,9 +233,13 @@ export default function TimelinePage() {
             {data?.activity_score != null && <ActivityDonut score={data.activity_score} />}
           </div>
           <div className="tl-subtotals">
-            <span>Week <b>{hm(weekSecs)}</b></span>
+            <Link className="tl-sublink" href={reportHref(ymd(wkMon), ymd(wkSun))} title="Open this week in Reports">
+              Week <b>{hm(weekSecs)}</b>
+            </Link>
             <span className="tl-dot-sep">•</span>
-            <span>Month <b>{hm(monthSeconds)}</b></span>
+            <Link className="tl-sublink" href={reportHref(monthFrom, monthTo)} title="Open this month in Reports">
+              Month <b>{hm(monthSeconds)}</b>
+            </Link>
           </div>
         </div>
         <div className="tl-card-side">

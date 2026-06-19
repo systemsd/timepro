@@ -372,6 +372,9 @@ body {
 .tl-total { font-size: 60px; font-weight: 300; color: #4a4f55; line-height: 1.05; }
 .tl-subtotals { font-size: 14px; color: var(--muted); }
 .tl-subtotals b { color: var(--accent); font-weight: 600; }
+.tl-sublink { color: inherit; text-decoration: none; cursor: pointer; }
+.tl-sublink:hover { text-decoration: underline; }
+.tl-sublink:hover b { text-decoration: underline; }
 .tl-dot-sep { margin: 0 8px; color: var(--muted-2); }
 .tl-card-side {
   flex: 1 1 52%; border-left: 1px solid var(--border); background: #fff;
