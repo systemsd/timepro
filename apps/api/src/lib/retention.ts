@@ -37,6 +37,21 @@ export async function pruneOrgScreenshots(tx: DB, orgId: string, retentionDays: 
   return olds.length;
 }
 
+/** Agent diagnostic logs are kept this long, then pruned (fixed, not configurable). */
+const AGENT_LOGS_RETENTION_DAYS = 14;
+
+/** Delete agent logs older than the retention window across all orgs. */
+export async function pruneAgentLogs(): Promise<number> {
+  const cutoff = new Date(Date.now() - AGENT_LOGS_RETENTION_DAYS * DAY_MS);
+  return asPlatform(async (tx) => {
+    const deleted = await tx
+      .delete(schema.agentLogs)
+      .where(lt(schema.agentLogs.createdAt, cutoff))
+      .returning({ id: schema.agentLogs.id });
+    return deleted.length;
+  });
+}
+
 /**
  * Sweep every org using its configured retention (org-default override ←
  * registry default). Cross-tenant → runs under `asPlatform`. Returns total deleted.

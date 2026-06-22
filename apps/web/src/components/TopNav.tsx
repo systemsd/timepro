@@ -9,7 +9,7 @@ import { HomeIcon, LogOutIcon, SettingsIcon } from '@/components/icons';
 
 interface Props {
   session: WebSession;
-  active: 'home' | 'timeline' | 'reports' | 'team' | 'projects' | 'clients' | 'settings' | 'download' | 'account';
+  active: 'home' | 'timeline' | 'reports' | 'team' | 'projects' | 'clients' | 'settings' | 'diagnostics' | 'download' | 'account';
 }
 
 const isAdmin = (r: string) => r === 'owner' || r === 'admin';
@@ -67,6 +67,7 @@ export function TopNav({ session, active }: Props) {
     isAdmin(role) && { label: 'Projects', href: '/projects' },
     isAdmin(role) && { label: 'Clients', href: '/clients' },
     isAdmin(role) && { label: 'Settings', href: '/settings' },
+    isAdmin(role) && { label: 'Diagnostics', href: '/diagnostics' },
     { label: 'Download', href: '/download' },
   ].filter(Boolean) as Array<{ label: string; href: string }>;
 
@@ -195,7 +196,7 @@ export function TopNav({ session, active }: Props) {
         {/* ☰ menu */}
         <div className="nav-tab-wrap" onMouseLeave={() => setMenuOpen(false)}>
           <button
-            className={`nav-tab hamburger ${['projects', 'clients', 'settings', 'download'].includes(active) ? 'active' : ''}`}
+            className={`nav-tab hamburger ${['projects', 'clients', 'settings', 'diagnostics', 'download'].includes(active) ? 'active' : ''}`}
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="menu"
           >

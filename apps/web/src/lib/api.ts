@@ -108,6 +108,38 @@ export async function getTeamMembers(): Promise<{ members: TeamMember[] }> {
   return res.json();
 }
 
+export interface AgentLog {
+  id: string;
+  userId: string;
+  deviceId: string | null;
+  agentVersion: string | null;
+  os: string | null;
+  ts: string;
+  level: 'info' | 'warn' | 'error' | string;
+  event: string;
+  message: string;
+  fields: Record<string, unknown>;
+}
+
+/** Desktop-agent diagnostic logs (owners/admins only). */
+export async function getAgentLogs(params: {
+  userId?: string;
+  level?: 'info' | 'warn' | 'error';
+  q?: string;
+  limit?: number;
+}): Promise<{ logs: AgentLog[] }> {
+  const qs = new URLSearchParams();
+  if (params.userId) qs.set('userId', params.userId);
+  if (params.level) qs.set('level', params.level);
+  if (params.q) qs.set('q', params.q);
+  qs.set('limit', String(params.limit ?? 500));
+  const res = await fetch(`${API_BASE}/v1/admin/agent-logs?${qs.toString()}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
 export async function getTeamMember(userId: string): Promise<MemberDetail> {
   const res = await fetch(`${API_BASE}/v1/team/members/${userId}`, { headers: authHeaders() });
   if (!res.ok) return asError(res);
