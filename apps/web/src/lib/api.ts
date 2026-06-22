@@ -111,6 +111,8 @@ export async function getTeamMembers(): Promise<{ members: TeamMember[] }> {
 export interface AgentLog {
   id: string;
   userId: string;
+  displayName: string | null;
+  email: string | null;
   deviceId: string | null;
   agentVersion: string | null;
   os: string | null;

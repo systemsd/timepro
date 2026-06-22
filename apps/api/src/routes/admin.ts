@@ -301,6 +301,8 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
               z.object({
                 id: z.string(),
                 userId: z.string(),
+                displayName: z.string().nullable(),
+                email: z.string().nullable(),
                 deviceId: z.string().nullable(),
                 agentVersion: z.string().nullable(),
                 os: z.string().nullable(),
@@ -328,8 +330,22 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
         if (to) conds.push(lte(schema.agentLogs.ts, new Date(to)));
         if (q) conds.push(ilike(schema.agentLogs.message, `%${q}%`));
         const rows = await tx
-          .select()
+          .select({
+            id: schema.agentLogs.id,
+            userId: schema.agentLogs.userId,
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+            deviceId: schema.agentLogs.deviceId,
+            agentVersion: schema.agentLogs.agentVersion,
+            os: schema.agentLogs.os,
+            ts: schema.agentLogs.ts,
+            level: schema.agentLogs.level,
+            event: schema.agentLogs.event,
+            message: schema.agentLogs.message,
+            fields: schema.agentLogs.fields,
+          })
           .from(schema.agentLogs)
+          .leftJoin(schema.users, eq(schema.users.id, schema.agentLogs.userId))
           .where(and(...conds))
           .orderBy(desc(schema.agentLogs.ts))
           .limit(limit);
@@ -337,6 +353,8 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
           logs: rows.map((r) => ({
             id: r.id,
             userId: r.userId,
+            displayName: r.displayName ?? null,
+            email: r.email ?? null,
             deviceId: r.deviceId,
             agentVersion: r.agentVersion,
             os: r.os,

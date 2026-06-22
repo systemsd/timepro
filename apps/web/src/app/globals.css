@@ -391,9 +391,10 @@ body {
   border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff;
 }
 .diag-row {
-  display: grid; grid-template-columns: 170px 56px 200px 1fr 140px; gap: 12px; align-items: baseline;
+  display: grid; grid-template-columns: 160px 52px 130px 180px 1fr 120px; gap: 12px; align-items: baseline;
   padding: 7px 14px; border-bottom: 1px solid #f0f1f4;
 }
+.diag-user { color: #4a5563; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .diag-row:last-child { border-bottom: none; }
 .diag-ts { color: #98a0aa; white-space: nowrap; }
 .diag-level { text-transform: uppercase; font-weight: 700; font-size: 11px; }

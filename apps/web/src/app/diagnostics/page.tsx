@@ -3,50 +3,47 @@
 import { useEffect, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
-import { getAgentLogs, getTeamMembers, type AgentLog, type TeamMember } from '@/lib/api';
+import { getAgentLogs, type AgentLog } from '@/lib/api';
 
 type LevelFilter = '' | 'info' | 'warn' | 'error';
 
 export default function DiagnosticsPage() {
   const { session, checked } = useSession();
-  const [members, setMembers] = useState<TeamMember[]>([]);
   const [userId, setUserId] = useState('');
   const [level, setLevel] = useState<LevelFilter>('');
   const [q, setQ] = useState('');
   const [logs, setLogs] = useState<AgentLog[] | null>(null);
+  // userId -> display label, accumulated from logs (no team-list call needed,
+  // so it works for allowlisted developers who aren't org admins).
+  const [users, setUsers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Whether this account may read diagnostics is decided by the API (owners/
-  // admins + the developer allowlist), not the client — so just attempt the load
-  // and surface a 403 as an error. The team-member dropdown is best-effort
-  // (employees can't list the team, so it may stay empty — filtering by
-  // level/search still works).
-  useEffect(() => {
-    if (!checked || !session) return;
-    getTeamMembers()
-      .then((r) => setMembers(r.members))
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checked, session]);
-
-  useEffect(() => {
-    if (!checked || !session) return;
+  const load = () => {
     setLoading(true);
     setError(null);
-    getAgentLogs({ userId: userId || undefined, level: level || undefined, q: q || undefined })
-      .then((r) => setLogs(r.logs))
+    return getAgentLogs({ userId: userId || undefined, level: level || undefined, q: q || undefined })
+      .then((r) => {
+        setLogs(r.logs);
+        setUsers((prev) => {
+          const next = { ...prev };
+          for (const l of r.logs) next[l.userId] = l.displayName || l.email || l.userId;
+          return next;
+        });
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
+  };
+
+  // Authorization is decided by the API (owners/admins + developer allowlist);
+  // a 403 surfaces as an error rather than a client-side gate.
+  useEffect(() => {
+    if (!checked || !session) return;
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checked, session, userId, level]);
 
   if (!checked || !session) return <div className="center muted">Loading…</div>;
-
-  const reload = () =>
-    getAgentLogs({ userId: userId || undefined, level: level || undefined, q: q || undefined })
-      .then((r) => setLogs(r.logs))
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
 
   return (
     <div className="page">
@@ -58,9 +55,9 @@ export default function DiagnosticsPage() {
         <div className="diag-filters">
           <select value={userId} onChange={(e) => setUserId(e.target.value)}>
             <option value="">All users</option>
-            {members.map((m) => (
-              <option key={m.user_id} value={m.user_id}>
-                {m.display_name || m.email}
+            {Object.entries(users).map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
               </option>
             ))}
           </select>
@@ -75,24 +72,25 @@ export default function DiagnosticsPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void reload();
+              if (e.key === 'Enter') void load();
             }}
           />
-          <button onClick={() => void reload()} disabled={loading}>
+          <button onClick={() => void load()} disabled={loading}>
             {loading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
 
         {error && <p className="error">{error}</p>}
-        {logs && logs.length === 0 && !loading && (
-          <p className="muted">No logs for this filter yet.</p>
-        )}
+        {logs && logs.length === 0 && !loading && <p className="muted">No logs for this filter yet.</p>}
 
         <div className="diag-logs">
           {logs?.map((l) => (
             <div key={l.id} className={`diag-row lvl-${l.level}`}>
               <span className="diag-ts">{new Date(l.ts).toLocaleString()}</span>
               <span className={`diag-level lvl-${l.level}`}>{l.level}</span>
+              <span className="diag-user" title={l.email ?? l.userId}>
+                {l.displayName || l.email || l.userId.slice(0, 8)}
+              </span>
               <span className="diag-event">{l.event.replace(/^timepro_agent_lib::/, '')}</span>
               <span className="diag-msg">
                 {l.message}
@@ -100,9 +98,7 @@ export default function DiagnosticsPage() {
                   <span className="diag-fields"> {JSON.stringify(l.fields)}</span>
                 )}
               </span>
-              <span className="diag-meta">
-                {[l.agentVersion, l.os].filter(Boolean).join(' · ')}
-              </span>
+              <span className="diag-meta">{[l.agentVersion, l.os].filter(Boolean).join(' · ')}</span>
             </div>
           ))}
         </div>
