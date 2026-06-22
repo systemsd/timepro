@@ -17,10 +17,13 @@ export default function DiagnosticsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isAdmin = !!session && (session.role === 'owner' || session.role === 'admin');
-
+  // Whether this account may read diagnostics is decided by the API (owners/
+  // admins + the developer allowlist), not the client — so just attempt the load
+  // and surface a 403 as an error. The team-member dropdown is best-effort
+  // (employees can't list the team, so it may stay empty — filtering by
+  // level/search still works).
   useEffect(() => {
-    if (!checked || !session || !isAdmin) return;
+    if (!checked || !session) return;
     getTeamMembers()
       .then((r) => setMembers(r.members))
       .catch(() => {});
@@ -28,7 +31,7 @@ export default function DiagnosticsPage() {
   }, [checked, session]);
 
   useEffect(() => {
-    if (!checked || !session || !isAdmin) return;
+    if (!checked || !session) return;
     setLoading(true);
     setError(null);
     getAgentLogs({ userId: userId || undefined, level: level || undefined, q: q || undefined })
@@ -39,17 +42,6 @@ export default function DiagnosticsPage() {
   }, [checked, session, userId, level]);
 
   if (!checked || !session) return <div className="center muted">Loading…</div>;
-
-  if (!isAdmin) {
-    return (
-      <div className="page">
-        <TopNav session={session} active="diagnostics" />
-        <main className="diag-band">
-          <p className="muted">Diagnostics is available to owners and admins only.</p>
-        </main>
-      </div>
-    );
-  }
 
   const reload = () =>
     getAgentLogs({ userId: userId || undefined, level: level || undefined, q: q || undefined })

@@ -8,6 +8,22 @@ import { mapOpsCoreRole, opscoreApi } from '../lib/opscore';
 import { getEffectiveForUser } from '../lib/settings';
 import { pruneOrgScreenshots } from '../lib/retention';
 
+// Developers allowed to read agent diagnostics WITHOUT an org-admin role
+// (single-tenant Systemsd: the app developer monitors all users' agent logs to
+// debug field issues). Extend via DIAGNOSTICS_ALLOWED_USERS (comma-separated
+// user UUIDs) without a code change.
+const DIAGNOSTICS_DEVELOPERS = new Set<string>([
+  '019eda21-9c83-7aa7-b27d-805cdf5aa684', // Muhammad Anas (developer)
+  ...(process.env.DIAGNOSTICS_ALLOWED_USERS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+]);
+
+function canViewDiagnostics(role: string, userId: string | undefined): boolean {
+  return isAdmin(role) || (!!userId && DIAGNOSTICS_DEVELOPERS.has(userId));
+}
+
 /** OpsCore ProjectStatus → TimePro project status. */
 function mapProjectStatus(s: string): string {
   switch (s) {
@@ -301,7 +317,8 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (req) => {
-      if (!isAdmin(await requesterRole(req))) forbid('Only owners and admins can view agent logs');
+      if (!canViewDiagnostics(await requesterRole(req), req.userId))
+        forbid('Only owners, admins, or allowlisted developers can view agent logs');
       const { userId, level, from, to, q, limit } = req.query;
       return req.withTenantDb(async (tx) => {
         const conds = [eq(schema.agentLogs.organizationId, req.organizationId!)];
