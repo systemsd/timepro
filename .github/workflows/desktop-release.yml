@@ -165,6 +165,21 @@ jobs:
           projectPath: apps/desktop
           args: ${{ matrix.args }}
 
+      # The macOS updater archive is named just "TimePro.app.tar.gz" (no arch), so
+      # the aarch64 and x86_64 builds produce identical filenames that collide on
+      # upload/publish — losing one arch and breaking the manifest. Tag it with the
+      # target triple so both survive as distinct assets (the signature signs the
+      # file's content, not its name, so renaming is safe).
+      - name: Disambiguate macOS updater archive by arch
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          dir="apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          for f in "$dir"/*.app.tar.gz; do
+            base="$(basename "$f" .app.tar.gz)"
+            mv "$f" "$dir/${base}_${{ matrix.target }}.app.tar.gz"
+            mv "$f.sig" "$dir/${base}_${{ matrix.target }}.app.tar.gz.sig"
+          done
+
       # Glob the bundle dirs directly. (GitHub expressions don't turn '\n' into a
       # real newline, so a join(artifactPaths, '\n') produces one bogus path.) `**`
       # matches both `target/release/...` (linux/win) and `target/<triple>/release/...`
