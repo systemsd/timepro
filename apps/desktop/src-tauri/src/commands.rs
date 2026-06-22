@@ -89,7 +89,9 @@ pub async fn opscore_login(state: State<'_, Arc<AppState>>) -> Result<Session> {
     .map_err(|_| "timed out waiting for OpsCore sign-in".to_string())??;
 
     let api = client(&state)?;
+    let exchange_started = std::time::Instant::now();
     let resp = api.opscore_exchange(&token).await.map_err(map_err)?;
+    let exchange_ms = exchange_started.elapsed().as_millis() as u64;
     let session = Session {
         user_id: resp.user_id,
         organization_id: resp.organization_id,
@@ -98,7 +100,7 @@ pub async fn opscore_login(state: State<'_, Arc<AppState>>) -> Result<Session> {
         role: resp.role,
     };
     state.set_session(session.clone());
-    info!(user = %session.user_id, org = %session.organization_id, "opscore login");
+    info!(user = %session.user_id, org = %session.organization_id, exchange_ms, "opscore login");
     Ok(session)
 }
 
@@ -261,6 +263,7 @@ pub async fn timer_start(
         project_id: snap.project_id.clone(),
         started_at: snap.started_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     });
+    info!(time_entry_id = %snap.id, project = ?snap.project_id, "timer started");
     Ok(snap.into())
 }
 
@@ -272,6 +275,7 @@ pub async fn timer_stop(state: State<'_, Arc<AppState>>) -> Result<TimerView> {
         .await
         .map_err(map_err)?;
     state.clear_timer();
+    info!(time_entry_id = %resp.id, "timer stopped");
     Ok(TimerView {
         time_entry_id: resp.id,
         project_id: resp.project_id,

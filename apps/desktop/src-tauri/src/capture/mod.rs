@@ -33,6 +33,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     let mut activity = ActivityAggregator::new();
     // (app_name, window_title, started_at) for the current app interval.
     let mut current_app: Option<(String, Option<String>, DateTime<Utc>)> = None;
+    let mut last_logged_interval: u64 = 0; // for the "cadence changed" diagnostic
 
     loop {
         tokio::time::sleep(tick).await;
@@ -63,6 +64,19 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             if let Ok(map) = client.get_effective_settings().await {
                 state.apply_effective(&map);
                 debug!("effective settings refreshed");
+                // Surface the resolved screenshot cadence at INFO when it changes,
+                // so a manager can see the expected interval (vs what actually
+                // landed) without server access.
+                let iv = state.screenshot_interval();
+                if iv != last_logged_interval {
+                    info!(
+                        interval_sec = iv,
+                        per_hour = if iv > 0 { 3600 / iv } else { 0 },
+                        enabled = state.screenshots_enabled(),
+                        "screenshot cadence updated"
+                    );
+                    last_logged_interval = iv;
+                }
             }
             state.record_settings_fetch(Utc::now());
         }

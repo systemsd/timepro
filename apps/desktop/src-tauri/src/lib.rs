@@ -56,10 +56,13 @@ pub fn run() {
             });
 
             // Ship buffered diagnostic logs to the server once a session exists.
+            // Report the real release version (from tauri.conf), not the Cargo
+            // crate version, so logs show which build a user is on.
             let log_state = app.state::<Arc<AppState>>().inner().clone();
             let log_buf = log_buf.clone();
+            let app_version = app.package_info().version.to_string();
             async_runtime::spawn(async move {
-                logship::run_log_shipper(log_state, log_buf).await;
+                logship::run_log_shipper(log_state, log_buf, app_version).await;
             });
             Ok(())
         })
