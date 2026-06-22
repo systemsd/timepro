@@ -197,9 +197,11 @@ jobs:
       - name: List collected installers
         run: find dist -type f -print
 
-      # Build the updater manifest the app polls. For each platform, read the
-      # signature (.sig) and point at the matching updater archive's download URL
-      # in this release. macOS uses the .app.tar.gz; Windows uses the NSIS -setup.exe.
+      # Build the updater manifest the app polls. download-artifact preserves the
+      # bundle subdirs (dist/macos/…, dist/nsis/…), so walk recursively. Key off
+      # the .sig files — those exist ONLY for signed updater artifacts (the .app
+      # .tar.gz on macOS, the -setup.exe on Windows), never the dmg/msi. The asset
+      # URL uses the basename (softprops publishes each file under its basename).
       - name: Generate updater manifest (latest.json)
         env:
           TAG: ${{ needs.version-check.outputs.version }}
@@ -208,16 +210,25 @@ jobs:
             const fs = require("fs"), path = require("path");
             const TAG = process.env.TAG, VERSION = TAG.replace(/^v/, "");
             const base = "https://github.com/${{ env.DOWNLOADS_REPO }}/releases/download/" + TAG;
-            const sig = (n) => fs.readFileSync(path.join("dist", n + ".sig"), "utf8").trim();
+            const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+              const p = path.join(d, e.name);
+              return e.isDirectory() ? walk(p) : [p];
+            });
             const platforms = {};
-            for (const f of fs.readdirSync("dist")) {
-              if (f.endsWith(".app.tar.gz")) {
-                platforms[f.includes("aarch64") ? "darwin-aarch64" : "darwin-x86_64"] = { signature: sig(f), url: base + "/" + f };
-              } else if (f.endsWith("-setup.exe")) {
-                platforms["windows-x86_64"] = { signature: sig(f), url: base + "/" + f };
+            for (const full of walk("dist")) {
+              if (!full.endsWith(".sig")) continue;
+              const artifact = full.slice(0, -4);            // strip ".sig"
+              const name = path.basename(artifact);
+              const entry = { signature: fs.readFileSync(full, "utf8").trim(), url: base + "/" + name };
+              if (name.endsWith(".app.tar.gz")) {
+                platforms[name.includes("aarch64") ? "darwin-aarch64" : "darwin-x86_64"] = entry;
+              } else if (name.endsWith(".exe") || name.endsWith(".nsis.zip")) {
+                platforms["windows-x86_64"] = entry;
+              } else if (name.endsWith(".AppImage") || name.endsWith(".AppImage.tar.gz")) {
+                platforms["linux-x86_64"] = entry;
               }
             }
-            if (Object.keys(platforms).length === 0) { console.error("no updater artifacts found"); process.exit(1); }
+            if (Object.keys(platforms).length === 0) { console.error("no updater artifacts (.sig) found"); process.exit(1); }
             const manifest = { version: VERSION, notes: "TimePro " + TAG, pub_date: new Date().toISOString(), platforms };
             fs.writeFileSync("dist/latest.json", JSON.stringify(manifest, null, 2));
             console.log(JSON.stringify(manifest, null, 2));
