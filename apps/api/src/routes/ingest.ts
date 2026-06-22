@@ -137,4 +137,52 @@ export const ingestRoutes: FastifyPluginAsyncZod = async (app) => {
       });
     },
   );
+
+  // Desktop-agent diagnostic logs (lifecycle + warnings/errors) — batched by the
+  // agent for remote debugging via the admin API. Best-effort, low volume.
+  app.post(
+    '/ingest/agent-logs',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        body: z.object({
+          device_id: z.string().max(128).nullish(),
+          agent_version: z.string().max(64).nullish(),
+          os: z.string().max(64).nullish(),
+          events: z
+            .array(
+              z.object({
+                ts: z.string().datetime({ offset: true }),
+                level: z.enum(['info', 'warn', 'error']),
+                event: z.string().max(256),
+                message: z.string().max(4000).default(''),
+                fields: z.record(z.unknown()).default({}),
+              }),
+            )
+            .max(500),
+        }),
+        response: { 200: z.object({ accepted: z.number() }) },
+        tags: ['ingest'],
+      },
+    },
+    async (req) => {
+      if (req.body.events.length === 0) return { accepted: 0 };
+      return req.withTenantDb(async (tx) => {
+        const rows = req.body.events.map((e) => ({
+          organizationId: req.organizationId!,
+          userId: req.userId!,
+          deviceId: req.body.device_id ?? null,
+          agentVersion: req.body.agent_version ?? null,
+          os: req.body.os ?? null,
+          ts: new Date(e.ts),
+          level: e.level,
+          event: e.event,
+          message: e.message ?? '',
+          fields: e.fields ?? {},
+        }));
+        await tx.insert(schema.agentLogs).values(rows);
+        return { accepted: rows.length };
+      });
+    },
+  );
 };

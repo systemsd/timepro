@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, inArray, isNotNull, lte } from 'drizzle-orm';
 import { getDb, schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, isAdmin, requesterRole } from '../lib/access';
@@ -261,6 +261,75 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
         const days = Number(effective['screenshots.retention_days'] ?? 90);
         const deleted = await pruneOrgScreenshots(tx, req.organizationId!, days);
         return { deleted };
+      });
+    },
+  );
+
+  // Read desktop-agent diagnostic logs for remote debugging (owners/admins only).
+  app.get(
+    '/admin/agent-logs',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        querystring: z.object({
+          userId: z.string().uuid().optional(),
+          level: z.enum(['info', 'warn', 'error']).optional(),
+          from: z.string().datetime({ offset: true }).optional(),
+          to: z.string().datetime({ offset: true }).optional(),
+          q: z.string().max(200).optional(),
+          limit: z.coerce.number().int().min(1).max(1000).default(200),
+        }),
+        response: {
+          200: z.object({
+            logs: z.array(
+              z.object({
+                id: z.string(),
+                userId: z.string(),
+                deviceId: z.string().nullable(),
+                agentVersion: z.string().nullable(),
+                os: z.string().nullable(),
+                ts: z.string(),
+                level: z.string(),
+                event: z.string(),
+                message: z.string(),
+                fields: z.record(z.unknown()),
+              }),
+            ),
+          }),
+        },
+        tags: ['admin'],
+      },
+    },
+    async (req) => {
+      if (!isAdmin(await requesterRole(req))) forbid('Only owners and admins can view agent logs');
+      const { userId, level, from, to, q, limit } = req.query;
+      return req.withTenantDb(async (tx) => {
+        const conds = [eq(schema.agentLogs.organizationId, req.organizationId!)];
+        if (userId) conds.push(eq(schema.agentLogs.userId, userId));
+        if (level) conds.push(eq(schema.agentLogs.level, level));
+        if (from) conds.push(gte(schema.agentLogs.ts, new Date(from)));
+        if (to) conds.push(lte(schema.agentLogs.ts, new Date(to)));
+        if (q) conds.push(ilike(schema.agentLogs.message, `%${q}%`));
+        const rows = await tx
+          .select()
+          .from(schema.agentLogs)
+          .where(and(...conds))
+          .orderBy(desc(schema.agentLogs.ts))
+          .limit(limit);
+        return {
+          logs: rows.map((r) => ({
+            id: r.id,
+            userId: r.userId,
+            deviceId: r.deviceId,
+            agentVersion: r.agentVersion,
+            os: r.os,
+            ts: r.ts.toISOString(),
+            level: r.level,
+            event: r.event,
+            message: r.message,
+            fields: (r.fields ?? {}) as Record<string, unknown>,
+          })),
+        };
       });
     },
   );

@@ -4,7 +4,7 @@ loadRootEnv();
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { closeDb } from '@timepro/db';
-import { pruneAllOrgs } from './lib/retention';
+import { pruneAgentLogs, pruneAllOrgs } from './lib/retention';
 
 async function main() {
   const config = loadConfig();
@@ -28,6 +28,12 @@ async function main() {
       if (deleted > 0) app.log.info({ deleted }, 'screenshot retention sweep');
     } catch (err) {
       app.log.error({ err }, 'screenshot retention sweep failed');
+    }
+    try {
+      const deletedLogs = await pruneAgentLogs();
+      if (deletedLogs > 0) app.log.info({ deleted: deletedLogs }, 'agent-logs retention sweep');
+    } catch (err) {
+      app.log.error({ err }, 'agent-logs retention sweep failed');
     }
   };
   setTimeout(sweep, 30_000).unref();

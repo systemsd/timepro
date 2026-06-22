@@ -288,6 +288,30 @@ impl ApiClient {
 
     // ---- view-online handoff ----
 
+    /// Ship a batch of diagnostic log events. Best-effort (fail-open by caller).
+    pub async fn post_agent_logs(
+        &self,
+        device_id: &str,
+        events: &[crate::logship::AgentLogEvent],
+    ) -> ApiResult<()> {
+        let s = self.require_session()?;
+        let body = serde_json::json!({
+            "device_id": device_id,
+            "agent_version": env!("CARGO_PKG_VERSION"),
+            "os": std::env::consts::OS,
+            "events": events,
+        });
+        let resp = self
+            .http
+            .post(self.url("/v1/ingest/agent-logs"))
+            .header("x-dev-org", &s.organization_id)
+            .header("x-dev-user", &s.user_id)
+            .json(&body)
+            .send()
+            .await?;
+        Self::parse::<serde_json::Value>(resp).await.map(|_| ())
+    }
+
     pub async fn create_handoff(&self) -> ApiResult<HandoffResponse> {
         let s = self.require_session()?;
         let resp = self
