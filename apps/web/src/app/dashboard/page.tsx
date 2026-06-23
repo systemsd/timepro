@@ -7,11 +7,11 @@ import { useSession } from '@/lib/useSession';
 import { useRealtimePresence } from '@/lib/useRealtimePresence';
 import {
   getRoster,
-  getScreenshotObjectUrl,
   type Presence,
   type Roster,
   type RosterRow,
 } from '@/lib/api';
+import { useScreenshotUrl } from '@/lib/useScreenshotUrl';
 
 const isManagerOrAdmin = (r: string) => ['owner', 'admin', 'manager'].includes(r);
 
@@ -134,14 +134,9 @@ function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Pr
 }
 
 function RosterThumb({ id, at }: { id: string; at: string | null }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let revoked: string | null = null;
-    getScreenshotObjectUrl(id).then((u) => { revoked = u; setUrl(u); }).catch(() => {});
-    return () => { if (revoked) URL.revokeObjectURL(revoked); };
-  }, [id]);
+  const { url, ref } = useScreenshotUrl(id);
   return (
-    <figure style={{ margin: 0, position: 'relative' }}>
+    <figure ref={ref} style={{ margin: 0, position: 'relative' }}>
       {url ? <img src={url} alt="" /> : <div className="thumb-ph" />}
       {at && <figcaption style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{relative(at)}</figcaption>}
     </figure>
