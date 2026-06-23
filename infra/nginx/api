@@ -1,0 +1,46 @@
+server {
+    if ($host = api.timepro.systemsd.co) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+    server_name api.timepro.systemsd.co;
+
+    # Screenshots are uploaded through the API (PNG) — raise the body limit.
+    client_max_body_size 25m;
+
+    location / {
+        proxy_pass http://127.0.0.1:4001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;          # /v1/realtime websocket
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 75s;
+    }
+
+
+
+    listen 443 ssl; # managed by Certbot
+    listen [::]:443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/api.timepro.systemsd.co/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/api.timepro.systemsd.co/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+server {
+    if ($host = api.timepro.systemsd.co) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+
+
+    listen 80;
+    listen [::]:80;
+    server_name api.timepro.systemsd.co;
+    return 404; # managed by Certbot
+
+
+}
