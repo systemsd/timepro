@@ -101,8 +101,8 @@ export default function TimelinePage() {
   const canEditTime = session?.role !== 'employee' || (isSelf && allowSelfEdit);
 
   // all of the day's screenshots, flattened + chronological — for modal nav
-  const allShots = (data?.slots ?? [])
-    .flatMap((s) => s.screenshots)
+  const allShots = (data?.activities ?? [])
+    .flatMap((a) => a.screenshots)
     .sort((a, b) => (a.captured_at < b.captured_at ? -1 : 1));
 
   useEffect(() => {
@@ -300,57 +300,48 @@ export default function TimelinePage() {
         {error && <div className="error">{error}</div>}
         {loading ? (
           <p className="muted">Loading…</p>
-        ) : !data || (data.activities.length === 0 && data.slots.length === 0) ? (
+        ) : !data || data.activities.length === 0 ? (
           <p className="muted">No activity for this day.</p>
         ) : (
-          <>
-          {data.activities.length > 0 && (
-            <div className="tl-activities">
-              <h2>Activities</h2>
-              {data.activities.map((a) => {
-                const inner = (
-                  <>
-                    <span className="tl-act-time">{time(a.started_at)} – {a.ended_at ? time(a.ended_at) : 'now'}</span>
-                    <span className="tl-act-proj">{a.project_name ?? 'No project'}</span>
-                    <span className="tl-act-desc">{a.description ?? ''}</span>
-                    {a.is_manual && <span className="tl-act-edited">edited</span>}
-                    <span className="tl-act-dur">{hm(a.seconds)}</span>
-                  </>
-                );
-                return canEditTime ? (
-                  <button type="button" className="tl-act" key={a.id} onClick={() => setEditing(a)}>{inner}</button>
+          data.activities.map((a) => {
+            const head = (
+              <>
+                <span className="tl-act-time">{time(a.started_at)} – {a.ended_at ? time(a.ended_at) : 'now'}</span>
+                {a.activity_score != null && (
+                  <span className="tl-act-level" style={{ background: actColor(a.activity_score) }} title={`${a.activity_score}% activity`} />
+                )}
+                <span className="tl-act-proj">{a.project_name ?? 'No project'}</span>
+                {a.description && <span className="tl-act-desc">{a.description}</span>}
+                {a.is_manual && <span className="tl-act-edited">edited</span>}
+                <span className="tl-act-dur">{hm(a.seconds)}</span>
+              </>
+            );
+            return (
+              <div className="tl-act-group" key={a.id}>
+                {canEditTime ? (
+                  <button type="button" className="tl-act-head" onClick={() => setEditing(a)} title="Edit this activity">{head}</button>
                 ) : (
-                  <div className="tl-act read-only" key={a.id}>{inner}</div>
-                );
-              })}
-            </div>
-          )}
-          {data.slots.map((slot) => (
-            <div className="tl-slot" key={slot.start}>
-              <div className="tl-slot-head">
-                <span className="tl-slot-range">{time(slot.start)} – {time(slot.end)}</span>
-                {slot.app_name && <span className="tl-slot-app">{slot.app_name}</span>}
-                {slot.activity_score != null && (
-                  <span className="tl-slot-act" style={{ color: actColor(slot.activity_score) }}>{slot.activity_score}%</span>
+                  <div className="tl-act-head read-only">{head}</div>
+                )}
+                {a.screenshots.length > 0 && (
+                  <div className="tl-shots">
+                    {a.screenshots.map((s) => (
+                      <TLThumb
+                        key={s.id}
+                        id={s.id}
+                        at={s.captured_at}
+                        app={s.app_name}
+                        score={s.activity_score}
+                        onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
+                        canDelete={canDeleteShots}
+                        onDeleted={() => setRefreshTick((t) => t + 1)}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-              {slot.screenshots.length > 0 && (
-                <div className="tl-shots">
-                  {slot.screenshots.map((s) => (
-                    <TLThumb
-                      key={s.id}
-                      id={s.id}
-                      at={s.captured_at}
-                      onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
-                      canDelete={canDeleteShots}
-                      onDeleted={() => setRefreshTick((t) => t + 1)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-          </>
+            );
+          })
         )}
       </div>
 
@@ -430,10 +421,12 @@ function ScreenshotModal({
 }
 
 function TLThumb({
-  id, at, onOpen, canDelete, onDeleted,
+  id, at, app, score, onOpen, canDelete, onDeleted,
 }: {
   id: string;
   at: string;
+  app: string | null;
+  score: number | null;
   onOpen: () => void;
   canDelete: boolean;
   onDeleted: () => void;
@@ -449,13 +442,21 @@ function TLThumb({
   return (
     <figure ref={ref} className="tl-thumb">
       <div className="tl-thumb-bar">
-        <span className="tl-thumb-time">{time(at)}</span>
-        {canDelete && (
-          <button type="button" className="tl-thumb-del" onClick={del} disabled={busy}
-            title="Delete screenshot" aria-label="Delete screenshot">
-            <TrashIcon size={15} />
-          </button>
-        )}
+        <span className="tl-thumb-meta">
+          <span className="tl-thumb-time">{time(at)}</span>
+          {app && <span className="tl-thumb-app">{app}</span>}
+        </span>
+        <span className="tl-thumb-meta">
+          {score != null && (
+            <span className="tl-thumb-dot" style={{ background: actColor(score) }} title={`${score}% activity`} />
+          )}
+          {canDelete && (
+            <button type="button" className="tl-thumb-del" onClick={del} disabled={busy}
+              title="Delete screenshot" aria-label="Delete screenshot">
+              <TrashIcon size={15} />
+            </button>
+          )}
+        </span>
       </div>
       {url ? (
         <button type="button" className="tl-thumb-btn" onClick={onOpen} title="Open screenshot">

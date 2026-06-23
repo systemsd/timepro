@@ -238,13 +238,11 @@ export async function getRoster(opts?: { period?: RosterPeriod; date?: string })
 
 // ---- timeline ----
 
-export interface TimelineSlot {
-  start: string;
-  end: string;
-  project_id: string | null;
-  activity_score: number | null;
+export interface TimelineShot {
+  id: string;
+  captured_at: string;
   app_name: string | null;
-  screenshots: Array<{ id: string; captured_at: string }>;
+  activity_score: number | null;
 }
 
 export interface TimelineActivity {
@@ -255,8 +253,10 @@ export interface TimelineActivity {
   started_at: string;
   ended_at: string | null;
   seconds: number;
+  activity_score: number | null;
   source: string;
   is_manual: boolean;
+  screenshots: TimelineShot[];
 }
 
 export interface Timeline {
@@ -267,7 +267,6 @@ export interface Timeline {
   activity_score: number | null;
   intervals: Array<{ start: string; end: string }>;
   activities: TimelineActivity[];
-  slots: TimelineSlot[];
 }
 
 export async function getTimeline(userId: string, date: string): Promise<Timeline> {

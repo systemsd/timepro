@@ -6,23 +6,23 @@ import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, visibleUsers } from '../lib/access';
 
 /**
- * Employee daily timeline (S3): a day's tracked total + screenshots grouped
- * into time slots. Activity strip/% comes later (needs activity tracking).
+ * Employee daily timeline (S3): a day's tracked total + the day's activities
+ * (time entries), each with its screenshots grouped underneath.
  *
  * `date` is the local calendar date (YYYY-MM-DD) in the viewer tz; the client
  * passes `tzOffsetMinutes` so the day boundary matches what the admin sees (C6).
  */
-const Slot = z.object({
-  start: z.string(),
-  end: z.string(),
-  project_id: z.string().nullable(),
-  activity_score: z.number().nullable(),
+// A screenshot belonging to an activity (app + activity level resolved per shot).
+const Shot = z.object({
+  id: z.string(),
+  captured_at: z.string(),
   app_name: z.string().nullable(),
-  screenshots: z.array(z.object({ id: z.string(), captured_at: z.string() })),
+  activity_score: z.number().nullable(),
 });
 
-// One editable activity = one time-entry row overlapping the day (real start/end,
-// not clipped) — drives the "Edit Time" modal.
+// One activity = one time-entry row overlapping the day (real start/end, not
+// clipped). Its screenshots are grouped under it; clicking the header opens the
+// "Edit Time" modal.
 const Activity = z.object({
   id: z.string(),
   project_id: z.string().nullable(),
@@ -31,8 +31,10 @@ const Activity = z.object({
   started_at: z.string(),
   ended_at: z.string().nullable(),
   seconds: z.number(),
+  activity_score: z.number().nullable(),
   source: z.string(),
   is_manual: z.boolean(),
+  screenshots: z.array(Shot),
 });
 
 const TimelineResponse = z.object({
@@ -44,10 +46,7 @@ const TimelineResponse = z.object({
   // tracked tracker run/stop segments (clipped to the day) — the ruler "green bar"
   intervals: z.array(z.object({ start: z.string(), end: z.string() })),
   activities: z.array(Activity),
-  slots: z.array(Slot),
 });
-
-const SLOT_MS = 10 * 60_000; // 10-minute slots (Scrnio convention)
 
 export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get(
@@ -108,9 +107,17 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
             ),
           );
 
+        // Accumulator per activity — screenshots + activity score get grouped in below.
+        type ActAcc = {
+          resp: z.infer<typeof Activity>;
+          startMs: number;
+          endMs: number; // real end (now, for a running entry)
+          scoreSum: number;
+          scoreN: number;
+        };
         let tracked = 0;
         const intervals: Array<{ start: string; end: string }> = [];
-        const activities: Array<z.infer<typeof Activity>> = [];
+        const acts: ActAcc[] = [];
         for (const e of entries) {
           const endMs = e.endedAt ? e.endedAt.getTime() : Date.now();
           const s = Math.max(e.startedAt.getTime(), dayStartMs);
@@ -119,27 +126,47 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
             tracked += Math.floor((en - s) / 1000);
             intervals.push({ start: new Date(s).toISOString(), end: new Date(en).toISOString() });
             // real (un-clipped) values — the modal edits the true entry times
-            activities.push({
-              id: e.id,
-              project_id: e.projectId ?? null,
-              project_name: e.projectName ?? null,
-              description: e.description ?? null,
-              started_at: e.startedAt.toISOString(),
-              ended_at: e.endedAt ? e.endedAt.toISOString() : null,
-              seconds: Math.floor((endMs - e.startedAt.getTime()) / 1000),
-              source: e.source,
-              is_manual: e.isManual,
+            acts.push({
+              startMs: e.startedAt.getTime(),
+              endMs,
+              scoreSum: 0,
+              scoreN: 0,
+              resp: {
+                id: e.id,
+                project_id: e.projectId ?? null,
+                project_name: e.projectName ?? null,
+                description: e.description ?? null,
+                started_at: e.startedAt.toISOString(),
+                ended_at: e.endedAt ? e.endedAt.toISOString() : null,
+                seconds: Math.floor((endMs - e.startedAt.getTime()) / 1000),
+                activity_score: null,
+                source: e.source,
+                is_manual: e.isManual,
+                screenshots: [],
+              },
             });
           }
         }
         intervals.sort((a, b) => (a.start < b.start ? -1 : 1));
-        activities.sort((a, b) => (a.started_at < b.started_at ? -1 : 1));
+        acts.sort((a, b) => a.startMs - b.startMs);
+
+        // The activity covering an instant: the one whose [start, end] contains it,
+        // else the latest one that started before it (handles boundary captures).
+        const actAt = (ms: number): ActAcc | null => {
+          let fallback: ActAcc | null = null;
+          for (const a of acts) {
+            if (a.startMs <= ms && ms <= a.endMs) return a;
+            if (a.startMs <= ms && (!fallback || a.startMs > fallback.startMs)) fallback = a;
+          }
+          return fallback ?? acts[0] ?? null;
+        };
 
         const shots = await tx
           .select({
             id: schema.screenshots.id,
             capturedAt: schema.screenshots.capturedAt,
-            projectId: schema.screenshots.projectId,
+            appName: schema.screenshots.appName,
+            activityScore: schema.screenshots.activityScore,
           })
           .from(schema.screenshots)
           .where(
@@ -168,7 +195,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
             ),
           );
 
-        // app usage for the day (B5)
+        // app usage for the day (B5) — used to label each screenshot's app.
         const apps = await tx
           .select({
             appName: schema.appUsage.appName,
@@ -184,56 +211,32 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
               lt(schema.appUsage.startedAt, dayEnd),
             ),
           );
-
-        type SlotAcc = {
-          projectId: string | null;
-          shots: typeof shots;
-          scoreSum: number;
-          scoreN: number;
-          appSecs: Map<string, number>;
-        };
-        const slotMap = new Map<number, SlotAcc>();
-        const ensure = (idx: number, projectId: string | null): SlotAcc => {
-          let v = slotMap.get(idx);
-          if (!v) {
-            v = { projectId, shots: [] as typeof shots, scoreSum: 0, scoreN: 0, appSecs: new Map() };
-            slotMap.set(idx, v);
-          }
-          return v;
+        const appAt = (ms: number): string | null => {
+          for (const a of apps) if (a.startedAt.getTime() <= ms && ms <= a.endedAt.getTime()) return a.appName;
+          return null;
         };
 
-        for (const s of shots) {
-          const idx = Math.floor((s.capturedAt.getTime() - dayStartMs) / SLOT_MS);
-          ensure(idx, s.projectId).shots.push(s);
-        }
-        for (const sm of samples) {
-          const idx = Math.floor((sm.bucketMinute.getTime() - dayStartMs) / SLOT_MS);
-          const v = ensure(idx, null);
-          v.scoreSum += sm.activityScore;
-          v.scoreN += 1;
-        }
-        for (const a of apps) {
-          const idx = Math.floor((a.startedAt.getTime() - dayStartMs) / SLOT_MS);
-          const v = ensure(idx, null);
-          const secs = Math.max(1, Math.floor((a.endedAt.getTime() - a.startedAt.getTime()) / 1000));
-          v.appSecs.set(a.appName, (v.appSecs.get(a.appName) ?? 0) + secs);
-        }
-
-        const slots = Array.from(slotMap.entries())
-          .sort((a, c) => a[0] - c[0])
-          .map(([idx, v]) => {
-            let topApp: string | null = null;
-            let topSecs = 0;
-            for (const [name, secs] of v.appSecs) if (secs > topSecs) { topSecs = secs; topApp = name; }
-            return {
-              start: new Date(dayStartMs + idx * SLOT_MS).toISOString(),
-              end: new Date(dayStartMs + (idx + 1) * SLOT_MS).toISOString(),
-              project_id: v.projectId,
-              activity_score: v.scoreN > 0 ? Math.round(v.scoreSum / v.scoreN) : null,
-              app_name: topApp,
-              screenshots: v.shots.map((s) => ({ id: s.id, captured_at: s.capturedAt.toISOString() })),
-            };
+        // Group screenshots under their activity; label each with its app + score.
+        for (const sh of shots) {
+          const a = actAt(sh.capturedAt.getTime());
+          if (!a) continue;
+          a.resp.screenshots.push({
+            id: sh.id,
+            captured_at: sh.capturedAt.toISOString(),
+            app_name: sh.appName ?? appAt(sh.capturedAt.getTime()),
+            activity_score: sh.activityScore ?? null,
           });
+        }
+        // Activity-level score = mean of the activity samples that fall in it.
+        for (const sm of samples) {
+          const a = actAt(sm.bucketMinute.getTime());
+          if (a) { a.scoreSum += sm.activityScore; a.scoreN += 1; }
+        }
+
+        const activities = acts.map((a) => ({
+          ...a.resp,
+          activity_score: a.scoreN > 0 ? Math.round(a.scoreSum / a.scoreN) : null,
+        }));
 
         const dayScore =
           samples.length > 0
@@ -248,7 +251,6 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           activity_score: dayScore,
           intervals,
           activities,
-          slots,
         };
       });
     },
