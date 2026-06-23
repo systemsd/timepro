@@ -129,7 +129,7 @@ impl<S: tracing::Subscriber> Layer<S> for LogShipLayer {
 
 /// Background task: every ~30s, drain the buffer and ship a batch once a session
 /// exists. On failure, re-buffer (capped to the most recent events) and retry.
-pub async fn run_log_shipper(state: Arc<AppState>, buf: LogBuf) {
+pub async fn run_log_shipper(state: Arc<AppState>, buf: LogBuf, app_version: String) {
     let device_id = uuid::Uuid::new_v4().to_string();
     let mut ticker = tokio::time::interval(Duration::from_secs(30));
     loop {
@@ -143,7 +143,7 @@ pub async fn run_log_shipper(state: Arc<AppState>, buf: LogBuf) {
             _ => continue,
         };
         let client = ApiClient::new(api_base, Some(session));
-        if client.post_agent_logs(&device_id, &batch).await.is_err() {
+        if client.post_agent_logs(&device_id, &app_version, &batch).await.is_err() {
             // Re-buffer for next tick, keeping the most recent events on overflow.
             if let Ok(mut b) = buf.lock() {
                 let mut combined = batch;

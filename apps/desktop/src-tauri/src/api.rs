@@ -292,12 +292,13 @@ impl ApiClient {
     pub async fn post_agent_logs(
         &self,
         device_id: &str,
+        app_version: &str,
         events: &[crate::logship::AgentLogEvent],
     ) -> ApiResult<()> {
         let s = self.require_session()?;
         let body = serde_json::json!({
             "device_id": device_id,
-            "agent_version": env!("CARGO_PKG_VERSION"),
+            "agent_version": app_version,
             "os": std::env::consts::OS,
             "events": events,
         });
