@@ -123,17 +123,30 @@ export interface AgentLog {
   fields: Record<string, unknown>;
 }
 
+/** A user that has shipped agent logs — for the diagnostics "All users" filter. */
+export interface DiagUser {
+  userId: string;
+  displayName: string | null;
+  email: string | null;
+}
+
 /** Desktop-agent diagnostic logs (owners/admins only). */
 export async function getAgentLogs(params: {
   userId?: string;
   level?: 'info' | 'warn' | 'error';
   q?: string;
+  /** ISO datetime (inclusive) — start of the day window. */
+  from?: string;
+  /** ISO datetime (inclusive) — end of the day window. */
+  to?: string;
   limit?: number;
-}): Promise<{ logs: AgentLog[] }> {
+}): Promise<{ logs: AgentLog[]; users: DiagUser[] }> {
   const qs = new URLSearchParams();
   if (params.userId) qs.set('userId', params.userId);
   if (params.level) qs.set('level', params.level);
   if (params.q) qs.set('q', params.q);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
   qs.set('limit', String(params.limit ?? 500));
   const res = await fetch(`${API_BASE}/v1/admin/agent-logs?${qs.toString()}`, {
     headers: authHeaders(),

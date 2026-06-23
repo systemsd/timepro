@@ -3,33 +3,42 @@
 import { useEffect, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
-import { getAgentLogs, type AgentLog } from '@/lib/api';
+import { getAgentLogs, type AgentLog, type DiagUser } from '@/lib/api';
 
 type LevelFilter = '' | 'info' | 'warn' | 'error';
+
+const pad = (n: number) => String(n).padStart(2, '0');
+/** Today as a local `YYYY-MM-DD` (matches the <input type="date"> value). */
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 export default function DiagnosticsPage() {
   const { session, checked } = useSession();
   const [userId, setUserId] = useState('');
+  const [date, setDate] = useState(todayLocal());
   const [level, setLevel] = useState<LevelFilter>('');
   const [q, setQ] = useState('');
   const [logs, setLogs] = useState<AgentLog[] | null>(null);
-  // userId -> display label, accumulated from logs (no team-list call needed,
-  // so it works for allowlisted developers who aren't org admins).
-  const [users, setUsers] = useState<Record<string, string>>({});
+  // All users that have shipped agent logs — returned by the API independent of
+  // the current filters, so the "All users" dropdown stays complete on any day.
+  const [users, setUsers] = useState<DiagUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
     setError(null);
-    return getAgentLogs({ userId: userId || undefined, level: level || undefined, q: q || undefined })
+    // Selected day in the viewer's local timezone → UTC instants for the API.
+    // An empty date (cleared input) falls back to the current day.
+    const day = date || todayLocal();
+    const from = new Date(`${day}T00:00:00`).toISOString();
+    const to = new Date(`${day}T23:59:59.999`).toISOString();
+    return getAgentLogs({ userId: userId || undefined, level: level || undefined, q: q || undefined, from, to })
       .then((r) => {
         setLogs(r.logs);
-        setUsers((prev) => {
-          const next = { ...prev };
-          for (const l of r.logs) next[l.userId] = l.displayName || l.email || l.userId;
-          return next;
-        });
+        setUsers(r.users);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -41,7 +50,7 @@ export default function DiagnosticsPage() {
     if (!checked || !session) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checked, session, userId, level]);
+  }, [checked, session, userId, level, date]);
 
   if (!checked || !session) return <div className="center muted">Loading…</div>;
 
@@ -50,14 +59,21 @@ export default function DiagnosticsPage() {
       <TopNav session={session} active="diagnostics" />
       <main className="diag-band">
         <h1>Agent Diagnostics</h1>
-        <p className="muted diag-sub">Desktop-agent logs shipped from each tracked machine (last 14 days).</p>
+        <p className="muted diag-sub">Desktop-agent logs shipped from each tracked machine (retained 14 days). Showing the selected day; defaults to today.</p>
 
         <div className="diag-filters">
+          <input
+            type="date"
+            value={date}
+            max={todayLocal()}
+            onChange={(e) => setDate(e.target.value)}
+            title="Show logs for this day"
+          />
           <select value={userId} onChange={(e) => setUserId(e.target.value)}>
             <option value="">All users</option>
-            {Object.entries(users).map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
+            {users.map((u) => (
+              <option key={u.userId} value={u.userId}>
+                {u.displayName || u.email || u.userId.slice(0, 8)}
               </option>
             ))}
           </select>

@@ -313,6 +313,13 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
                 fields: z.record(z.unknown()),
               }),
             ),
+            users: z.array(
+              z.object({
+                userId: z.string(),
+                displayName: z.string().nullable(),
+                email: z.string().nullable(),
+              }),
+            ),
           }),
         },
         tags: ['admin'],
@@ -349,7 +356,31 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(and(...conds))
           .orderBy(desc(schema.agentLogs.ts))
           .limit(limit);
+
+        // Distinct users that have shipped agent logs (independent of the
+        // date/level/search filters) — populates the "All users" dropdown so it
+        // stays complete regardless of the selected day.
+        const userRows = await tx
+          .selectDistinct({
+            userId: schema.agentLogs.userId,
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+          })
+          .from(schema.agentLogs)
+          .leftJoin(schema.users, eq(schema.users.id, schema.agentLogs.userId))
+          .where(eq(schema.agentLogs.organizationId, req.organizationId!));
+        const users = userRows
+          .map((u) => ({
+            userId: u.userId,
+            displayName: u.displayName ?? null,
+            email: u.email ?? null,
+          }))
+          .sort((a, b) =>
+            (a.displayName ?? a.email ?? '').localeCompare(b.displayName ?? b.email ?? ''),
+          );
+
         return {
+          users,
           logs: rows.map((r) => ({
             id: r.id,
             userId: r.userId,
