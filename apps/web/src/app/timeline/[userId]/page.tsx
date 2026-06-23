@@ -488,7 +488,7 @@ function ActivityDonut({ score }: { score: number }) {
 }
 
 function time(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 /** Zero-padded `00h 00m` (calendar-strip day tooltip). */
 function hhmm(seconds: number): string {
