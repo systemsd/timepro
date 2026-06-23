@@ -146,6 +146,12 @@ employees get no clients/projects) · `realtime` (ws presence).
   `screenshots.per_hour` setting on each `/settings/effective` refresh (`300`s fallback before first fetch).
   Capture only runs while a timer is active. The agent also enforces `screenshots.blur=always` (gaussian blur
   before upload) and `tracking.auto_pause_minutes` (stops the timer after that many seconds of input idle).
+- **Idle/suspend time is never billed.** Both the idle auto-pause and **sleep/suspend recovery** stop the timer
+  *back-dated* to the last active moment, not when the agent notices. Idle ends at `now − idle`; a detected suspend
+  (a wall-clock gap ≥60s across the 5s capture tick → lid closed/slept) ends just before the machine slept. The
+  user resumes manually (no auto-restart; UI shows a "paused" toast). `POST /v1/timer/stop` takes an optional
+  `ended_at`, clamped server-side to `[started_at, now]`; the capture loop sets it. Suspend recovery is
+  unconditional; the idle path needs `tracking.auto_pause_minutes > 0`.
 - **Migrations are expand-only / forward-only.** Never roll back the DB; write a new migration.
 - **Web is on :3005, not :3000 — prod-OpsCore/nginx collision.** Prod OpsCore (`https://opscore.systemsd.co`)
   runs behind nginx with its own app on `:3000`; nginx rewrites any `Location: http://localhost:3000/…` (its
@@ -174,8 +180,9 @@ Summary/Detailed/Weekly, saved reports, CSV/PDF, Apps & URLs; Clients/Projects f
 **Team** page (RBAC-scoped per C1; **OpsCore sync auto-disables members absent from the directory**);
 **Projects** + **Clients** pages; **Settings** (org + per-user overrides); **My Account** (`/account`, via `/v1/me/profile`)
 from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page (resolves the latest Release from the separate **public** `systemsd/timepro-downloads` repo);
+**Agent Diagnostics** (`/diagnostics`; owners/admins + developer allowlist) — desktop-agent logs with a day picker (defaults to today) + all-users dropdown, via `/v1/admin/agent-logs`;
 ☰ menu (role-filtered). Weekly-limit enforcement blocks `timer/start` at the cap. UI uses line icons
-(`apps/web/src/components/icons.tsx`), no emojis. Login is OpsCore-only.
+(`apps/web/src/components/icons.tsx`), no emojis.
 
 **Phase status** — the OpsCore/feature roadmap is in [docs/13-opscore-feature-roadmap.md](docs/13-opscore-feature-roadmap.md):
 - ✅ **Phase 0** (quick wins) — done.
@@ -197,6 +204,6 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 - 🔴 **Phase 7 — Ship pipeline (B9)** — cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs (credential-gated).
 - 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
 - 🔴 **Phase 9 — Billing & plans**.
-- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle auto-pause (`tracking.auto_pause_minutes`) + `screenshots.blur=always` enforcement · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
+- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle + **sleep/suspend** auto-pause, back-dated so away-time isn't billed (`/v1/timer/stop` `ended_at`) · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
 
 See also [docs/11-roadmap.md](docs/11-roadmap.md) (original MVP/P2/P3) and the per-doc status banners.
