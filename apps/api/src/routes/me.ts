@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
@@ -47,6 +47,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
             and(
               eq(schema.timeEntries.organizationId, req.organizationId!),
               eq(schema.timeEntries.userId, req.userId!),
+              isNull(schema.timeEntries.deletedAt),
               gte(schema.timeEntries.startedAt, dayStart),
             ),
           )

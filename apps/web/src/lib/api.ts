@@ -247,6 +247,18 @@ export interface TimelineSlot {
   screenshots: Array<{ id: string; captured_at: string }>;
 }
 
+export interface TimelineActivity {
+  id: string;
+  project_id: string | null;
+  project_name: string | null;
+  description: string | null;
+  started_at: string;
+  ended_at: string | null;
+  seconds: number;
+  source: string;
+  is_manual: boolean;
+}
+
 export interface Timeline {
   user_id: string;
   display_name: string;
@@ -254,6 +266,7 @@ export interface Timeline {
   tracked_seconds: number;
   activity_score: number | null;
   intervals: Array<{ start: string; end: string }>;
+  activities: TimelineActivity[];
   slots: TimelineSlot[];
 }
 
@@ -294,6 +307,79 @@ export async function getTimelineActivity(
     `${API_BASE}/v1/timeline/${userId}/activity?month=${month}&tzOffsetMinutes=${tz}`,
     { headers: authHeaders() },
   );
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+// ---- timeline activity editing (Edit Time modal) ----
+
+export interface TimeEntryHistory {
+  action: string;
+  actor_name: string | null;
+  at: string;
+  metadata: Record<string, unknown>;
+}
+
+/** Edit an activity's project, description, and/or trim its start/end. */
+export async function updateTimeEntry(
+  id: string,
+  patch: {
+    project_id?: string | null;
+    description?: string | null;
+    started_at?: string;
+    ended_at?: string;
+  },
+): Promise<TimelineActivity> {
+  const res = await fetch(`${API_BASE}/v1/time-entries/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+/** Split an activity into two at the given ISO time. */
+export async function splitTimeEntry(
+  id: string,
+  at: string,
+): Promise<{ original: TimelineActivity; created: TimelineActivity }> {
+  const res = await fetch(`${API_BASE}/v1/time-entries/${id}/split`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ at }),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function deleteTimeEntry(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/v1/time-entries/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function getTimeEntryHistory(id: string): Promise<{ history: TimeEntryHistory[] }> {
+  const res = await fetch(`${API_BASE}/v1/time-entries/${id}/history`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export interface AssignableProject {
+  id: string;
+  name: string;
+  color: string;
+  status: string;
+  is_billable: boolean;
+}
+
+/** Active projects assignable to a user (defaults to self) — the modal dropdown. */
+export async function getAssignableProjects(userId?: string): Promise<{ projects: AssignableProject[] }> {
+  const q = userId ? `?userId=${userId}` : '';
+  const res = await fetch(`${API_BASE}/v1/projects${q}`, { headers: authHeaders() });
   if (!res.ok) return asError(res);
   return res.json();
 }

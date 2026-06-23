@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "audit_logs_target_idx" ON "audit_logs" USING btree ("organization_id","target_type","target_id","created_at" DESC NULLS LAST) WHERE target_id IS NOT NULL;

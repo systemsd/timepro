@@ -14,8 +14,10 @@ import {
   getTimelineActivity,
   getTimelineAppsUrls,
   type Timeline,
+  type TimelineActivity,
   type TimelineAppsUrls,
 } from '@/lib/api';
+import { EditActivityModal } from '@/components/EditActivityModal';
 
 // ---- calendar-strip helpers (viewer-local) ----
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -85,13 +87,17 @@ export default function TimelinePage() {
   const [shotIndex, setShotIndex] = useState<number | null>(null); // open screenshot (index into allShots)
   const [usage, setUsage] = useState<TimelineAppsUrls | null>(null);
   const [usageTab, setUsageTab] = useState<'apps' | 'urls' | 'tasks'>('tasks');
-  const [refreshTick, setRefreshTick] = useState(0); // bumped after a screenshot delete
+  const [refreshTick, setRefreshTick] = useState(0); // bumped after a screenshot / activity edit
   const [allowSelfDelete, setAllowSelfDelete] = useState(false);
+  const [allowSelfEdit, setAllowSelfEdit] = useState(false);
+  const [editing, setEditing] = useState<TimelineActivity | null>(null); // open Edit-Time modal
 
   // admins/managers can delete; an employee can delete their own only when the
   // screenshots.allow_self_delete policy is on (C9). Mirrors the API's RBAC.
   const isSelf = session?.user_id === userId;
   const canDeleteShots = session?.role !== 'employee' || (isSelf && allowSelfDelete);
+  // editing activities mirrors the same RBAC, gated by time.allow_self_edit.
+  const canEditTime = session?.role !== 'employee' || (isSelf && allowSelfEdit);
 
   // all of the day's screenshots, flattened + chronological — for modal nav
   const allShots = (data?.slots ?? [])
@@ -124,8 +130,11 @@ export default function TimelinePage() {
   useEffect(() => {
     if (!checked || !session || session.role !== 'employee') return;
     getMyEffectiveSettings()
-      .then((e) => setAllowSelfDelete(!!e['screenshots.allow_self_delete']))
-      .catch(() => setAllowSelfDelete(false));
+      .then((e) => {
+        setAllowSelfDelete(!!e['screenshots.allow_self_delete']);
+        setAllowSelfEdit(e['time.allow_self_edit'] !== false); // default on
+      })
+      .catch(() => { setAllowSelfDelete(false); setAllowSelfEdit(false); });
   }, [checked, session]);
 
   if (!checked || !session) return <div className="center muted">Loading…</div>;
@@ -290,10 +299,32 @@ export default function TimelinePage() {
         {error && <div className="error">{error}</div>}
         {loading ? (
           <p className="muted">Loading…</p>
-        ) : !data || data.slots.length === 0 ? (
+        ) : !data || (data.activities.length === 0 && data.slots.length === 0) ? (
           <p className="muted">No activity for this day.</p>
         ) : (
-          data.slots.map((slot) => (
+          <>
+          {data.activities.length > 0 && (
+            <div className="tl-activities">
+              <h2>Activities</h2>
+              {data.activities.map((a) => {
+                const inner = (
+                  <>
+                    <span className="tl-act-time">{time(a.started_at)} – {a.ended_at ? time(a.ended_at) : 'now'}</span>
+                    <span className="tl-act-proj">{a.project_name ?? 'No project'}</span>
+                    <span className="tl-act-desc">{a.description ?? ''}</span>
+                    {a.is_manual && <span className="tl-act-edited">edited</span>}
+                    <span className="tl-act-dur">{hm(a.seconds)}</span>
+                  </>
+                );
+                return canEditTime ? (
+                  <button type="button" className="tl-act" key={a.id} onClick={() => setEditing(a)}>{inner}</button>
+                ) : (
+                  <div className="tl-act read-only" key={a.id}>{inner}</div>
+                );
+              })}
+            </div>
+          )}
+          {data.slots.map((slot) => (
             <div className="tl-slot" key={slot.start}>
               <div className="tl-slot-head">
                 <span className="tl-slot-range">{time(slot.start)} – {time(slot.end)}</span>
@@ -317,7 +348,8 @@ export default function TimelinePage() {
                 </div>
               )}
             </div>
-          ))
+          ))}
+          </>
         )}
       </div>
 
@@ -327,6 +359,15 @@ export default function TimelinePage() {
           index={shotIndex}
           onIndex={setShotIndex}
           onClose={() => setShotIndex(null)}
+        />
+      )}
+
+      {editing && (
+        <EditActivityModal
+          activity={editing}
+          userId={userId}
+          onClose={() => setEditing(null)}
+          onSaved={() => setRefreshTick((t) => t + 1)}
         />
       )}
     </div>

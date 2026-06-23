@@ -13,6 +13,7 @@ import { tenantPlugin } from './plugins/tenant';
 import { errorMapperPlugin } from './plugins/error-mapper';
 import { healthRoutes } from './routes/health';
 import { timerRoutes } from './routes/timer';
+import { timeEntryRoutes } from './routes/time-entries';
 import { authRoutes } from './routes/auth';
 import { projectRoutes } from './routes/projects';
 import { screenshotRoutes } from './routes/screenshots';
@@ -91,6 +92,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(authRoutes, { prefix: '/v1' });
   await app.register(projectRoutes, { prefix: '/v1' });
   await app.register(timerRoutes, { prefix: '/v1' });
+  await app.register(timeEntryRoutes, { prefix: '/v1' });
   await app.register(screenshotRoutes, { prefix: '/v1' });
   await app.register(meRoutes, { prefix: '/v1' });
   await app.register(teamRoutes, { prefix: '/v1' });

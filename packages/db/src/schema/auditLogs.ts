@@ -19,6 +19,10 @@ export const auditLogs = pgTable(
   },
   (t) => ({
     orgCreated: index('audit_logs_org_created_idx').on(t.organizationId, t.createdAt.desc()),
+    // Per-target history lookups (e.g. one time entry's edit log).
+    target: index('audit_logs_target_idx')
+      .on(t.organizationId, t.targetType, t.targetId, t.createdAt.desc())
+      .where(sql`target_id IS NOT NULL`),
   }),
 );
 
