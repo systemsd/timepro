@@ -5,42 +5,62 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
-## 🚧 ACTIVE WORK (2026-06-16) — Deploy & Download feature
+## 🚧 CURRENT STATE (2026-06-23) — Live product: auto-update + agent diagnostics
 
-> Continuing work on making the desktop app **downloadable** + **deploying its backend**.
-> **Source of truth: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md)** (full tracker).
+> Backend + downloads have been LIVE since 2026-06-18 (prod `timepro.systemsd.co` / `api.timepro.systemsd.co`,
+> push-to-`main` auto-deploy). The recent arc has been **shipping/operating the desktop app**: auto-update,
+> remote diagnostics, and chasing field issues. Historical deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
 
-**Goal:** "Make the app downloadable so users start tracking, and tracking is visible." Scope = Group A (deploy backend) + Group B (downloadable installers).
+### How the user (Anas) works
+- **Role:** the developer. On **prod he is an `employee`**, NOT org-admin (admin is Hamid).
+- **Commits:** Conventional Commits, **no AI/Claude attribution** in messages.
+- **Flow:** always work on a **branch**, push it; **the user merges the PR himself** — never commit to `main`.
+- **Desktop releases are version-driven:** every desktop change MUST bump `version` in
+  `apps/desktop/src-tauri/tauri.conf.json`. Merging to `main` builds + publishes a release **only when the
+  version bumped** (`desktop-release.yml` `version-check` job skips otherwise).
+- **Verify before pushing:** `pnpm --filter @timepro/<pkg> typecheck`, web `build`, and `cargo check`
+  (`apps/desktop/src-tauri`) for agent changes. **After the user merges + publishes, verify the result — don't assume.**
 
-**Locked decisions (all mirror sibling app OpsCore):**
-- Host: single Ubuntu box `178.105.58.173` (co-located with OpsCore), Docker + nginx + Let's Encrypt.
-- Domain: `timepro.systemsd.co` (web) + `api.timepro.systemsd.co` (api) — **single-p `timepro`**, DNS verified. (`timppro` was a Slack typo.)
-- Installers: unsigned interim, hosted on GitHub Releases — **in a separate PUBLIC repo `systemsd/timepro-downloads`** (revised 2026-06-18: the code repo is private and release downloads inherit repo visibility, so binaries-only go in a public repo; code stays private).
-- CI/CD: manager (Hamid) wants **push to `main` → auto-deploy**.
+### Shipped this arc (current desktop version on `main` = **v0.1.7**)
+- **In-app auto-updater** (Tauri `tauri-plugin-updater`): app polls
+  `systemsd/timepro-downloads/releases/latest/download/latest.json` on launch → prompts → installs → relaunches.
+  Updater signing key at `~/.tauri/timepro_updater.key`; GitHub secret **`TAURI_SIGNING_PRIVATE_KEY`**.
+  The CI signs updater archives + generates `latest.json` (macOS archives get an
+  arch suffix to avoid collision). Flow: bump version → merge → publish the **draft** Release → users auto-update.
+- **Server-side per-user agent logs + Diagnostics console.** Agents ship `tracing` INFO/WARN/ERROR to
+  `POST /v1/ingest/agent-logs` (table `agent_logs`, 14-day retention). Read at **`/diagnostics`** (web) or
+  `GET /v1/admin/agent-logs`. Logs include **name/email** (join), the **real release version**, and `timer
+  started/stopped` · `screenshot cadence updated` · `opscore login exchange_ms` events.
+- **Developer diagnostics access:** Anas (an `employee`) is on an allowlist baked in
+  `apps/api/src/routes/admin.ts` (`DIAGNOSTICS_DEVELOPERS`, extendable via `DIAGNOSTICS_ALLOWED_USERS` env), so
+  he can read all agent logs without org-admin.
+- Earlier same arc: screenshot upload reliability (downscale ≤1440px), idle auto-pause UI sync, Timeline **Tasks**
+  tab (default), Week/Month → Reports deep-links, favicon.
 
-**Branch `feat/backend-deploy-pipeline`** (⚠️ **NOT pushed yet**), 5 commits authored as **Hamid Ali** (repo-local git config = `alihamidali2@gmail.com` — keep using it):
-- A1 ✅ prod Dockerfiles (api/web/migrate) — built + boot-tested
-- A2 ✅ `infra/compose/docker-compose.prod.yml` + env templates — full stack ran locally, `/readyz` db:ok
-- A3 ✅ `infra/nginx/timepro.systemsd.co.conf` + runbook — `nginx -t` validated
-- B1 ✅ baked prod URLs into `apps/desktop/src-tauri/src/state.rs`
-- B2/B3 ✅ `.github/workflows/desktop-release.yml` (tag `v*` → installers) — **reworked 2026-06-18** to two-phase: build artifacts per-OS → single `publish` job creates one draft Release in **`systemsd/timepro-downloads`** via `RELEASES_REPO_TOKEN` PAT (default token can't write cross-repo). On branch `feat/download-installers`.
-- A6 ✅ `.github/workflows/deploy.yml` — **rewritten to mirror OpsCore** (2026-06-17): `appleboy/ssh-action` + `VPS_*` secrets, two jobs (verify-build in `/var/www/timepro-staging` → deploy in `/var/www/timepro`: `git reset --hard` → `docker compose up -d --build` → `/readyz` gate → prune)
+### Debug an agent (copy-paste)
+```
+curl "https://api.timepro.systemsd.co/v1/admin/agent-logs?limit=500" \
+  -H "x-dev-org: 019eda21-7563-7aa7-b27c-b8c4fa3851f9" \
+  -H "x-dev-user: 019eda21-9c83-7aa7-b27d-805cdf5aa684"     # Anas (allowlisted)
+```
 
-**Proven locally:** full stack + native desktop app both build & run; download→track→visible chain confirmed via a simulated agent session (cleaned up after).
+### Known hot gotcha — macOS Screen Recording + unsigned builds
+Installers are **UNSIGNED**. macOS ties Screen Recording permission to the exact binary, so **every update revokes
+it** → screenshots silently go **wallpaper-only** until the user **removes the stale TimePro entry** in System
+Settings → Screen Recording, re-adds it, and quits/reopens. Fresh installs are fine (grant on first launch).
+**Permanent fix = code-signing + notarization (Apple Developer ID).** Also: agent log `screenshot capture failed
+{"error":"no monitor available"}` = display asleep/locked, not a bug.
 
-**Group A (backend deploy) — ✅ LIVE (2026-06-18):** prod up (`timepro.systemsd.co` web / `api.timepro.systemsd.co` `readyz` db:ok), auto-deploy on push to `main` works, OpsCore login handoff verified end-to-end (after Hamid set OpsCore `TIMEPRO_URL=https://timepro.systemsd.co`). Server was rebuilt on a fresh host (`167.233.136.204`, see `docs/15-rebuild-runbook.md`). The session UI/settings work merged to `main` (PR #2) and auto-deployed.
+### Backlog (ask the user which to start)
+1. **In-app permission prompt/banner** (Screen Recording + Accessibility) — no deps, high value.
+2. **Code-signing + notarization** (needs the user's Apple Developer account) — permanent fix for the gotcha above.
+3. `no monitor available` → log as "display asleep/locked" (not an error).
+4. **Changelog / "What's new" on the web app** (Hamid's ask #3).
+5. Keyboard/mouse activity counts; system-tray indicator; re-enable the Linux build leg (`libgbm-dev` staged).
+- Loose ends: uncommitted "downloads-live" doc edits in the working tree; confirm prod `WEB_PUBLIC_URL` (the
+  view-online → localhost fix) actually landed.
 
-**Group B (Download) — remaining:**
-1. ~~**B4:** wire Download page~~ ✅ done; **repointed 2026-06-18** to read from the public `timepro-downloads` repo.
-2. **Merge `feat/download-installers` → `main`** (tag-triggered workflow must be on the default branch).
-3. **Push tag `v0.1.0`** → CI builds 4 targets → publishes a **draft** Release to `timepro-downloads` → **publish the draft** (drafts are invisible to the page's public API call).
-4. **B5:** verify download → install → track on a clean machine. *(Local `tauri build` already verified: `TimePro_0.1.0_x64.dmg` runs + OpsCore login + auth against prod.)*
-
-Setup done by Hamid: public repo `timepro-downloads` (+ a README commit so a tag has a target) and the `RELEASES_REPO_TOKEN` PAT (Contents:write on it) added to the `timepro` repo.
-
-**Deploy-specific gotchas:** turbo pinned `2.9.16` in Dockerfiles (prune determinism); `@timepro/db` bundled into api via `apps/api/tsup.config.ts` (pg/uuid kept external so the ESM bundle boots); api runs distroless `nonroot` so the screenshot volume dir is seeded in the image for ownership; compose ports bind `127.0.0.1` (nginx fronts them); no Redis container (`REDIS_URL` is declared-but-unused).
-
-**Untouched pre-existing changes (leave them):** `apps/web/src/app/login/page.tsx` (modified) + `List` (stray, untracked).
+**Untouched pre-existing changes (leave them):** `apps/web/src/app/login/page.tsx` (modified) + `List`, `SETUP-FOR-HAMID.md` (stray, untracked).
 
 ---
 
