@@ -16,6 +16,11 @@ const StartBody = z.object({
 
 const StopBody = z.object({
   client_event_id: z.string().min(8).max(128),
+  // Optional client-supplied end time (ISO 8601). The desktop agent back-dates
+  // the stop to the last active moment when it detects the machine slept or the
+  // user went idle, so the suspend/idle window isn't billed. Clamped
+  // server-side to [started_at, now] — never trust a raw client timestamp.
+  ended_at: z.string().datetime({ offset: true }).optional(),
 });
 
 const TimerSnapshot = z.object({
@@ -123,9 +128,11 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
     async (req) => {
       const body = req.body;
       return req.withTenantDb(async (tx) => {
-        const [updated] = await tx
-          .update(schema.timeEntries)
-          .set({ endedAt: new Date() })
+        // Fetch the running entry first so a client-supplied `ended_at` can be
+        // clamped against its start (the agent back-dates the stop on sleep/idle).
+        const [running] = await tx
+          .select()
+          .from(schema.timeEntries)
           .where(
             and(
               eq(schema.timeEntries.organizationId, req.organizationId!),
@@ -133,9 +140,9 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
               isNull(schema.timeEntries.endedAt),
             ),
           )
-          .returning();
+          .limit(1);
 
-        if (!updated) {
+        if (!running) {
           // Thrown errors are converted to RFC 9457 by `error-mapper.ts`.
           throw Object.assign(new Error(`No active timer for client_event_id=${body.client_event_id}`), {
             statusCode: 404,
@@ -143,12 +150,25 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
           });
         }
 
+        // Clamp any back-dated end time to [started_at, now]; default to now.
+        const now = new Date();
+        let endedAt = now;
+        if (body.ended_at) {
+          const requested = new Date(body.ended_at).getTime();
+          endedAt = new Date(Math.min(Math.max(requested, running.startedAt.getTime()), now.getTime()));
+        }
+
+        await tx
+          .update(schema.timeEntries)
+          .set({ endedAt })
+          .where(eq(schema.timeEntries.id, running.id));
+
         return {
-          id: updated.id,
-          project_id: updated.projectId ?? null,
-          started_at: updated.startedAt.toISOString(),
-          ended_at: updated.endedAt!.toISOString(),
-          description: updated.description ?? null,
+          id: running.id,
+          project_id: running.projectId ?? null,
+          started_at: running.startedAt.toISOString(),
+          ended_at: endedAt.toISOString(),
+          description: running.description ?? null,
         };
       });
     },

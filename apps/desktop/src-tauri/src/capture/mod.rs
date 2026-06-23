@@ -35,11 +35,54 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     let mut current_app: Option<(String, Option<String>, DateTime<Utc>)> = None;
     let mut last_logged_interval: u64 = 0; // for the "cadence changed" diagnostic
 
+    // A wall-clock gap this much larger than `tick` across the sleep means the
+    // machine was suspended (lid closed / slept) — no input was possible in
+    // that window, so a running timer must be stopped back-dated rather than
+    // billing the whole sleep.
+    const SUSPEND_GAP_SECS: i64 = 60;
+
     loop {
+        let before_sleep = Utc::now();
         tokio::time::sleep(tick).await;
+        let suspend_gap = (Utc::now() - before_sleep).num_seconds();
 
         let Some(session) = state.session() else { continue };
         let Some(api_base) = state.api_base() else { continue };
+
+        // Suspend recovery: we just woke from sleep with a timer running → stop
+        // it back-dated to just before the machine slept, so the away window is
+        // never billed. The user resumes manually (no auto-restart); the UI is
+        // notified via `timer:auto-paused` (same as the idle path below).
+        if suspend_gap >= SUSPEND_GAP_SECS {
+            if let Some(timer) = state.timer() {
+                let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+                let ended_at = before_sleep.to_rfc3339();
+                if client
+                    .timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at))
+                    .await
+                    .is_ok()
+                {
+                    state.clear_timer();
+                    if let Some((name, title, started)) = current_app.take() {
+                        let _ = client
+                            .ingest_app_usage(
+                                &name,
+                                title.as_deref(),
+                                &started.to_rfc3339(),
+                                &ended_at,
+                                Some(timer.time_entry_id.clone()),
+                            )
+                            .await;
+                    }
+                    let _ = app.emit(
+                        "timer:auto-paused",
+                        serde_json::json!({ "reason": "suspended", "seconds": suspend_gap }),
+                    );
+                    info!(suspend_gap, "stopped tracking — resumed from sleep (back-dated)");
+                }
+            }
+            continue;
+        }
 
         // Heartbeat ~every 45s so the web shows this user online (B3).
         // `is_tracking` = a timer is running → solid-green; else → connected.
@@ -103,22 +146,32 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
         let auto_pause = state.auto_pause_sec();
         if auto_pause > 0 && idle_secs >= auto_pause {
             let client = ApiClient::new(api_base.clone(), Some(session.clone()));
-            if client.timer_stop(&Uuid::new_v4().to_string()).await.is_ok() {
+            // Back-date the stop to when input actually ceased (now − idle), so
+            // the idle window before the threshold tripped isn't billed.
+            let ended_at = (now_ev - chrono::Duration::seconds(idle_secs as i64)).to_rfc3339();
+            if client
+                .timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at))
+                .await
+                .is_ok()
+            {
                 state.clear_timer();
-                // flush any open app interval before stopping
+                // flush any open app interval, capped at the back-dated end
                 if let Some((name, title, started)) = current_app.take() {
                     let _ = client
                         .ingest_app_usage(
                             &name,
                             title.as_deref(),
                             &started.to_rfc3339(),
-                            &now_ev.to_rfc3339(),
+                            &ended_at,
                             Some(entry_id.clone()),
                         )
                         .await;
                 }
-                let _ = app.emit("timer:auto-paused", idle_secs);
-                info!(idle_secs, "auto-paused tracking (idle threshold reached)");
+                let _ = app.emit(
+                    "timer:auto-paused",
+                    serde_json::json!({ "reason": "idle", "seconds": idle_secs }),
+                );
+                info!(idle_secs, "auto-paused tracking (idle threshold reached, back-dated)");
             }
             continue;
         }

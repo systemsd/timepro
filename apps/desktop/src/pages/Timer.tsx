@@ -86,9 +86,13 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
       // Idle auto-pause stops the timer server-side; reflect that here so the
       // window doesn't keep showing "running" (which then errors on Stop).
       unlisteners.push(
-        await listen<number>('timer:auto-paused', () => {
+        await listen<{ reason?: string; seconds?: number }>('timer:auto-paused', (e) => {
           setTimer(null);
-          showToast('Tracking paused — you were idle');
+          showToast(
+            e.payload?.reason === 'suspended'
+              ? 'Tracking paused — your computer was asleep'
+              : 'Tracking paused — you were idle',
+          );
         }),
       );
     })();

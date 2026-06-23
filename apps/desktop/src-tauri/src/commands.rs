@@ -271,7 +271,8 @@ pub async fn timer_start(
 pub async fn timer_stop(state: State<'_, Arc<AppState>>) -> Result<TimerView> {
     let api = client(&state)?;
     let resp = api
-        .timer_stop(&Uuid::new_v4().to_string())
+        // Manual stop → no back-date; the server stamps "now".
+        .timer_stop(&Uuid::new_v4().to_string(), None)
         .await
         .map_err(map_err)?;
     state.clear_timer();

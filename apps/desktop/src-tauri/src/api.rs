@@ -131,14 +131,26 @@ impl ApiClient {
         Self::parse(resp).await
     }
 
-    pub async fn timer_stop(&self, client_event_id: &str) -> ApiResult<TimerStopResponse> {
+    /// Stop the running timer. `ended_at` (RFC 3339) back-dates the stop to the
+    /// last active moment — used when the agent detects the machine slept or the
+    /// user went idle, so the away window isn't billed. `None` lets the server
+    /// stamp "now" (a normal manual stop). The server clamps to [started_at, now].
+    pub async fn timer_stop(
+        &self,
+        client_event_id: &str,
+        ended_at: Option<&str>,
+    ) -> ApiResult<TimerStopResponse> {
         let s = self.require_session()?;
+        let mut body = serde_json::json!({ "client_event_id": client_event_id });
+        if let Some(ts) = ended_at {
+            body["ended_at"] = serde_json::Value::String(ts.to_string());
+        }
         let resp = self
             .http
             .post(self.url("/v1/timer/stop"))
             .header("x-dev-org", &s.organization_id)
             .header("x-dev-user", &s.user_id)
-            .json(&serde_json::json!({ "client_event_id": client_event_id }))
+            .json(&body)
             .send()
             .await?;
         Self::parse(resp).await
