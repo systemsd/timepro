@@ -16,6 +16,7 @@ import {
   type Timeline,
   type TimelineAppsUrls,
 } from '@/lib/api';
+import { useScreenshotUrl } from '@/lib/useScreenshotUrl';
 
 // ---- calendar-strip helpers (viewer-local) ----
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -396,13 +397,8 @@ function TLThumb({
   canDelete: boolean;
   onDeleted: () => void;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
+  const { url, ref } = useScreenshotUrl(id);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let revoked: string | null = null;
-    getScreenshotObjectUrl(id).then((u) => { revoked = u; setUrl(u); }).catch(() => {});
-    return () => { if (revoked) URL.revokeObjectURL(revoked); };
-  }, [id]);
   const del = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm('Delete this screenshot? This cannot be undone.')) return;
@@ -410,7 +406,7 @@ function TLThumb({
     try { await deleteScreenshot(id); onDeleted(); } catch { setBusy(false); }
   };
   return (
-    <figure className="tl-thumb">
+    <figure ref={ref} className="tl-thumb">
       <div className="tl-thumb-bar">
         <span className="tl-thumb-time">{time(at)}</span>
         {canDelete && (
