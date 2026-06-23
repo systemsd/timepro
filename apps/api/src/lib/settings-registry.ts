@@ -27,7 +27,7 @@ export interface SettingDef {
   overridable: boolean;
   description?: string;
   /** feature that must exist for this setting to actually do anything */
-  enforcedBy?: 'screenshots' | 'activity' | 'app_url' | 'idle' | 'offline_time' | 'notify' | 'limits' | 'display';
+  enforcedBy?: 'screenshots' | 'activity' | 'app_url' | 'idle' | 'offline_time' | 'notify' | 'limits' | 'display' | 'time';
 }
 
 export const SETTINGS: SettingDef[] = [
@@ -126,6 +126,16 @@ export const SETTINGS: SettingDef[] = [
     overridable: true,
     enforcedBy: 'screenshots',
     description: 'Admins and managers can always delete screenshots of people they manage (C9).',
+  },
+  {
+    key: 'time.allow_self_edit',
+    label: 'Allow employees to edit own time entries',
+    type: 'bool',
+    default: true,
+    overridable: true,
+    enforcedBy: 'time',
+    description:
+      'Employees can edit the project/description, trim, split, or delete their own activities. Admins and managers can always edit time for people they manage.',
   },
   {
     key: 'screenshots.retention_days',

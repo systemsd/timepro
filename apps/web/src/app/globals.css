@@ -842,3 +842,82 @@ body {
   content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
   border: 5px solid transparent; border-top-color: #2f3a4d;
 }
+
+/* ── editable timeline activities (the day's time entries) ── */
+.tl-activities { margin: 8px 0 18px; }
+.tl-activities h2 {
+  font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; margin: 0 0 8px;
+}
+.tl-act {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); margin-bottom: 6px; cursor: pointer; font: inherit;
+}
+.tl-act:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
+.tl-act.read-only { cursor: default; }
+.tl-act.read-only:hover { border-color: var(--border); box-shadow: none; }
+.tl-act-time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); white-space: nowrap; }
+.tl-act-proj { font-weight: 600; color: var(--text); white-space: nowrap; }
+.tl-act-desc { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.tl-act-dur { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-act-edited {
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  background: rgba(91, 86, 224, 0.1); padding: 1px 6px; border-radius: 10px; white-space: nowrap;
+}
+
+/* ── Edit-Time modal ── */
+.act-modal {
+  position: fixed; inset: 0; z-index: 120; background: rgba(20, 24, 33, 0.55);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.act-card {
+  width: 440px; max-width: 95vw; max-height: 92vh; overflow-y: auto;
+  background: var(--panel); color: var(--text); border-radius: 12px; padding: 20px 22px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+.act-head { display: flex; align-items: center; justify-content: space-between; }
+.act-head h3 { margin: 0; font-size: 18px; }
+.act-x {
+  display: inline-flex; align-items: center; justify-content: center; padding: 5px;
+  border: none; background: none; color: var(--muted); cursor: pointer; border-radius: 6px;
+}
+.act-x:hover { background: var(--bg); color: var(--text); }
+.act-sub { color: var(--muted); font-size: 13px; margin: 4px 0 16px; }
+.act-times { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.act-times input { width: 110px; }
+.act-dur { color: var(--muted); font-variant-numeric: tabular-nums; }
+.act-note { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+.act-label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.03em; margin: 14px 0 5px;
+}
+.act-card input[type='time'], .act-card select, .act-card textarea {
+  font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px;
+}
+.act-card select, .act-card textarea { width: 100%; }
+.act-card textarea { resize: vertical; }
+.act-card input:focus, .act-card select:focus, .act-card textarea:focus {
+  outline: none; border-color: var(--accent);
+}
+.act-row-between { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+.act-del { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text); cursor: pointer; }
+.act-link { border: none; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+.act-link:hover { text-decoration: underline; }
+.act-split { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--muted); font-size: 14px; }
+.act-history { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.act-history summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
+.act-history ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.act-history li { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; }
+.act-hist-action { font-size: 13px; color: var(--text); }
+.act-hist-meta { font-size: 12px; color: var(--muted-2); }
+.act-actions { display: flex; gap: 10px; margin-top: 20px; }
+.act-btn {
+  font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer;
+}
+.act-btn:hover:not(:disabled) { background: var(--bg); }
+.act-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.act-btn.primary:hover:not(:disabled) { background: #4a45c9; }
+.act-btn:disabled { opacity: 0.5; cursor: default; }

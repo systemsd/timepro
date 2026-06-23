@@ -21,6 +21,20 @@ const Slot = z.object({
   screenshots: z.array(z.object({ id: z.string(), captured_at: z.string() })),
 });
 
+// One editable activity = one time-entry row overlapping the day (real start/end,
+// not clipped) — drives the "Edit Time" modal.
+const Activity = z.object({
+  id: z.string(),
+  project_id: z.string().nullable(),
+  project_name: z.string().nullable(),
+  description: z.string().nullable(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  seconds: z.number(),
+  source: z.string(),
+  is_manual: z.boolean(),
+});
+
 const TimelineResponse = z.object({
   user_id: z.string(),
   display_name: z.string(),
@@ -29,6 +43,7 @@ const TimelineResponse = z.object({
   activity_score: z.number().nullable(),
   // tracked tracker run/stop segments (clipped to the day) — the ruler "green bar"
   intervals: z.array(z.object({ start: z.string(), end: z.string() })),
+  activities: z.array(Activity),
   slots: z.array(Slot),
 });
 
@@ -72,14 +87,22 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
 
         const entries = await tx
           .select({
+            id: schema.timeEntries.id,
+            projectId: schema.timeEntries.projectId,
+            projectName: schema.projects.name,
+            description: schema.timeEntries.description,
+            source: schema.timeEntries.source,
+            isManual: schema.timeEntries.isManual,
             startedAt: schema.timeEntries.startedAt,
             endedAt: schema.timeEntries.endedAt,
           })
           .from(schema.timeEntries)
+          .leftJoin(schema.projects, eq(schema.projects.id, schema.timeEntries.projectId))
           .where(
             and(
               eq(schema.timeEntries.organizationId, req.organizationId!),
               eq(schema.timeEntries.userId, req.params.userId),
+              isNull(schema.timeEntries.deletedAt),
               lt(schema.timeEntries.startedAt, dayEnd),
               gte(schema.timeEntries.startedAt, new Date(dayStartMs - 86_400_000)), // include overnight
             ),
@@ -87,15 +110,30 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
 
         let tracked = 0;
         const intervals: Array<{ start: string; end: string }> = [];
+        const activities: Array<z.infer<typeof Activity>> = [];
         for (const e of entries) {
+          const endMs = e.endedAt ? e.endedAt.getTime() : Date.now();
           const s = Math.max(e.startedAt.getTime(), dayStartMs);
-          const en = Math.min(e.endedAt ? e.endedAt.getTime() : Date.now(), dayStartMs + 86_400_000);
+          const en = Math.min(endMs, dayStartMs + 86_400_000);
           if (en > s) {
             tracked += Math.floor((en - s) / 1000);
             intervals.push({ start: new Date(s).toISOString(), end: new Date(en).toISOString() });
+            // real (un-clipped) values — the modal edits the true entry times
+            activities.push({
+              id: e.id,
+              project_id: e.projectId ?? null,
+              project_name: e.projectName ?? null,
+              description: e.description ?? null,
+              started_at: e.startedAt.toISOString(),
+              ended_at: e.endedAt ? e.endedAt.toISOString() : null,
+              seconds: Math.floor((endMs - e.startedAt.getTime()) / 1000),
+              source: e.source,
+              is_manual: e.isManual,
+            });
           }
         }
         intervals.sort((a, b) => (a.start < b.start ? -1 : 1));
+        activities.sort((a, b) => (a.started_at < b.started_at ? -1 : 1));
 
         const shots = await tx
           .select({
@@ -209,6 +247,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           tracked_seconds: tracked,
           activity_score: dayScore,
           intervals,
+          activities,
           slots,
         };
       });

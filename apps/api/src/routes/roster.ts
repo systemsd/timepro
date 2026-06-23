@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { visibleUsers } from '../lib/access';
@@ -175,6 +175,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             and(
               eq(schema.timeEntries.organizationId, req.organizationId!),
               inArray(schema.timeEntries.userId, userIds),
+              isNull(schema.timeEntries.deletedAt),
               gte(schema.timeEntries.startedAt, fetchFrom),
             ),
           );

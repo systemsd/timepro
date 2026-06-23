@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
-import { forbid, isAdmin, requesterRole } from '../lib/access';
+import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
 
 const ProjectRow = z.object({
   id: z.string().uuid(),
@@ -23,13 +23,22 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       preHandler: [requireAuth],
       schema: {
+        // Optional `userId` lists another user's assignable projects (for the
+        // timeline Edit-Time modal). Defaults to self; requires view access.
+        querystring: z.object({ userId: z.string().uuid().optional() }),
         response: { 200: ProjectsResponse },
         tags: ['projects'],
       },
     },
     async (req) => {
+      let targetUserId = req.userId!;
+      if (req.query.userId && req.query.userId !== req.userId) {
+        const visible = await visibleUsers(req);
+        if (!canView(visible, req.query.userId)) forbid('Not allowed to view this user’s projects');
+        targetUserId = req.query.userId;
+      }
       return req.withTenantDb(async (tx) => {
-        // Only projects the logged-in user is assigned to (project_members) —
+        // Only projects the target user is assigned to (project_members) —
         // this is the tracking picker, so you can only track projects you're on.
         const rows = await tx
           .select({
@@ -44,7 +53,7 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
             schema.projectMembers,
             and(
               eq(schema.projectMembers.projectId, schema.projects.id),
-              eq(schema.projectMembers.userId, req.userId!),
+              eq(schema.projectMembers.userId, targetUserId),
             ),
           )
           .where(
