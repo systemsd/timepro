@@ -34,6 +34,12 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     // (app_name, window_title, started_at) for the current app interval.
     let mut current_app: Option<(String, Option<String>, DateTime<Utc>)> = None;
     let mut last_logged_interval: u64 = 0; // for the "cadence changed" diagnostic
+    // Diagnostics: detect a stalled/slow loop and periodically report capture
+    // health, so a manager can see *why* screenshots aren't landing (capture
+    // hang, slow upload, throttling, disabled) — not just successes.
+    let mut last_loop_start = Utc::now();
+    let mut last_status_at: Option<DateTime<Utc>> = None;
+    let mut uploads_session: u64 = 0;
 
     // A wall-clock gap this much larger than `tick` across the sleep means the
     // machine was suspended (lid closed / slept) — no input was possible in
@@ -42,6 +48,19 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     const SUSPEND_GAP_SECS: i64 = 60;
 
     loop {
+        // If the previous iteration took far longer than `tick`, the loop was
+        // blocked (a slow/hung await — capture or upload) or the OS throttled us
+        // (App Nap / background). Either way it delays screenshots; surface it.
+        let loop_start = Utc::now();
+        let since_last = (loop_start - last_loop_start).num_seconds();
+        if since_last >= 15 && since_last < SUSPEND_GAP_SECS {
+            warn!(
+                since_last_sec = since_last,
+                "capture loop slow — previous iteration ran long (blocked await or system throttling)"
+            );
+        }
+        last_loop_start = loop_start;
+
         let before_sleep = Utc::now();
         tokio::time::sleep(tick).await;
         let suspend_gap = (Utc::now() - before_sleep).num_seconds();
@@ -141,6 +160,29 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
         let now_ev = Utc::now();
         let idle_secs = idle::seconds_idle();
 
+        // Periodic capture-health heartbeat while tracking (~every 2.5 min). Shows
+        // the loop is alive and *why* shots may not be landing: whether captures
+        // are enabled, the expected interval, and how long since the last upload.
+        let status_due = match last_status_at {
+            None => true,
+            Some(t) => (now_ev - t).num_seconds() >= 150,
+        };
+        if status_due {
+            let secs_since_shot = state
+                .last_screenshot_at()
+                .map(|t| (now_ev - t).num_seconds())
+                .unwrap_or(-1);
+            info!(
+                screenshots_enabled = state.screenshots_enabled(),
+                interval_sec = state.screenshot_interval(),
+                secs_since_last_screenshot = secs_since_shot,
+                idle_secs,
+                uploads_session,
+                "capture status"
+            );
+            last_status_at = Some(now_ev);
+        }
+
         // Auto-pause: stop tracking once the user has been idle past the
         // configured threshold (`tracking.auto_pause_minutes`; 0 = disabled).
         let auto_pause = state.auto_pause_sec();
@@ -227,15 +269,25 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
+        // Log the attempt BEFORE capturing: a "capturing screenshot" with no
+        // following "uploaded"/"failed" pinpoints a hang in capture or upload.
+        let secs_since_shot = state
+            .last_screenshot_at()
+            .map(|t| (now - t).num_seconds())
+            .unwrap_or(-1);
+        info!(interval_sec, secs_since_last_screenshot = secs_since_shot, "capturing screenshot");
+
         // Capture off the async runtime — `xcap` is blocking + uses OS APIs.
+        let cap_start = Utc::now();
         let capture_result = tokio::task::spawn_blocking(screenshot::capture_primary_monitor)
             .await
             .unwrap_or_else(|join_err| Err(anyhow::anyhow!("capture task panicked: {join_err}")));
+        let capture_ms = (Utc::now() - cap_start).num_milliseconds();
 
         let (bytes, width, height) = match capture_result {
             Ok(s) => (s.png, s.width, s.height),
             Err(err) => {
-                warn!(error = ?err, "screenshot capture failed");
+                warn!(error = ?err, capture_ms, "screenshot capture failed");
                 continue;
             }
         };
@@ -264,9 +316,12 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
         };
 
         let client = ApiClient::new(api_base, Some(session));
+        let up_start = Utc::now();
         match client.upload_screenshot(bytes, meta).await {
             Ok(resp) => {
-                info!(id = %resp.id, bytes = resp.bytes, "screenshot uploaded");
+                let upload_ms = (Utc::now() - up_start).num_milliseconds();
+                uploads_session += 1;
+                info!(id = %resp.id, bytes = resp.bytes, capture_ms, upload_ms, uploads_session, "screenshot uploaded");
                 state.record_screenshot(now);
                 // Notify the UI so it can refresh the "last screenshot" widget.
                 let _ = app.emit("screenshot:uploaded", &resp);
@@ -281,7 +336,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 }
             }
             Err(err) => {
-                warn!(error = ?err, "screenshot upload failed; will retry next tick");
+                let upload_ms = (Utc::now() - up_start).num_milliseconds();
+                warn!(error = ?err, capture_ms, upload_ms, "screenshot upload failed; will retry next tick");
             }
         }
 
