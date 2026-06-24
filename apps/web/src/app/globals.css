@@ -471,7 +471,11 @@ body {
 .tl-thumb-del {
   border: none; background: none; cursor: pointer; color: #8a9097;
   display: inline-flex; align-items: center; padding: 1px;
+  /* hidden until the thumbnail is hovered (or the button is focused) */
+  opacity: 0; transition: opacity 0.12s ease;
 }
+.tl-thumb:hover .tl-thumb-del,
+.tl-thumb-del:focus-visible { opacity: 1; }
 .tl-thumb-del:hover { color: #c0392b; }
 .tl-thumb-del:disabled { opacity: 0.5; cursor: default; }
 .tl-thumb img, .tl-thumb-ph {
@@ -861,6 +865,9 @@ body {
 }
 .tl-act-head:not(.read-only):hover .tl-act-time { text-decoration: underline; }
 .tl-act-head.read-only { cursor: default; }
+/* edit-affordance: pencil fades in when the (editable) activity line is hovered */
+.tl-act-pencil { display: inline-flex; align-items: center; color: var(--muted); opacity: 0; transition: opacity 0.12s ease; }
+.tl-act-head:hover .tl-act-pencil { opacity: 1; }
 .tl-act-time { font-size: 17px; font-weight: 700; color: #e2604f; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tl-act-level { width: 11px; height: 11px; border-radius: 50%; flex: none; }
 .tl-act-proj {
@@ -931,3 +938,21 @@ body {
 .act-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .act-btn.primary:hover:not(:disabled) { background: #4a45c9; }
 .act-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* timeline bottom-left toast (e.g. "Screenshot deleted") */
+.tl-toast {
+  position: fixed; left: 22px; bottom: 22px; z-index: 200;
+  display: flex; align-items: center; gap: 10px;
+  background: #2f3a4d; color: #fff; font-size: 14px; font-weight: 500;
+  padding: 11px 16px 11px 13px; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  animation: tl-toast-in 0.16s ease-out;
+}
+.tl-toast-check {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; background: #2faa46; color: #fff; flex: none;
+}
+@keyframes tl-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
