@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
-import { CloseIcon, TrashIcon } from '@/components/icons';
+import { CheckIcon, CloseIcon, PencilIcon, TrashIcon } from '@/components/icons';
 import {
   deleteScreenshot,
   getMyEffectiveSettings,
@@ -92,6 +92,7 @@ export default function TimelinePage() {
   const [allowSelfDelete, setAllowSelfDelete] = useState(false);
   const [allowSelfEdit, setAllowSelfEdit] = useState(false);
   const [editing, setEditing] = useState<TimelineActivity | null>(null); // open Edit-Time modal
+  const [toast, setToast] = useState<string | null>(null); // transient bottom-left toast
   const [flashId, setFlashId] = useState<string | null>(null); // activity briefly highlighted after a task jump
 
   // admins/managers can delete; an employee can delete their own only when the
@@ -145,6 +146,13 @@ export default function TimelinePage() {
     const t = setTimeout(() => setFlashId(null), 1500);
     return () => clearTimeout(t);
   }, [flashId]);
+
+  // auto-dismiss the toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   if (!checked || !session) return <div className="center muted">Loading…</div>;
 
@@ -346,6 +354,7 @@ export default function TimelinePage() {
                 <span className="tl-act-proj">{a.project_name ?? 'No project'}</span>
                 {a.description && <span className="tl-act-desc">{a.description}</span>}
                 {a.is_manual && <span className="tl-act-edited">edited</span>}
+                {canEditTime && <span className="tl-act-pencil" aria-hidden="true"><PencilIcon size={14} /></span>}
                 <span className="tl-act-dur">{hm(a.seconds)}</span>
               </>
             );
@@ -367,7 +376,7 @@ export default function TimelinePage() {
                         score={s.activity_score}
                         onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
                         canDelete={canDeleteShots}
-                        onDeleted={() => setRefreshTick((t) => t + 1)}
+                        onDeleted={() => { setRefreshTick((t) => t + 1); setToast('Screenshot deleted'); }}
                       />
                     ))}
                   </div>
@@ -394,6 +403,13 @@ export default function TimelinePage() {
           onClose={() => setEditing(null)}
           onSaved={() => setRefreshTick((t) => t + 1)}
         />
+      )}
+
+      {toast && (
+        <div className="tl-toast" role="status">
+          <span className="tl-toast-check"><CheckIcon size={15} /></span>
+          {toast}
+        </div>
       )}
     </div>
   );
@@ -468,7 +484,6 @@ function TLThumb({
   const [busy, setBusy] = useState(false);
   const del = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this screenshot? This cannot be undone.')) return;
     setBusy(true);
     try { await deleteScreenshot(id); onDeleted(); } catch { setBusy(false); }
   };
