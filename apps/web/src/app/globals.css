@@ -424,6 +424,12 @@ body {
 .tl-usage-label {
   font-size: 13px; color: #3a6ea5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* a task label that jumps to its activity block */
+.tl-usage-jump {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font-family: inherit; text-align: left; width: 100%; min-width: 0;
+}
+.tl-usage-jump:hover { text-decoration: underline; }
 .tl-usage-time { font-size: 13px; color: #5a6068; font-variant-numeric: tabular-nums; }
 .tl-usage-bar { height: 12px; background: #eef1f4; border-radius: 3px; overflow: hidden; }
 .tl-usage-bar i { display: block; height: 100%; background: #8aaecb; border-radius: 3px; }
@@ -841,7 +847,13 @@ body {
 }
 
 /* ── timeline activity groups (one time entry + its screenshots) ── */
-.tl-act-group { padding: 16px 0; border-bottom: 1px solid #eef0f2; }
+.tl-act-group { padding: 16px 0; border-bottom: 1px solid #eef0f2; scroll-margin-top: 16px; }
+/* brief highlight after jumping from a task */
+.tl-act-group.tl-act-flash { animation: tl-flash 1.5s ease-out; border-radius: 8px; }
+@keyframes tl-flash {
+  0% { background: rgba(91, 86, 224, 0.16); }
+  100% { background: transparent; }
+}
 .tl-act-head {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
   margin-bottom: 12px; padding: 0; border: none; background: none; font: inherit; cursor: pointer;
