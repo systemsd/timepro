@@ -188,6 +188,22 @@ button:disabled { cursor: default; }
 }
 
 .today-left { display: flex; flex-direction: column; gap: 14px; }
+/* tracker status: Tracking (green) / Paused (amber) / Stopped (grey) */
+.tracker-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.3px; color: var(--muted);
+}
+.tracker-status .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #c4c8cd; flex: none; }
+.tracker-status.tracking { color: #5a9e3f; }
+.tracker-status.tracking .status-dot { background: #7fbf63; }
+.tracker-status.paused { color: #b07d1f; }
+.tracker-status.paused .status-dot { background: #e6a700; }
+.status-resume {
+  margin-left: 6px; border: 1px solid #e0c489; background: #fff7e6; color: #b07d1f;
+  border-radius: 6px; padding: 2px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.status-resume:hover:not(:disabled) { background: #fdeecb; }
+.status-resume:disabled { opacity: 0.5; cursor: default; }
 .today-label {
   font-size: 13px;
   letter-spacing: 1.5px;
