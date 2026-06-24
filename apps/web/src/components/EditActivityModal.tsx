@@ -136,7 +136,9 @@ export function EditActivityModal({
           <input type="time" value={end} disabled={running} onChange={(e) => setEnd(e.target.value)} />
           <span className="act-dur">{running ? 'running' : durSecs != null ? fmtDur(durSecs) : '—'}</span>
         </div>
-        {running && <p className="act-note">Stop the running timer to edit its times.</p>}
+        {running
+          ? <p className="act-note">Stop the running timer to edit its times.</p>
+          : <p className="act-eg">e.g. 7:00 AM – 9:10 AM</p>}
 
         <label className="act-label">Project</label>
         <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>

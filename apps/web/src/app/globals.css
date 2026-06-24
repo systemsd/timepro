@@ -881,9 +881,11 @@ body {
 .act-x:hover { background: var(--bg); color: var(--text); }
 .act-sub { color: var(--muted); font-size: 13px; margin: 4px 0 16px; }
 .act-times { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-.act-times input { width: 110px; }
+/* wide enough that the native picker's AM/PM segment + spinner aren't clipped */
+.act-times input { width: 150px; }
 .act-dur { color: var(--muted); font-variant-numeric: tabular-nums; }
 .act-note { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+.act-eg { color: var(--muted-2); font-size: 12px; margin: 6px 0 0; }
 .act-label {
   display: block; font-size: 12px; font-weight: 600; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.03em; margin: 14px 0 5px;
