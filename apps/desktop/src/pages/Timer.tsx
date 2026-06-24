@@ -22,6 +22,7 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   );
   const [task, setTask] = useState(() => localStorage.getItem(LS_TASK) || '');
   const [timer, setTimer] = useState<TimerView | null>(null);
+  const [pausedReason, setPausedReason] = useState<'idle' | 'suspended' | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +33,15 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   const autoStartTried = useRef(false);
 
   const running = !!timer;
+  // Idle / sleep auto-pause closes the entry server-side but, per the team, the
+  // tracker should *read* as "Paused" (resumable) rather than "Stopped".
+  const paused = !running && pausedReason !== null;
+  const statusLabel = running
+    ? 'Tracking'
+    : paused
+      ? pausedReason === 'suspended' ? 'Paused — asleep' : 'Paused — idle'
+      : 'Stopped';
+  const statusClass = running ? 'tracking' : paused ? 'paused' : 'stopped';
 
   const project = useMemo(
     () => projects.find((p) => p.id === selectedProject) ?? null,
@@ -57,9 +67,9 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   // reflect tracking state in the native window title
   useEffect(() => {
     getCurrentWindow()
-      .setTitle(running ? 'Tracking — TimePro' : 'Stopped — TimePro')
+      .setTitle(`${statusLabel} — TimePro`)
       .catch(() => {});
-  }, [running]);
+  }, [statusLabel]);
 
   // elapsed ticker
   useEffect(() => {
@@ -83,13 +93,15 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           showToast('Screenshot taken');
         }),
       );
-      // Idle auto-pause stops the timer server-side; reflect that here so the
-      // window doesn't keep showing "running" (which then errors on Stop).
+      // Idle/sleep auto-pause closes the timer server-side; show it as "Paused"
+      // (resumable) here so the window doesn't read as a hard "Stopped".
       unlisteners.push(
         await listen<{ reason?: string; seconds?: number }>('timer:auto-paused', (e) => {
           setTimer(null);
+          const reason = e.payload?.reason === 'suspended' ? 'suspended' : 'idle';
+          setPausedReason(reason);
           showToast(
-            e.payload?.reason === 'suspended'
+            reason === 'suspended'
               ? 'Tracking paused — your computer was asleep'
               : 'Tracking paused — you were idle',
           );
@@ -132,6 +144,7 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     try {
       const t = await ipc.timerStart(selectedProject, task.trim() || null);
       setTimer(t);
+      setPausedReason(null);
     } catch (err) {
       setError(asMessage(err));
     } finally {
@@ -145,6 +158,7 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     try {
       await ipc.timerStop();
       setTimer(null);
+      setPausedReason(null);
     } catch (err) {
       const msg = asMessage(err);
       // If the timer was already closed (e.g. idle auto-pause stopped it
@@ -152,6 +166,7 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
       // instead of surfacing a scary "no_running_timer" error.
       if (/no_running_timer/i.test(msg)) {
         setTimer(null);
+        setPausedReason(null);
       } else {
         setError(msg);
       }
@@ -261,6 +276,13 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
 
       <main className="today">
         <div className="today-left">
+          <div className={`tracker-status ${statusClass}`}>
+            <span className="status-dot" />
+            {statusLabel}
+            {paused && (
+              <button className="status-resume" onClick={start} disabled={busy}>Resume</button>
+            )}
+          </div>
           <div className="today-label">TODAY</div>
           <div className={`today-time ${running ? 'running' : ''}`}>
             <span>{hours}</span>
