@@ -10,7 +10,13 @@ pub mod apps;
 pub mod idle;
 pub mod screenshot;
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use chrono::{DateTime, Utc};
 use tauri::{AppHandle, Emitter};
@@ -39,7 +45,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     // hang, slow upload, throttling, disabled) — not just successes.
     let mut last_loop_start = Utc::now();
     let mut last_status_at: Option<DateTime<Utc>> = None;
-    let mut uploads_session: u64 = 0;
+    // Shared so the off-loop upload tasks can bump it without blocking the loop.
+    let uploads_session = Arc::new(AtomicU64::new(0));
 
     // A wall-clock gap this much larger than `tick` across the sleep means the
     // machine was suspended (lid closed / slept) — no input was possible in
@@ -177,7 +184,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 interval_sec = state.screenshot_interval(),
                 secs_since_last_screenshot = secs_since_shot,
                 idle_secs,
-                uploads_session,
+                uploads_session = uploads_session.load(Ordering::Relaxed),
                 "capture status"
             );
             last_status_at = Some(now_ev);
@@ -269,78 +276,94 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
-        // Log the attempt BEFORE capturing: a "capturing screenshot" with no
-        // following "uploaded"/"failed" pinpoints a hang in capture or upload.
+        // Reserve this slot now, then run capture + upload OFF the loop. Uploads
+        // can take many seconds on a slow link (we measured ~11s), and awaiting
+        // them inline froze the whole loop — heartbeat, idle detection, and the
+        // next capture all stalled (the "capture loop slow" warning). Spawning a
+        // task keeps the loop responsive; reserving the timestamp up front keeps a
+        // steady cadence and prevents a second capture firing while one is mid-upload.
         let secs_since_shot = state
             .last_screenshot_at()
             .map(|t| (now - t).num_seconds())
             .unwrap_or(-1);
-        info!(interval_sec, secs_since_last_screenshot = secs_since_shot, "capturing screenshot");
+        state.record_screenshot(now);
 
-        // Capture off the async runtime — `xcap` is blocking + uses OS APIs.
-        let cap_start = Utc::now();
-        let capture_result = tokio::task::spawn_blocking(screenshot::capture_primary_monitor)
-            .await
-            .unwrap_or_else(|join_err| Err(anyhow::anyhow!("capture task panicked: {join_err}")));
-        let capture_ms = (Utc::now() - cap_start).num_milliseconds();
+        let task_app = app.clone();
+        let task_api = api_base.clone();
+        let task_session = session.clone();
+        let task_entry = entry_id.clone();
+        let task_uploads = uploads_session.clone();
+        let blur_always = state.blur_always();
+        let notify = state.notify_on_screenshot();
+        tokio::spawn(async move {
+            // "capturing screenshot" with no following "uploaded"/"failed" pinpoints
+            // a hang in capture or upload.
+            info!(interval_sec, secs_since_last_screenshot = secs_since_shot, "capturing screenshot");
 
-        let (bytes, width, height) = match capture_result {
-            Ok(s) => (s.png, s.width, s.height),
-            Err(err) => {
-                warn!(error = ?err, capture_ms, "screenshot capture failed");
-                continue;
-            }
-        };
+            // Capture off the async runtime — `xcap` is blocking + uses OS APIs.
+            let cap_start = Utc::now();
+            let capture_result = tokio::task::spawn_blocking(screenshot::capture_primary_monitor)
+                .await
+                .unwrap_or_else(|join_err| Err(anyhow::anyhow!("capture task panicked: {join_err}")));
+            let capture_ms = (Utc::now() - cap_start).num_milliseconds();
 
-        // Apply the `screenshots.blur = always` policy before upload (CPU work
-        // off the async runtime). Falls back to the original on blur failure.
-        let bytes = if state.blur_always() {
-            match tokio::task::spawn_blocking(move || screenshot::blur_png_or_original(bytes)).await {
-                Ok(b) => b,
+            let (bytes, width, height) = match capture_result {
+                Ok(s) => (s.png, s.width, s.height),
                 Err(err) => {
-                    warn!(error = ?err, "blur task panicked; skipping this capture");
-                    continue;
+                    warn!(error = ?err, capture_ms, "screenshot capture failed");
+                    return;
+                }
+            };
+
+            // Apply the `screenshots.blur = always` policy before upload (CPU work
+            // off the async runtime). Falls back to the original on blur failure.
+            let bytes = if blur_always {
+                match tokio::task::spawn_blocking(move || screenshot::blur_png_or_original(bytes)).await {
+                    Ok(b) => b,
+                    Err(err) => {
+                        warn!(error = ?err, "blur task panicked; skipping this capture");
+                        return;
+                    }
+                }
+            } else {
+                bytes
+            };
+
+            let meta = ScreenshotMeta {
+                client_event_id: Uuid::new_v4().to_string(),
+                captured_at: now.to_rfc3339(),
+                time_entry_id: Some(task_entry),
+                monitor_index: 0,
+                width,
+                height,
+            };
+
+            let client = ApiClient::new(task_api, Some(task_session));
+            let up_start = Utc::now();
+            match client.upload_screenshot(bytes, meta).await {
+                Ok(resp) => {
+                    let upload_ms = (Utc::now() - up_start).num_milliseconds();
+                    let n = task_uploads.fetch_add(1, Ordering::Relaxed) + 1;
+                    info!(id = %resp.id, bytes = resp.bytes, capture_ms, upload_ms, uploads_session = n, "screenshot uploaded");
+                    // Notify the UI so it can refresh the "last screenshot" widget.
+                    let _ = task_app.emit("screenshot:uploaded", &resp);
+                    // Native OS toast, gated by the `screenshots.notify` setting (C-policy).
+                    if notify {
+                        let _ = task_app
+                            .notification()
+                            .builder()
+                            .title("TimePro")
+                            .body("Screenshot captured")
+                            .show();
+                    }
+                }
+                Err(err) => {
+                    let upload_ms = (Utc::now() - up_start).num_milliseconds();
+                    warn!(error = ?err, capture_ms, upload_ms, "screenshot upload failed");
                 }
             }
-        } else {
-            bytes
-        };
+        });
 
-        let meta = ScreenshotMeta {
-            client_event_id: Uuid::new_v4().to_string(),
-            captured_at: now.to_rfc3339(),
-            time_entry_id: Some(timer.time_entry_id.clone()),
-            monitor_index: 0,
-            width,
-            height,
-        };
-
-        let client = ApiClient::new(api_base, Some(session));
-        let up_start = Utc::now();
-        match client.upload_screenshot(bytes, meta).await {
-            Ok(resp) => {
-                let upload_ms = (Utc::now() - up_start).num_milliseconds();
-                uploads_session += 1;
-                info!(id = %resp.id, bytes = resp.bytes, capture_ms, upload_ms, uploads_session, "screenshot uploaded");
-                state.record_screenshot(now);
-                // Notify the UI so it can refresh the "last screenshot" widget.
-                let _ = app.emit("screenshot:uploaded", &resp);
-                // Native OS toast, gated by the `screenshots.notify` setting (C-policy).
-                if state.notify_on_screenshot() {
-                    let _ = app
-                        .notification()
-                        .builder()
-                        .title("TimePro")
-                        .body("Screenshot captured")
-                        .show();
-                }
-            }
-            Err(err) => {
-                let upload_ms = (Utc::now() - up_start).num_milliseconds();
-                warn!(error = ?err, capture_ms, upload_ms, "screenshot upload failed; will retry next tick");
-            }
-        }
-
-        debug!("capture tick complete");
+        debug!("capture spawned (uploading off-loop)");
     }
 }
