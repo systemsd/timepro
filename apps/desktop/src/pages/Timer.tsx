@@ -107,6 +107,18 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           );
         }),
       );
+      // Idle auto-pause auto-resumes the instant input returns (the Rust loop
+      // starts a fresh entry) — reflect it as Tracking again, no manual click.
+      unlisteners.push(
+        await listen<TimerView>('timer:auto-resumed', (e) => {
+          if (e.payload) {
+            setTimer(e.payload);
+            if (e.payload.project_id) setSelectedProject(e.payload.project_id);
+          }
+          setPausedReason(null);
+          showToast('Tracking resumed');
+        }),
+      );
     })();
     return () => unlisteners.forEach((u) => u());
   }, []);

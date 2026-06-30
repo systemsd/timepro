@@ -1,13 +1,17 @@
 //! In-memory app state.
 //!
-//! Holds the logged-in session, the running timer, and the configured
-//! API base URL. Persistence (so the agent survives a restart) is wired
-//! through the `tauri-plugin-store` from the React side — Rust treats
-//! the store as opaque key-value config it can read on demand.
+//! Holds the logged-in session, the running timer, and the configured API base
+//! URL. The session is persisted to a JSON file in the app data dir (path set at
+//! startup) so the user isn't asked to sign in on every launch; it's cleared on
+//! logout. The running timer is intentionally runtime-only.
+
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -22,7 +26,36 @@ pub struct Session {
 pub struct RunningTimer {
     pub time_entry_id: String,
     pub project_id: Option<String>,
+    pub description: Option<String>,
     pub started_at: DateTime<Utc>,
+}
+
+/// Context captured when tracking auto-pauses on idle, so the same
+/// project/description can be resumed automatically once the user is active
+/// again (no manual "play" click). Runtime-only — never persisted.
+#[derive(Debug, Clone)]
+pub struct PausedTimer {
+    pub project_id: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Persist a session to disk so login survives a restart (best-effort).
+fn save_session_file(path: &Path, session: &Session) {
+    let bytes = match serde_json::to_vec_pretty(session) {
+        Ok(b) => b,
+        Err(e) => return warn!(error = %e, "failed to serialize session"),
+    };
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    if let Err(e) = fs::write(path, bytes) {
+        warn!(error = %e, "failed to persist session");
+    }
+}
+
+/// Load a persisted session at boot, if one exists and parses.
+pub fn load_session_file(path: &Path) -> Option<Session> {
+    serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
 
 /// Production API base baked into shipped builds (.dmg / .exe / .AppImage).
@@ -79,7 +112,11 @@ struct Inner {
     api_base: Option<String>,
     web_base: Option<String>,
     session: Option<Session>,
+    /// Where the session is persisted (set at startup from the app data dir).
+    session_path: Option<PathBuf>,
     timer: Option<RunningTimer>,
+    /// Set when tracking auto-paused on idle; drives auto-resume on next activity.
+    paused: Option<PausedTimer>,
     /// Capture cadence — resolved from `/v1/settings/effective`
     /// (`screenshots.per_hour`), with a sensible fallback before first fetch.
     screenshot_interval_sec: u64,
@@ -103,7 +140,9 @@ impl AppState {
                 api_base: Some(default_api_base()),
                 web_base: Some(default_web_base()),
                 session: None,
+                session_path: None,
                 timer: None,
+                paused: None,
                 screenshot_interval_sec: 300, // fallback until settings load
                 screenshots_enabled: true,
                 notify_on_screenshot: false,
@@ -202,14 +241,39 @@ impl AppState {
         self.inner.read().session.clone()
     }
 
+    /// Where to persist the session (resolved at startup from the app data dir).
+    pub fn set_session_path(&self, path: PathBuf) {
+        self.inner.write().session_path = Some(path);
+    }
+
+    /// Set the active session and persist it to disk (survives a restart).
     pub fn set_session(&self, session: Session) {
+        let path = {
+            let mut g = self.inner.write();
+            g.session = Some(session.clone());
+            g.session_path.clone()
+        };
+        if let Some(p) = path {
+            save_session_file(&p, &session);
+        }
+    }
+
+    /// Load a persisted session into memory at boot (no re-write to disk).
+    pub fn restore_session(&self, session: Session) {
         self.inner.write().session = Some(session);
     }
 
     pub fn clear_session(&self) {
-        let mut g = self.inner.write();
-        g.session = None;
-        g.timer = None;
+        let path = {
+            let mut g = self.inner.write();
+            g.session = None;
+            g.timer = None;
+            g.paused = None;
+            g.session_path.clone()
+        };
+        if let Some(p) = path {
+            let _ = fs::remove_file(&p); // best-effort; fine if already gone
+        }
     }
 
     pub fn timer(&self) -> Option<RunningTimer> {
@@ -217,11 +281,26 @@ impl AppState {
     }
 
     pub fn set_timer(&self, timer: RunningTimer) {
-        self.inner.write().timer = Some(timer);
+        let mut g = self.inner.write();
+        g.timer = Some(timer);
+        g.paused = None; // starting/resuming a timer cancels any pending auto-resume
     }
 
     pub fn clear_timer(&self) {
         self.inner.write().timer = None;
+    }
+
+    /// The auto-pause context, if tracking is currently idle-paused.
+    pub fn paused(&self) -> Option<PausedTimer> {
+        self.inner.read().paused.clone()
+    }
+
+    pub fn set_paused(&self, p: PausedTimer) {
+        self.inner.write().paused = Some(p);
+    }
+
+    pub fn clear_paused(&self) {
+        self.inner.write().paused = None;
     }
 
     pub fn screenshot_interval(&self) -> u64 {

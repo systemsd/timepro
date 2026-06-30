@@ -261,6 +261,7 @@ pub async fn timer_start(
     state.set_timer(RunningTimer {
         time_entry_id: snap.id.clone(),
         project_id: snap.project_id.clone(),
+        description: args.description.clone(),
         started_at: snap.started_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     });
     info!(time_entry_id = %snap.id, project = ?snap.project_id, "timer started");
@@ -276,6 +277,7 @@ pub async fn timer_stop(state: State<'_, Arc<AppState>>) -> Result<TimerView> {
         .await
         .map_err(map_err)?;
     state.clear_timer();
+    state.clear_paused(); // manual stop → don't auto-resume
     info!(time_entry_id = %resp.id, "timer stopped");
     Ok(TimerView {
         time_entry_id: resp.id,
