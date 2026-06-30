@@ -160,6 +160,19 @@ employees get no clients/projects) · `realtime` (ws presence).
   and `API_CORS_ORIGINS` includes `:3005`. The web's OpsCore target is `apps/web/.env.local`
   (`NEXT_PUBLIC_OPSCORE_URL`); Next reads env from `apps/web/`, **not** the root `.env`. **Login is OpsCore-only**
   (email/password fields removed; dev-login plumbing kept for later).
+- **Editing time entries (timeline activities).** `routes/time-entries.ts` — `PATCH /v1/time-entries/:id`
+  (project/description/trim), `POST /:id/split`, `DELETE /:id` (soft-delete), `GET /:id/history`. Every mutation
+  is written to `audit_logs` via `lib/audit.ts`. RBAC mirrors screenshot-delete; employee self-edit is gated by
+  the `time.allow_self_edit` setting (default on). Soft-deleted entries are filtered in `timeline`/`roster`/`me`.
+- **Desktop capture loop offloads uploads.** `capture/mod.rs` `run_capture_loop` reserves the cadence slot then
+  spawns capture+upload as a task — a slow upload (seen ~11–21 s on weak links) no longer freezes the single-task
+  loop. Diagnostics: `capture status`, `capture_ms`/`upload_ms`, `capture loop slow` (in agent logs).
+- **CI/release operational gotchas (cost us a day):** (1) **GitHub Actions billing** — the org's new *Budgets*
+  feature can default the **Actions budget to $0 + "stop usage"**; with no payment method, once the monthly free
+  minutes run out **no workflow starts at all** (macOS runners are 10× minutes, and the desktop release uses
+  2 macOS + 1 Windows). Fix at org Settings → Billing → Budgets. (2) **`RELEASES_REPO_TOKEN`** must be able to
+  *write* to `systemsd/timepro-downloads` — use a classic PAT with `repo` scope (or fine-grained owned by the org
+  with Contents: write), long expiry. A read-only / personal-owned fine-grained PAT 403s on release create.
 - **Commit messages**: Conventional Commits. Branch before committing on `main`. Only commit/push when asked.
 
 ---
@@ -179,8 +192,9 @@ from `intervals[]`; screenshot slots with red time-range + app badge + thumbnail
 Summary/Detailed/Weekly, saved reports, CSV/PDF, Apps & URLs; Clients/Projects filters hidden for employees);
 **Team** page (RBAC-scoped per C1; **OpsCore sync auto-disables members absent from the directory**);
 **Projects** + **Clients** pages; **Settings** (org + per-user overrides); **My Account** (`/account`, via `/v1/me/profile`)
-from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page (resolves the latest Release from the separate **public** `systemsd/timepro-downloads` repo);
+from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page (**live** — resolves the latest mac + Windows installers from the separate **public** `systemsd/timepro-downloads` repo; Linux leg disabled, unsigned);
 **Agent Diagnostics** (`/diagnostics`; owners/admins + developer allowlist) — desktop-agent logs with a day picker (defaults to today) + all-users dropdown, via `/v1/admin/agent-logs`;
+**Editable Timeline activities** (click an activity → "Edit Time" modal: change project/description, trim start/end, split, delete — audited to `audit_logs`; gated by `time.allow_self_edit`);
 ☰ menu (role-filtered). Weekly-limit enforcement blocks `timer/start` at the cap. UI uses line icons
 (`apps/web/src/components/icons.tsx`), no emojis.
 
@@ -201,7 +215,7 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 
 **Pending — phased (full detail in [docs/13 §3](docs/13-opscore-feature-roadmap.md)):**
 - ⏸️ **Phase 6 — Multi-tenancy & real auth** *(PAUSED — single-tenant Systemsd is the current focus)* — one shared DB, many orgs: 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX.
-- 🔴 **Phase 7 — Ship pipeline (B9)** — cross-platform CI builds, code-sign/notarize, host artifacts, wire Download URLs (credential-gated).
+- 🟡 **Phase 7 — Ship pipeline (B9)** — ✅ CI builds + hosts installers (mac + Windows) via the public `timepro-downloads` repo; Download page live; **in-app auto-updater** live (v0.1.5+); current shipped **v0.1.11**. 🔴 remaining: **code-sign/notarize** (currently unsigned — every mac update revokes Screen Recording), re-enable the **Linux** build leg (`libgbm-dev`).
 - 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
 - 🔴 **Phase 9 — Billing & plans**.
 - 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle + **sleep/suspend** auto-pause, back-dated so away-time isn't billed (`/v1/timer/stop` `ended_at`) · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
