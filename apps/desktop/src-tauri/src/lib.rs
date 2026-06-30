@@ -46,6 +46,18 @@ pub fn run() {
             commands::get_api_base,
         ])
         .setup(move |app| {
+            // Restore a persisted session so the user isn't asked to sign in on
+            // every launch (the session file lives in the app data dir; it's
+            // cleared on logout). Also remember the path so later logins persist.
+            let boot_state = app.state::<Arc<AppState>>().inner().clone();
+            if let Ok(dir) = app.path().app_local_data_dir() {
+                let path = dir.join("session.json");
+                if let Some(sess) = crate::state::load_session_file(&path) {
+                    boot_state.restore_session(sess);
+                }
+                boot_state.set_session_path(path);
+            }
+
             // Spawn the background capture loop. It is a no-op until a timer
             // starts; we drive it from a single tokio task so we never have
             // racy schedule races between the UI and the loop.

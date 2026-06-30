@@ -24,9 +24,9 @@ use tauri_plugin_notification::NotificationExt;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::api::{ApiClient, ScreenshotMeta};
+use crate::api::{ApiClient, ApiError, ScreenshotMeta};
 use crate::capture::activity::ActivityAggregator;
-use crate::state::AppState;
+use crate::state::{AppState, PausedTimer, RunningTimer};
 
 /// Background loop: when a timer is running, capture a screenshot every
 /// `state.screenshot_interval()` seconds and upload it to the API.
@@ -53,6 +53,10 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     // that window, so a running timer must be stopped back-dated rather than
     // billing the whole sleep.
     const SUSPEND_GAP_SECS: i64 = 60;
+
+    // Once tracking idle-pauses, resume automatically as soon as input returns
+    // (idle this low = the user is active again). The 5s tick bounds the latency.
+    const RESUME_IDLE_SECS: u64 = 10;
 
     loop {
         // If the previous iteration took far longer than `tick`, the loop was
@@ -152,7 +156,51 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
 
         // Cheap reads to decide whether to capture this tick.
         let Some(timer) = state.timer() else {
-            // timer stopped — flush any open app interval
+            // Auto-resume: if we idle-paused and the user is active again, start a
+            // fresh entry with the same project/description automatically — no need
+            // to click play. The idle gap stays unbilled (the pause back-dated the
+            // stop to when input ceased).
+            if let Some(p) = state.paused() {
+                if idle::seconds_idle() < RESUME_IDLE_SECS {
+                    let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+                    match client
+                        .timer_start(
+                            p.project_id.as_deref(),
+                            p.description.as_deref(),
+                            &Uuid::new_v4().to_string(),
+                        )
+                        .await
+                    {
+                        Ok(snap) => {
+                            state.set_timer(RunningTimer {
+                                time_entry_id: snap.id.clone(),
+                                project_id: snap.project_id.clone(),
+                                description: p.description.clone(),
+                                started_at: snap.started_at.parse().unwrap_or_else(|_| Utc::now()),
+                            });
+                            let _ = app.emit(
+                                "timer:auto-resumed",
+                                serde_json::json!({
+                                    "time_entry_id": snap.id,
+                                    "project_id": snap.project_id,
+                                    "started_at": snap.started_at,
+                                }),
+                            );
+                            info!(time_entry_id = %snap.id, "auto-resumed tracking (activity detected)");
+                        }
+                        // Weekly cap (or any hard 409) → stop retrying; otherwise keep
+                        // the paused context and try again on the next tick.
+                        Err(err) => {
+                            if matches!(&err, ApiError::Server { status: 409, .. }) {
+                                state.clear_paused();
+                            }
+                            warn!(error = %err, "auto-resume failed");
+                        }
+                    }
+                }
+                continue;
+            }
+            // No paused context → genuinely stopped: flush any open app interval.
             if let Some((name, title, started)) = current_app.take() {
                 let now = Utc::now();
                 let client = ApiClient::new(api_base.clone(), Some(session.clone()));
@@ -203,6 +251,12 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 .await
                 .is_ok()
             {
+                // Remember the project/description so we can auto-resume the moment
+                // input returns (no manual "play" click).
+                state.set_paused(PausedTimer {
+                    project_id: timer.project_id.clone(),
+                    description: timer.description.clone(),
+                });
                 state.clear_timer();
                 // flush any open app interval, capped at the back-dated end
                 if let Some((name, title, started)) = current_app.take() {
