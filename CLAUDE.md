@@ -148,10 +148,23 @@ employees get no clients/projects) · `realtime` (ws presence).
   before upload) and `tracking.auto_pause_minutes` (stops the timer after that many seconds of input idle).
 - **Idle/suspend time is never billed.** Both the idle auto-pause and **sleep/suspend recovery** stop the timer
   *back-dated* to the last active moment, not when the agent notices. Idle ends at `now − idle`; a detected suspend
-  (a wall-clock gap ≥60s across the 5s capture tick → lid closed/slept) ends just before the machine slept. The
-  user resumes manually (no auto-restart; UI shows a "paused" toast). `POST /v1/timer/stop` takes an optional
-  `ended_at`, clamped server-side to `[started_at, now]`; the capture loop sets it. Suspend recovery is
-  unconditional; the idle path needs `tracking.auto_pause_minutes > 0`.
+  (a wall-clock gap ≥60s across the 5s capture tick → lid closed/slept) ends just before the machine slept.
+  `POST /v1/timer/stop` takes an optional `ended_at`, clamped server-side to `[started_at, now]`; the capture loop
+  sets it. Suspend recovery is unconditional; the idle path needs `tracking.auto_pause_minutes > 0`. **Idle
+  auto-pause now auto-resumes** (v0.1.12): the loop remembers the paused project/description (`state::PausedTimer`)
+  and starts a fresh entry the instant input returns (idle < 10s) → emits `timer:auto-resumed`, no manual click.
+  **Suspend** still resumes manually. A weekly-cap 409 or a manual stop clears the paused context.
+- **Server self-heals inflated reports (abandoned-timer sweep).** A timer left open across sleep/crash is counted
+  to `now` by roster/reports, so a forgotten timer can bill as hours/days. `apps/api/src/lib/timer-sweep.ts`
+  (scheduled in `server.ts` ~45s after boot then every 10 min, cross-tenant via `asPlatform`) finds entries still
+  open OR > 30 min, computes the user's last real activity *inside* the entry (latest screenshot/activity/app-usage
+  — all stop when the machine sleeps), and if there's a dead tail > 15 min clamps `ended_at` back to it
+  (`source=system`, audited `time_entry.auto_closed`). Self-healing + agent-independent; never touches an
+  actively-tracking user or an entry with no activity signal.
+- **Desktop session persists (v0.1.12).** The OpsCore session is saved to `session.json` in the app data dir on
+  login (`state::set_session`), restored at startup in `lib.rs` setup (before the UI's `current_session` check),
+  and deleted on logout — so the agent no longer asks to sign in on every launch. The running timer is *not*
+  persisted (intentional).
 - **Migrations are expand-only / forward-only.** Never roll back the DB; write a new migration.
 - **Web is on :3005, not :3000 — prod-OpsCore/nginx collision.** Prod OpsCore (`https://opscore.systemsd.co`)
   runs behind nginx with its own app on `:3000`; nginx rewrites any `Location: http://localhost:3000/…` (its
@@ -215,9 +228,9 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 
 **Pending — phased (full detail in [docs/13 §3](docs/13-opscore-feature-roadmap.md)):**
 - ⏸️ **Phase 6 — Multi-tenancy & real auth** *(PAUSED — single-tenant Systemsd is the current focus)* — one shared DB, many orgs: 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX.
-- 🟡 **Phase 7 — Ship pipeline (B9)** — ✅ CI builds + hosts installers (mac + Windows) via the public `timepro-downloads` repo; Download page live; **in-app auto-updater** live (v0.1.5+); current shipped **v0.1.11**. 🔴 remaining: **code-sign/notarize** (currently unsigned — every mac update revokes Screen Recording), re-enable the **Linux** build leg (`libgbm-dev`).
+- 🟡 **Phase 7 — Ship pipeline (B9)** — ✅ CI builds + hosts installers (mac + Windows) via the public `timepro-downloads` repo; Download page live; **in-app auto-updater** live (v0.1.5+); current shipped **v0.1.12**. 🔴 remaining: **code-sign/notarize** (currently unsigned — every mac update revokes Screen Recording), re-enable the **Linux** build leg (`libgbm-dev`).
 - 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
 - 🔴 **Phase 9 — Billing & plans**.
-- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle + **sleep/suspend** auto-pause, back-dated so away-time isn't billed (`/v1/timer/stop` `ended_at`) · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
+- 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle + **sleep/suspend** auto-pause, back-dated so away-time isn't billed (`/v1/timer/stop` `ended_at`) · ✅ **idle auto-resume** on activity + **persistent desktop login** (v0.1.12) · ✅ **server abandoned-timer sweep** self-heals inflated reports · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
 
 See also [docs/11-roadmap.md](docs/11-roadmap.md) (original MVP/P2/P3) and the per-doc status banners.

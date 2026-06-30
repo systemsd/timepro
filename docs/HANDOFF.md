@@ -8,9 +8,31 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 ## 🚧 CURRENT STATE (2026-06-30) — Live product: editable timeline + field-debugging the desktop agent
 
 > Backend + downloads have been LIVE since 2026-06-18 (prod `timepro.systemsd.co` / `api.timepro.systemsd.co`,
-> push-to-`main` auto-deploy). The recent arc: **editable Timeline activities + screenshot UX**, plus a
-> diagnose→fix→verify loop on the desktop agent (inflated time, missing screenshots). Current desktop
-> version on `main` = **v0.1.11**. Historical deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+> push-to-`main` auto-deploy). The recent arc: **editable Timeline activities + screenshot UX**, a
+> diagnose→fix→verify loop on the desktop agent (inflated time, missing screenshots), a **server-side
+> self-healing sweep** for inflated reports, and **desktop persistent login + idle auto-resume**. Current
+> desktop version on `main` = **v0.1.12**. Historical deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+
+### Shipped 2026-06-30 (reporting self-heal + desktop UX)
+- **Abandoned-timer sweep (server, self-healing)** — `apps/api/src/lib/timer-sweep.ts`, scheduled in
+  `server.ts` ~45s after boot then **every 10 min**, cross-tenant via `asPlatform`. A timer left open across
+  sleep/crash was counted up to `now` by roster/reports, so one forgotten timer billed as hours/days (a single
+  entry showed **107h**, inflating a user's month to 138h). The sweep finds entries still open OR > 30 min,
+  computes the user's last real activity *inside* the entry (latest screenshot / activity sample / app-usage —
+  all stop when the machine sleeps), and if there's a dead tail > 15 min, clamps `ended_at` back to it
+  (`source=system`, audited as `time_entry.auto_closed`). Self-heals existing bad data **and** prevents
+  recurrence regardless of agent reliability; actively-tracking users are never touched. **Verified in prod:**
+  one user's month went **138h → 19h** on the first run. `recordAudit()` extended to support a system actor.
+- **Desktop v0.1.12 — persistent login + idle auto-resume:**
+  - **Persistent login** — the session is written to `session.json` in the app data dir on login and restored
+    at startup (before the UI checks `current_session`), cleared on logout. No more "Sign in with OpsCore" on
+    every launch. (The persistence the old `state.rs` comment claimed via `tauri-plugin-store` was never wired.)
+  - **Auto-resume on activity** — after an idle auto-pause the user no longer clicks play. The capture loop
+    remembers the paused project/description (`PausedTimer`) and starts a fresh entry the instant input returns
+    (idle < 10s), emitting `timer:auto-resumed`; the idle gap stays unbilled. A weekly-cap 409 or a manual stop
+    clears the paused context. Scope: **idle** pause only — sleep/suspend still needs a manual resume.
+  - **Verified in field logs (Anas):** quit/reopen with **0 new login events**; `auto-paused (idle=303)` →
+    `auto-resumed` 13s later.
 
 ### Shipped 2026-06-24 → 06-30
 - **Editable Timeline activities** ("Edit Time" modal, scrin.io-style): click an activity → change
