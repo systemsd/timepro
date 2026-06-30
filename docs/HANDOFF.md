@@ -5,11 +5,50 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
-## 🚧 CURRENT STATE (2026-06-23) — Live product: auto-update + agent diagnostics
+## 🚧 CURRENT STATE (2026-06-30) — Live product: editable timeline + field-debugging the desktop agent
 
 > Backend + downloads have been LIVE since 2026-06-18 (prod `timepro.systemsd.co` / `api.timepro.systemsd.co`,
-> push-to-`main` auto-deploy). The recent arc has been **shipping/operating the desktop app**: auto-update,
-> remote diagnostics, and chasing field issues. Historical deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+> push-to-`main` auto-deploy). The recent arc: **editable Timeline activities + screenshot UX**, plus a
+> diagnose→fix→verify loop on the desktop agent (inflated time, missing screenshots). Current desktop
+> version on `main` = **v0.1.11**. Historical deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+
+### Shipped 2026-06-24 → 06-30
+- **Editable Timeline activities** ("Edit Time" modal, scrin.io-style): click an activity → change
+  project/description, **trim** start/end, **split**, or **delete** it. New `routes/time-entries.ts`
+  (`PATCH`/`POST :id/split`/`DELETE`/`GET :id/history`); every mutation is audited to the existing
+  `audit_logs` table (migration `0006` = a per-target index). RBAC mirrors screenshot-delete:
+  admin/manager any, employee self gated by the new **`time.allow_self_edit`** setting (default **on**).
+- **Timeline = grouped activities** (each time entry + its screenshots beneath it, app label + activity dot),
+  replacing the old flat 10-min `slots[]`. Clickable **Tasks** panel jumps to its activity. Screenshot trash
+  **hover-reveals**, delete is one-click + **"Screenshot deleted" toast**, editable activity headers show a
+  **pencil** on hover.
+- **Dashboard screenshot-flood fix**: thumbnails lazy-load (IntersectionObserver) + a shared concurrency
+  limiter (`lib/concurrency.ts`, `useScreenshotUrl.ts`), so screenshot blobs no longer starve `roster`/`members`.
+- **Soft-delete read filter** fixed in `timeline` (main query), `roster`, and `me/today` — a deleted time entry
+  now stops counting everywhere.
+- **Desktop (v0.1.8→v0.1.11):** "Paused" status on idle/sleep (resumable, not "Stopped") · **sleep/idle
+  back-dating** so away time isn't billed (was the inflated 16h/24h totals) · **capture-loop diagnostics**
+  (`capture status`, `capture_ms`/`upload_ms`, `capture loop slow`) · **uploads moved off the capture loop**
+  (a slow ~11–21 s upload was freezing the single-task loop → late/missing screenshots; now spawned per-capture).
+  Verified in field logs: steady 2-min cadence even with 15–21 s uploads.
+
+### Infra gotchas learned this arc (hard-won)
+- **GitHub Actions billing can hard-stop ALL workflows.** GitHub's new **Budgets** feature defaults the
+  **Actions budget to $0 + "stop usage"**; with no payment method, once the monthly free minutes are gone
+  *every* job refuses to start (deploy + desktop release). **macOS runners are 10× minutes** and the desktop
+  release builds on 2 macOS + 1 Windows, so each release burns ~300 min of the 2,000 free pool. Fix: add a card
+  + set the **org** Actions budget non-$0 (org Settings → Billing → Budgets), or temporarily make the repo
+  public (free Actions) — see warning below.
+- **`RELEASES_REPO_TOKEN` must be able to *write* to `systemsd/timepro-downloads`.** A fine-grained PAT that's
+  read-only / owned by a personal account 403s ("Resource not accessible by personal access token"). Use a
+  **classic PAT with `repo` scope** (or a fine-grained PAT with resource owner = `systemsd` + Contents: write),
+  with a long expiry so it doesn't lapse.
+- ⚠️ **The repo was made PUBLIC for ~2 days to dodge the billing block.** Public exposure is effectively
+  permanent (bots/forks copy instantly). The committed OpsCore dev secrets (`config.ts` defaults +
+  `HANDOFF.md`) are the risk: `OPSCORE_HANDOFF_SECRET` signs the login JWT (`opscore.ts` → `auth.ts`), so if
+  prod uses that value, anyone can forge a prod login. **Action: confirm prod `.env` overrides it with a
+  strong value; rotate (TimePro + OpsCore, must match) if not. Switch the repo back to private at the new
+  billing cycle.**
 
 ### How the user (Anas) works
 - **Role:** the developer. On **prod he is an `employee`**, NOT org-admin (admin is Hamid).
@@ -21,7 +60,7 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 - **Verify before pushing:** `pnpm --filter @timepro/<pkg> typecheck`, web `build`, and `cargo check`
   (`apps/desktop/src-tauri`) for agent changes. **After the user merges + publishes, verify the result — don't assume.**
 
-### Shipped this arc (current desktop version on `main` = **v0.1.7**)
+### Shipped the prior arc (v0.1.5 → v0.1.7) — auto-update + agent diagnostics
 - **In-app auto-updater** (Tauri `tauri-plugin-updater`): app polls
   `systemsd/timepro-downloads/releases/latest/download/latest.json` on launch → prompts → installs → relaunches.
   Updater signing key at `~/.tauri/timepro_updater.key`; GitHub secret **`TAURI_SIGNING_PRIVATE_KEY`**.
@@ -118,7 +157,7 @@ login is **OpsCore-only** · line icons, no emojis.
 | TimePro **web** | **3005** | Next.js — **moved off 3000** so the prod-OpsCore nginx doesn't rewrite the handoff redirect |
 | TimePro **API** | **4001** | Fastify — **moved off 3001** because OpsCore owns it |
 | **OpsCore** | **3001** | separate app, `/Users/macos/Code/systemsd/OpsCore` (it's a `next dev` — don't `pkill -f "next dev"` blindly) |
-| Postgres (TimePro) | 5432 / db `timepro` | user `postgres`/`123456` (per `.env`) |
+| Postgres (TimePro) | 5432 / db `timepro` | local-dev creds in root `.env` (not committed) |
 | Postgres (OpsCore) | 5432 / db `opscore` | OpsCore's own Prisma DB |
 
 > ⚠️ **Don't `pkill -f "next dev"`** — that kills OpsCore too (it's a Next dev server). Kill by port instead:
@@ -168,8 +207,9 @@ Verified counts: **10 active employees, 18 business partners, 19 projects**.
 - TimePro: `apps/api/src/lib/opscore.ts`, `routes/auth.ts` (exchange), `routes/admin.ts` (sync); web `app/auth/opscore/page.tsx`, login button, Team sync button; `opscore_employee_id`/`opscore_project_id` columns (migration `0003`).
 
 **Shared secrets (must match across both `.env`s):**
-- `OPSCORE_HANDOFF_SECRET` (TimePro) == `TIMEPRO_HANDOFF_SECRET` (OpsCore) = `opscore-timepro-shared-handoff-secret-dev`
-- `OPSCORE_API_KEY` (TimePro) == `TIMEPRO_API_KEY` (OpsCore) = `opscore-timepro-service-api-key-dev`
+- `OPSCORE_HANDOFF_SECRET` (TimePro) **must equal** `TIMEPRO_HANDOFF_SECRET` (OpsCore) — value lives in both
+  `.env`s, **not committed**. (The old `…-dev` default was published while the repo was public; rotate it.)
+- `OPSCORE_API_KEY` (TimePro) **must equal** `TIMEPRO_API_KEY` (OpsCore) — same: in `.env`s, not committed.
 - TimePro `OPSCORE_ORG_SLUG=demo`, `OPSCORE_ORG_NAME=Systemsd` (the org JIT-created on first login).
 
 **✅ Production wiring (verified):** web `apps/web/.env.local` → `NEXT_PUBLIC_OPSCORE_URL=https://opscore.systemsd.co`;
