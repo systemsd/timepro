@@ -9,7 +9,8 @@ export async function recordAudit(
   tx: DB,
   entry: {
     organizationId: string;
-    actorUserId: string;
+    actorUserId?: string | null; // null for system/automated actions
+    actorType?: 'user' | 'system' | 'agent'; // default 'user'
     action: string; // e.g. 'time_entry.update'
     targetType: string; // e.g. 'time_entry'
     targetId: string;
@@ -18,8 +19,8 @@ export async function recordAudit(
 ): Promise<void> {
   await tx.insert(schema.auditLogs).values({
     organizationId: entry.organizationId,
-    actorUserId: entry.actorUserId,
-    actorType: 'user',
+    actorUserId: entry.actorUserId ?? null,
+    actorType: entry.actorType ?? 'user',
     action: entry.action,
     targetType: entry.targetType,
     targetId: entry.targetId,

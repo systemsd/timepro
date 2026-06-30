@@ -5,6 +5,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { closeDb } from '@timepro/db';
 import { pruneAgentLogs, pruneAllOrgs } from './lib/retention';
+import { sweepAbandonedTimers } from './lib/timer-sweep';
 
 async function main() {
   const config = loadConfig();
@@ -38,6 +39,20 @@ async function main() {
   };
   setTimeout(sweep, 30_000).unref();
   setInterval(sweep, 12 * 60 * 60 * 1000).unref();
+
+  // Abandoned-timer sweep — close/trim timers left open across sleep/crash so a
+  // forgotten timer can't inflate the roster/reports. Runs soon after boot, then
+  // every 10 min. Self-healing across all users; back-dates to last real activity.
+  const timerSweep = async () => {
+    try {
+      const { corrected } = await sweepAbandonedTimers();
+      if (corrected > 0) app.log.info({ corrected }, 'abandoned-timer sweep');
+    } catch (err) {
+      app.log.error({ err }, 'abandoned-timer sweep failed');
+    }
+  };
+  setTimeout(timerSweep, 45_000).unref();
+  setInterval(timerSweep, 10 * 60 * 1000).unref();
 
   const shutdown = async (signal: NodeJS.Signals) => {
     app.log.info({ signal }, 'shutting down');
