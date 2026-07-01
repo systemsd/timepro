@@ -102,8 +102,12 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
               eq(schema.timeEntries.organizationId, req.organizationId!),
               eq(schema.timeEntries.userId, req.params.userId),
               isNull(schema.timeEntries.deletedAt),
+              // Every entry that OVERLAPS the day — including a long-running/overnight
+              // one that started earlier — so its screenshots have an activity to
+              // group under (matches the Tasks query below). Filtering on `startedAt`
+              // alone stranded such screenshots, which `actAt` then misfiled.
               lt(schema.timeEntries.startedAt, dayEnd),
-              gte(schema.timeEntries.startedAt, new Date(dayStartMs - 86_400_000)), // include overnight
+              or(isNull(schema.timeEntries.endedAt), gte(schema.timeEntries.endedAt, dayStart)),
             ),
           );
 
@@ -150,15 +154,21 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
         intervals.sort((a, b) => (a.start < b.start ? -1 : 1));
         acts.sort((a, b) => a.startMs - b.startMs);
 
-        // The activity covering an instant: the one whose [start, end] contains it,
-        // else the latest one that started before it (handles boundary captures).
+        // The activity a capture/sample belongs to: the one whose [start, end]
+        // range contains it (a small grace past the end catches a capture that
+        // lands just after a stop). Pick the latest-starting match when ranges
+        // touch. A capture with no owning activity is an orphan → return null so
+        // it's dropped, never misfiled onto an unrelated activity (which is why a
+        // 6am screenshot was showing under a noon entry).
+        const ACT_GRACE_MS = 90_000;
         const actAt = (ms: number): ActAcc | null => {
-          let fallback: ActAcc | null = null;
+          let best: ActAcc | null = null;
           for (const a of acts) {
-            if (a.startMs <= ms && ms <= a.endMs) return a;
-            if (a.startMs <= ms && (!fallback || a.startMs > fallback.startMs)) fallback = a;
+            if (a.startMs <= ms && ms <= a.endMs + ACT_GRACE_MS && (!best || a.startMs > best.startMs)) {
+              best = a;
+            }
           }
-          return fallback ?? acts[0] ?? null;
+          return best;
         };
 
         const shots = await tx
