@@ -3,7 +3,7 @@
 > **Implementation status** — ✅ built · ⛔ planned.
 >
 > - ✅ Computed **on the fly** (no rollups yet): `GET /v1/me/today` (today's tracked time/status/screenshots), `GET /v1/roster` (per-employee today/yesterday/week/month totals + last screenshot, viewer-tz), `GET /v1/timeline/:userId` (a day's screenshots/activity in 10-min slots + day total + average activity + `intervals[]` tracker run/stop segments for the ruler), `GET /v1/timeline/:userId/activity` (per-day tracked seconds for a month — the Timeline strip bars), `GET /v1/timeline/:userId/apps-urls` (a day's app + domain usage — the Timeline summary-card Apps/URLs panel).
-> - 📐 **Reports Console** (§0) — UI/feature **spec'd** from the reference screenshots; **not built**. The "Reports ▾" nav tab is disabled today. This is the Phase 5 / **B7** deliverable.
+> - ✅ **Reports Console** (§0) — **built** and live. Summary/Detailed/Weekly + Apps&URLs, saved reports, activity %, and CSV/xlsx exports (`GET /v1/reports/filters`, `POST /v1/reports/run`, `/v1/reports/saved`). Phase 5 / **B7** deliverable.
 > - ⛔ Still planned: `reports_hourly/daily/weekly/monthly` rollup tables, rollup jobs, materialized views, exports, caching, and the time-per-client report. No scheduled aggregation runs yet — on-the-fly compute is fine at current scale and moves to rollups in Phase 5.
 
 Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard reads from an "as-of-now" hourly rollup + a live tail.
@@ -14,8 +14,10 @@ Hot reads come from rollup tables, not from raw `time_entries`. Live dashboard r
 
 > **Status: 5A + 5B + 5C built; 5D–5F pending.** Phase 5 / **B7** deliverable. The Reports nav tab is **live**.
 > - ✅ **5A — query API**: `GET /v1/reports/filters` (RBAC-scoped employees + client/project catalogs) and `POST /v1/reports/run` (Summary/Detailed/Weekly, computed on-the-fly from `time_entries`, viewer-tz). See `apps/api/src/routes/reports.ts`.
-> - ✅ **5B — console UI**: `apps/web/src/app/reports/page.tsx` — Hubstaff-style filter bar (2×4 preset-link grid, stacked employee/projects/clients/note fields, **report-type text links** [Summary by project/employee · Weekly · Detailed · Apps & URLs · Saved] mapping to engine mode + default grouping + result tab, **group-by chip field**), daily-totals chart (red weekends), result tabs, expand/collapse group tables.
-> - ✅ **5C — saved reports + exports**: `saved_reports` table (migration `0004`, per-user + `is_shared` org-visible), CRUD at `/v1/reports/saved`; "Saved Report" dropdown lists/loads/deletes; **Excel** = client-side CSV, **PDF** = browser print (`@media print`). **Shareable public links deferred** (use `is_shared` for org-visibility).
+>   - **Activity/productivity** (added): the run endpoint attributes `activity_samples` to entries via `time_entry_id` and rolls a **0–100 activity score** (same basis as the Timeline donut) + **active/idle seconds** into every group, pivot, and detail row, plus top-level `avg_activity_score` / `active_seconds` / `idle_seconds`. Apps/URLs carry no activity (always `null`).
+>   - **Real Weekly report** (added): `type=weekly` returns a `weeks[]` block — **ISO week, Monday-start** — with per-week total + per-employee rows, each broken down **Mon..Sun**; seconds split across day/week boundaries, activity attributed to the entry's start-week. (Previously "Weekly" was identical to "Summary by employee".)
+> - ✅ **5B — console UI**: `apps/web/src/app/reports/page.tsx` — Hubstaff-style filter bar (2×4 preset-link grid, stacked employee/projects/clients/note fields, **report-type text links** [Summary by project/employee · Weekly · Detailed · Apps & URLs · Saved] mapping to engine mode + default grouping + result tab, **group-by chip field**), daily-totals chart (red weekends) with a **headline Activity % / Active stat**, an **Activity column** across the result tables, an expandable **weekly table** (per-week card, employees × Mon..Sun), result tabs, expand/collapse group tables.
+> - ✅ **5C — saved reports + exports**: `saved_reports` table (migration `0004`, per-user + `is_shared` org-visible), CRUD at `/v1/reports/saved`; "Saved Report" dropdown lists/loads/deletes. **Exports are "export what you see"** — both **CSV** and a real **`.xlsx`** (zero-dep writer `apps/web/src/lib/xlsx.ts`: STORE zip + CRC32, inline strings, numeric cells) export the **active result tab** (timeline/employees/projects/clients/notes/apps + the weekly-timesheet layout); **PDF** = browser print (`@media print`). **Shareable public links deferred** (use `is_shared` for org-visibility).
 > - ✅ **5E — realtime presence (B10)**: websocket `GET /v1/realtime/presence` (snapshot + live `update` frames from the in-process presence pub/sub); web `useRealtimePresence` (shared socket, role-gated) overlays live dots on the dashboard roster + Timeline nav, replacing the 30s presence poll (totals poll now 60s). `apps/api/src/routes/realtime.ts`, `lib/presence.ts`.
 > - ✅ **Weekly-limit enforcement**: effective `limits.weekly_hours` (org default ← per-user override) vs current-week tracked time (`apps/api/src/lib/limits.ts`). Enforced at **timer start** (409 `weekly_limit_reached` at/over the cap); surfaced on the manager roster (`week / limit ⚠`) and My Home (week stat + over-limit banner). `0` = unlimited.
 > - ⛔ **Dropped/cut:** **5D** rollups + scheduler (scale optimization — on-the-fly is fine at current scale; revisit on latency) · **absence model** (only needed for the optional "Include absences" toggle). **Phase 5 / B7 is otherwise complete.**
@@ -33,9 +35,9 @@ The top-level selector. Four entries:
 
 | Type | Default group-by | Result table | Extra control |
 | ---- | ---------------- | ------------ | ------------- |
-| **Summary** | employee + project | grouped, expand/collapse (`± Employee / ± Project` → Duration) | — |
-| **Detailed** | none (flat) | one row per time entry: Date · Employee · Project · Note · From · To · Duration | — |
-| **Weekly Report** | employee | flat employee → Duration (per ISO week) | ☐ **Include absences** |
+| **Summary** | employee + project | grouped, expand/collapse (`± Employee / ± Project` → Activity + Duration) | — |
+| **Detailed** | none (flat) | one row per time entry: Date · Employee · Project · Note · From · To · Activity · Duration | — |
+| **Weekly Report** | employee | ✅ **real ISO-week (Mon-start) `weeks[]`**: per-week card → employee rows × Mon..Sun + Activity + Total | ☐ Include absences *(disabled)* |
 | **Saved Report** | (loads a saved config) | re-runs a previously **Saved report** | picks from the saved list |
 
 ✅ **Resolved (2026-06-17):** the report types are **text links** — *Summary by project · Summary by
@@ -57,18 +59,18 @@ deferred (need date/note grouping + pay rates in the engine).
 ### 0.3 Actions
 
 - **Show report** (primary green button) — runs the query.
-- **Excel** / **PDF** — export the current report (ties to §6 export pipeline). ⚠️ Large ranges go async per §8's >90-day rule; small ranges may export synchronously — confirm the UI threshold.
+- **Excel** / **CSV** / **PDF** — ✅ export the **active result tab** ("export what you see"). **Excel** = a real `.xlsx` (zero-dep writer, numeric cells so Excel can sum); **CSV** = the same rows; **PDF** = browser print. All client-side today. ⚠️ Large ranges still bounded by the sync path (Detailed capped at 5000 rows); §8's >90-day async-export rule is not yet wired.
 - **Share report** — shareable snapshot/link. ⚠️ Auth + scope of shared links TBD.
 - **Save report** — persists the current type+filter config as a named **Saved Report**, surfaced under the dropdown's "Saved Report" entry. ⚠️ Needs a `saved_reports` table; per-user vs per-org/shared visibility TBD.
 
 ### 0.4 Result area
 
 - **Daily-totals bar chart** — one bar per day in range with a value label (e.g. `9h 47m`) and the grand total to the left (e.g. **53h 34m**); **weekends rendered in red**. Shown on the Timeline tab.
-- **Result tabs** — Timeline · Employees · Projects · Clients · Notes · Apps & URLs. Each re-pivots the same filtered dataset:
-  - *Timeline* — the chart + the grouped/detailed table for the chosen report type.
-  - *Employees / Projects / Clients* — totals pivoted by that dimension.
+- **Result tabs** — Timeline · Employees · Projects · Clients · Notes · Apps & URLs. Each re-pivots the same filtered dataset and (except Apps & URLs) carries an **Activity %** column:
+  - *Timeline* — the chart (with headline Activity % / Active) + the grouped / detailed / **weekly** table for the chosen report type.
+  - *Employees / Projects / Clients* — totals + activity pivoted by that dimension.
   - *Notes* — entries that carry a note.
-  - *Apps & URLs* — ✅ live: aggregates `app_usage` + `url_usage` by user+range into top apps / top domains. Apps populate from the desktop agent now; URLs populate once the browser extension reports to `/v1/ingest/url-usage`.
+  - *Apps & URLs* — ✅ live: aggregates `app_usage` + `url_usage` by user+range into top apps / top domains (no activity column). Apps populate from the desktop agent now; URLs populate once the browser extension reports to `/v1/ingest/url-usage`.
 - Grouped tables support expand/collapse (the `±` / `⊞` affordance on each group row).
 
 ### 0.5 Data sources

@@ -209,7 +209,9 @@ day; summary card with Week/Month totals + Apps/URLs panel + average-activity do
 from `intervals[]`; screenshot slots with red time-range + app badge + thumbnails, trash to delete; click a thumbnail →
 **lightbox** with prev/next) — `/v1/timeline/:id` + `/activity` + `/apps-urls`.
 **Reports** console (Hubstaff-style filter bar — preset-link grid, report-type text links, group-by chip field;
-Summary/Detailed/Weekly, saved reports, CSV/PDF, Apps & URLs; Clients/Projects filters hidden for employees);
+Summary/Detailed/**real ISO-week Weekly** (per-employee × Mon..Sun), saved reports, **per-group/entry Activity %** +
+headline Activity/Active stat, **tab-aware CSV + real `.xlsx` export** ("export what you see", zero-dep writer
+`apps/web/src/lib/xlsx.ts`), PDF print, Apps & URLs; Clients/Projects filters hidden for employees);
 **Team** page (RBAC-scoped per C1; **OpsCore sync auto-disables members absent from the directory**);
 **Projects** + **Clients** pages; **Settings** (org + per-user overrides); **My Account** (`/account`, via `/v1/me/profile`)
 from the **avatar dropdown** (Dashboard · My Account · Log out); **Download** page (**live** — resolves the latest mac + Windows installers from the separate **public** `systemsd/timepro-downloads` repo; Linux leg disabled, unsigned);
