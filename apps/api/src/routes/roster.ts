@@ -1,11 +1,14 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { visibleUsers } from '../lib/access';
 import { getPresence } from '../lib/presence';
 import { resolveWeeklyLimitHours } from '../lib/limits';
+import { DAY_MS, overlapSeconds } from '../lib/time';
+import { listForUsersStartedSince } from '../repositories/time-entries';
+import { getLatestPerUser } from '../repositories/screenshots';
 
 /**
  * Manager/Admin "My Home" roster (S2). One row per visible employee with
@@ -62,17 +65,11 @@ function periodBounds(tzOffsetMinutes: number) {
   const localMidnight = (yy: number, mm: number, dd: number) =>
     Date.UTC(yy, mm, dd) + tzOffsetMinutes * 60_000; // back to real UTC
   const todayStart = localMidnight(y, m, d);
-  const yesterdayStart = todayStart - 86_400_000;
+  const yesterdayStart = todayStart - DAY_MS;
   const mondayOffset = (dow + 6) % 7; // days since Monday
-  const weekStart = todayStart - mondayOffset * 86_400_000;
+  const weekStart = todayStart - mondayOffset * DAY_MS;
   const monthStart = localMidnight(y, m, 1);
   return { now, todayStart, yesterdayStart, weekStart, monthStart };
-}
-
-function overlapSeconds(start: number, end: number, winStart: number, winEnd: number): number {
-  const s = Math.max(start, winStart);
-  const e = Math.min(end, winEnd);
-  return e > s ? Math.floor((e - s) / 1000) : 0;
 }
 
 /** UTC-ms window for the selected day or month (viewer-local), + the anchor date. */
@@ -102,7 +99,7 @@ function selectedWindow(
     return { start: localMidnight(y, m, 1), end: localMidnight(y, m + 1, 1), date: anchor };
   }
   const start = localMidnight(y, m, d);
-  return { start, end: start + 86_400_000, date: anchor };
+  return { start, end: start + DAY_MS, date: anchor };
 }
 
 export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -164,45 +161,10 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
         }
 
         // time entries since the earlier of month-start / selected-window-start
-        const entries = await tx
-          .select({
-            userId: schema.timeEntries.userId,
-            startedAt: schema.timeEntries.startedAt,
-            endedAt: schema.timeEntries.endedAt,
-          })
-          .from(schema.timeEntries)
-          .where(
-            and(
-              eq(schema.timeEntries.organizationId, req.organizationId!),
-              inArray(schema.timeEntries.userId, userIds),
-              isNull(schema.timeEntries.deletedAt),
-              gte(schema.timeEntries.startedAt, fetchFrom),
-            ),
-          );
+        const entries = await listForUsersStartedSince(tx, req.organizationId!, userIds, fetchFrom);
 
-        // latest screenshot per user ("last active"). DISTINCT ON keeps exactly one
-        // row per user — the newest, of any age — served directly by
-        // screenshots_user_captured_idx (org fixed by the WHERE equality). This
-        // replaces an unbounded full-table scan that fetched every screenshot ever.
-        const shots = await tx
-          .selectDistinctOn([schema.screenshots.userId], {
-            userId: schema.screenshots.userId,
-            id: schema.screenshots.id,
-            capturedAt: schema.screenshots.capturedAt,
-          })
-          .from(schema.screenshots)
-          .where(
-            and(
-              eq(schema.screenshots.organizationId, req.organizationId!),
-              inArray(schema.screenshots.userId, userIds),
-            ),
-          )
-          .orderBy(schema.screenshots.userId, desc(schema.screenshots.capturedAt));
-
-        const lastShot = new Map<string, { id: string; at: number }>();
-        for (const s of shots) {
-          if (!lastShot.has(s.userId)) lastShot.set(s.userId, { id: s.id, at: s.capturedAt.getTime() });
-        }
+        // latest screenshot per user ("last active") — one row each, any age.
+        const lastShot = await getLatestPerUser(tx, req.organizationId!, userIds);
 
         // most recent app per user (B5)
         const appRows = await tx
@@ -246,7 +208,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
         const rows = members.map((m) => {
           const a = acc.get(m.userId)!;
           const ls = lastShot.get(m.userId);
-          const lastActiveMs = Math.max(a.lastActive, ls?.at ?? 0);
+          const lastActiveMs = Math.max(a.lastActive, ls?.capturedAt.getTime() ?? 0);
           const limitHours = weeklyLimits.get(m.userId) ?? 0;
           return {
             user_id: m.userId,

@@ -1,13 +1,18 @@
 /**
- * Pure date/grouping math for the Reports engine (`routes/reports.ts`).
- *
- * Extracted here so it's unit-testable in isolation (no Fastify/DB) and reusable.
- * All calendar math is viewer-local: a `tzOffsetMinutes` (browser
- * `getTimezoneOffset()`, i.e. minutes to ADD to local to get UTC) shifts day/week
- * boundaries. NOTE: this uses a single offset for a whole range, so a range that
- * crosses a DST transition is off by an hour on the far side — acceptable for the
- * current no-DST deployment; documented as a known limitation.
+ * Report-domain grouping/rollup logic for the Reports engine (`routes/reports.ts`).
+ * Pure (no Fastify/DB) so it's unit-testable. Shared date/overlap primitives live
+ * in `lib/time.ts`.
  */
+
+import {
+  addCalendarDays,
+  dayIndexInWeek,
+  localDateToUtcMs,
+  overlapSeconds,
+  utcMsToLocalDate,
+  weekStartLocal,
+  DAY_MS,
+} from './time';
 
 export type ReportType = 'summary' | 'detailed' | 'weekly';
 export type GroupDim = 'employee' | 'project' | 'client';
@@ -62,52 +67,6 @@ export interface WeekBlock {
   seconds: number;
   activity_score: number | null;
   rows: WeekRow[];
-}
-
-// ---- date helpers (viewer-local, shifted by tzOffsetMinutes) ----
-
-/** Parse `YYYY-MM-DD` into numeric [year, month(1-12), day]. */
-export function ymd(date: string): [number, number, number] {
-  const parts = date.split('-');
-  return [Number(parts[0]), Number(parts[1]), Number(parts[2])];
-}
-
-/** Local `YYYY-MM-DD` (00:00 wall-clock) → real UTC ms. */
-export function localDateToUtcMs(date: string, tzOffsetMinutes: number): number {
-  const [y, m, d] = ymd(date);
-  return Date.UTC(y, m - 1, d) + tzOffsetMinutes * 60_000;
-}
-
-/** UTC ms → local `YYYY-MM-DD`. */
-export function utcMsToLocalDate(ms: number, tzOffsetMinutes: number): string {
-  const shifted = new Date(ms - tzOffsetMinutes * 60_000);
-  const y = shifted.getUTCFullYear();
-  const m = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(shifted.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-export function isWeekendLocal(date: string): boolean {
-  const [y, m, d] = ymd(date);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun, 6=Sat
-  return dow === 0 || dow === 6;
-}
-
-/** Inclusive list of local dates from..to. */
-export function dateRange(from: string, to: string): string[] {
-  const out: string[] = [];
-  const [fy, fm, fd] = ymd(from);
-  const end = localDateToUtcMs(to, 0);
-  for (let t = Date.UTC(fy, fm - 1, fd); t <= end; t += 86_400_000) {
-    out.push(utcMsToLocalDate(t, 0));
-  }
-  return out;
-}
-
-export function overlapSeconds(start: number, end: number, winStart: number, winEnd: number): number {
-  const s = Math.max(start, winStart);
-  const e = Math.min(end, winEnd);
-  return e > s ? Math.floor((e - s) / 1000) : 0;
 }
 
 // ---- grouping ----
@@ -200,22 +159,6 @@ export function pivot(entries: FlatEntry[], dim: GroupDim): ReportPivot[] {
 
 // ---- weekly (ISO week, Monday-start) ----
 
-/** Monday of the week containing `date` (viewer-local YYYY-MM-DD; pure calendar). */
-export function weekStartLocal(date: string): string {
-  const [y, m, d] = ymd(date);
-  const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // 0 = Monday
-  return utcMsToLocalDate(Date.UTC(y, m - 1, d) - dow * 86_400_000, 0);
-}
-function addCalendarDays(date: string, n: number): string {
-  const [y, m, d] = ymd(date);
-  return utcMsToLocalDate(Date.UTC(y, m - 1, d) + n * 86_400_000, 0);
-}
-/** Mon..Sun index (0..6) of `date` within its own week. */
-export function dayIndexInWeek(date: string): number {
-  const [y, m, d] = ymd(date);
-  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
-}
-
 interface WeekUser {
   key: string;
   label: string;
@@ -244,7 +187,7 @@ export function buildWeeks(entries: FlatEntry[], tz: number): WeekBlock[] {
     let cursor = e.startMs;
     while (cursor < e.endMs) {
       const day = utcMsToLocalDate(cursor, tz);
-      const dayEnd = localDateToUtcMs(day, tz) + 86_400_000;
+      const dayEnd = localDateToUtcMs(day, tz) + DAY_MS;
       const slice = overlapSeconds(cursor, e.endMs, cursor, dayEnd);
       const u = userOf(weekStartLocal(day), e);
       u.days[dayIndexInWeek(day)]! += slice;

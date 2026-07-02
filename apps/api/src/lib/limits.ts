@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import { schema, type DB } from '@timepro/db';
 import { getOrgDefaults } from './settings';
+import { DAY_MS, overlapSeconds } from './time';
 
 /**
  * Weekly time-limit enforcement (B7 / Phase 5, the "weekly-limit" piece).
@@ -18,13 +19,7 @@ export function mondayWeekStartMs(tzOffsetMinutes: number, nowMs = Date.now()): 
   const todayStart = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) +
     tzOffsetMinutes * 60_000;
   const mondayOffset = (shifted.getUTCDay() + 6) % 7; // days since Monday
-  return todayStart - mondayOffset * 86_400_000;
-}
-
-function overlapSeconds(start: number, end: number, winStart: number, winEnd: number): number {
-  const s = Math.max(start, winStart);
-  const e = Math.min(end, winEnd);
-  return e > s ? Math.floor((e - s) / 1000) : 0;
+  return todayStart - mondayOffset * DAY_MS;
 }
 
 /**

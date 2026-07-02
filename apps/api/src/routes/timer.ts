@@ -4,6 +4,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
+import { getCurrentTimer } from '../repositories/time-entries';
 
 const StartBody = z.object({
   project_id: z.string().uuid().optional(),
@@ -63,25 +64,13 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
         );
 
         // Idempotent: if a timer is already running for this user, return it.
-        const running = await tx
-          .select()
-          .from(schema.timeEntries)
-          .where(
-            and(
-              eq(schema.timeEntries.organizationId, req.organizationId!),
-              eq(schema.timeEntries.userId, req.userId!),
-              isNull(schema.timeEntries.endedAt),
-            ),
-          )
-          .limit(1);
-
-        if (running.length > 0) {
-          const r = running[0]!;
+        const running = await getCurrentTimer(tx, req.organizationId!, req.userId!);
+        if (running) {
           return {
-            id: r.id,
-            project_id: r.projectId ?? null,
-            started_at: r.startedAt.toISOString(),
-            description: r.description ?? null,
+            id: running.id,
+            project_id: running.projectId ?? null,
+            started_at: running.startedAt.toISOString(),
+            description: running.description ?? null,
           };
         }
 
@@ -195,18 +184,7 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       return req.withTenantDb(async (tx) => {
-        const [running] = await tx
-          .select()
-          .from(schema.timeEntries)
-          .where(
-            and(
-              eq(schema.timeEntries.organizationId, req.organizationId!),
-              eq(schema.timeEntries.userId, req.userId!),
-              isNull(schema.timeEntries.endedAt),
-            ),
-          )
-          .limit(1);
-
+        const running = await getCurrentTimer(tx, req.organizationId!, req.userId!);
         if (!running) return null;
         return {
           id: running.id,

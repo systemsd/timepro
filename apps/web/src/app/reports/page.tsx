@@ -20,75 +20,9 @@ import {
   type SavedReport,
 } from '@/lib/api';
 import { downloadXlsx, type Cell } from '@/lib/xlsx';
+import { hm, clock, dmy, weekdayShort, actPct } from '@/lib/format';
+import { presetRange, todayLocal, tzLabel, type Preset } from '@/lib/date';
 
-// ---- date helpers (viewer-local) ----
-
-function fmt(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function todayLocal(): string {
-  return fmt(new Date());
-}
-function addDays(date: string, n: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  return fmt(new Date(y, m - 1, d + n));
-}
-/** Monday of the week containing `date`. */
-function weekStart(date: string): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const dt = new Date(y, m - 1, d);
-  const dow = (dt.getDay() + 6) % 7; // 0 = Monday
-  return addDays(date, -dow);
-}
-
-type Preset =
-  | 'today' | 'yesterday' | 'this_week' | 'last_week'
-  | 'this_month' | 'last_month' | 'this_year' | 'last_year';
-
-function presetRange(p: Preset): { from: string; to: string } {
-  const now = new Date();
-  const t = todayLocal();
-  switch (p) {
-    case 'today': return { from: t, to: t };
-    case 'yesterday': return { from: addDays(t, -1), to: addDays(t, -1) };
-    case 'this_week': { const ws = weekStart(t); return { from: ws, to: addDays(ws, 6) }; }
-    case 'last_week': { const ws = addDays(weekStart(t), -7); return { from: ws, to: addDays(ws, 6) }; }
-    case 'this_month': {
-      const from = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
-      const to = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-      return { from, to };
-    }
-    case 'last_month': {
-      const from = fmt(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-      const to = fmt(new Date(now.getFullYear(), now.getMonth(), 0));
-      return { from, to };
-    }
-    case 'this_year': return { from: `${now.getFullYear()}-01-01`, to: `${now.getFullYear()}-12-31` };
-    case 'last_year': return { from: `${now.getFullYear() - 1}-01-01`, to: `${now.getFullYear() - 1}-12-31` };
-  }
-}
-
-function hm(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h === 0 && m === 0) return seconds > 0 ? '<1m' : '0m';
-  return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
-}
-function clock(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-/** Activity score → "74%" (or "—" when there were no samples). */
-function actPct(score: number | null): string {
-  return score == null ? '—' : `${score}%`;
-}
-function dmy(date: string): string {
-  const [y, m, d] = date.split('-') as [string, string, string];
-  return `${d}/${m}/${y.slice(2)}`;
-}
-function weekdayShort(date: string): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short' });
-}
 
 // ---- multi-select dropdown ----
 
@@ -457,11 +391,6 @@ function ReportsInner() {
   const exportXlsx = () => { if (result) exportReport(result, tab, 'xlsx'); };
   const exportPdf = () => window.print();
 
-  const tzLabel = useMemo(() => {
-    const off = -new Date().getTimezoneOffset() / 60;
-    return `UTC${off >= 0 ? '+' : ''}${off}`;
-  }, []);
-
   if (!checked || !session) return <div className="center muted">Loading…</div>;
 
   return (
@@ -490,7 +419,7 @@ function ReportsInner() {
                 </button>
               ))}
             </div>
-            <div className="rep-tz" title="Report timezone (viewer)">Report times are {tzLabel}</div>
+            <div className="rep-tz" title="Report timezone (viewer)">Report times are {tzLabel()}</div>
           </div>
 
           {/* row 2: filters — stacked full-width fields (clients/projects are manager/admin only) */}

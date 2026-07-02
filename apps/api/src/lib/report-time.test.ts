@@ -1,18 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildGroups,
-  buildWeeks,
-  dateRange,
-  dayIndexInWeek,
-  isWeekendLocal,
-  localDateToUtcMs,
-  meanScore,
-  overlapSeconds,
-  pivot,
-  utcMsToLocalDate,
-  weekStartLocal,
-  type FlatEntry,
-} from './report-time';
+import { buildGroups, buildWeeks, meanScore, pivot, type FlatEntry } from './report-time';
 
 /** Build a FlatEntry with sensible defaults for the fields a test doesn't care about. */
 function entry(p: Partial<FlatEntry>): FlatEntry {
@@ -25,40 +12,6 @@ function entry(p: Partial<FlatEntry>): FlatEntry {
 }
 
 const UTC = 0;
-const PKT = -300; // UTC+5 (getTimezoneOffset returns minutes to add to reach UTC)
-
-describe('date helpers', () => {
-  it('round-trips local date ↔ UTC ms at UTC and UTC+5', () => {
-    for (const tz of [UTC, PKT]) {
-      const ms = localDateToUtcMs('2026-01-15', tz);
-      expect(utcMsToLocalDate(ms, tz)).toBe('2026-01-15');
-    }
-  });
-
-  it('places local midnight correctly for UTC+5', () => {
-    // Local midnight 2026-01-15 in UTC+5 is 19:00 UTC the previous day.
-    expect(localDateToUtcMs('2026-01-15', PKT)).toBe(Date.UTC(2026, 0, 14, 19, 0, 0));
-  });
-
-  it('isWeekendLocal flags Sat/Sun only', () => {
-    expect(isWeekendLocal('2024-01-06')).toBe(true); // Saturday
-    expect(isWeekendLocal('2024-01-07')).toBe(true); // Sunday
-    expect(isWeekendLocal('2024-01-08')).toBe(false); // Monday
-  });
-
-  it('dateRange is inclusive and crosses month boundaries', () => {
-    expect(dateRange('2026-01-30', '2026-02-02')).toEqual([
-      '2026-01-30', '2026-01-31', '2026-02-01', '2026-02-02',
-    ]);
-    expect(dateRange('2026-03-03', '2026-03-03')).toEqual(['2026-03-03']);
-  });
-
-  it('overlapSeconds clips to the window and floors to whole seconds', () => {
-    expect(overlapSeconds(1_000, 5_000, 2_000, 4_000)).toBe(2); // [2s,4s) → 2s
-    expect(overlapSeconds(0, 1_000, 5_000, 9_000)).toBe(0); // disjoint
-    expect(overlapSeconds(0, 3_500, 0, 10_000)).toBe(3); // floors 3.5 → 3
-  });
-});
 
 describe('meanScore', () => {
   it('returns null when there are no samples', () => {
@@ -111,20 +64,7 @@ describe('buildWeeks (ISO week, Monday-start)', () => {
     const end = Date.UTC(2024, 0, 8, 1, 0, 0); // Mon 01:00Z
     const weeks = buildWeeks([entry({ userId: 'U1', displayName: 'A', startMs: start, endMs: end, seconds: 7200 })], UTC);
     expect(weeks.map((w) => w.week_start)).toEqual(['2024-01-01', '2024-01-08']); // asc
-    // Sunday hour → prior week's Sun slot (index 6); Monday hour → next week's Mon slot (index 0)
-    expect(weeks[0]!.rows[0]!.days[6]).toBe(3600);
-    expect(weeks[1]!.rows[0]!.days[0]).toBe(3600);
-  });
-});
-
-describe('weekStartLocal / dayIndexInWeek', () => {
-  it('weekStartLocal returns the containing Monday', () => {
-    expect(weekStartLocal('2024-01-06')).toBe('2024-01-01'); // Sat → Mon
-    expect(weekStartLocal('2024-01-07')).toBe('2024-01-01'); // Sun → Mon
-    expect(weekStartLocal('2024-01-08')).toBe('2024-01-08'); // Mon → itself
-  });
-  it('dayIndexInWeek is 0 for Monday, 6 for Sunday', () => {
-    expect(dayIndexInWeek('2024-01-08')).toBe(0);
-    expect(dayIndexInWeek('2024-01-07')).toBe(6);
+    expect(weeks[0]!.rows[0]!.days[6]).toBe(3600); // Sunday hour → prior week
+    expect(weeks[1]!.rows[0]!.days[0]).toBe(3600); // Monday hour → next week
   });
 });

@@ -5,16 +5,19 @@ import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
 import {
-  buildGroups,
-  buildWeeks,
+  bucketSecondsByDay,
   dateRange,
-  DEFAULT_GROUP_BY,
   isWeekendLocal,
   localDateToUtcMs,
-  meanScore,
   overlapSeconds,
-  pivot,
   utcMsToLocalDate,
+} from '../lib/time';
+import {
+  buildGroups,
+  buildWeeks,
+  DEFAULT_GROUP_BY,
+  meanScore,
+  pivot,
   type FlatEntry,
 } from '../lib/report-time';
 
@@ -348,17 +351,12 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           });
         }
 
-        // Daily series (bar chart).
+        // Daily series (bar chart) — split each entry across day boundaries so
+        // overnight entries land on the right bars.
         const dayBuckets = new Map<string, number>();
         for (const e of flat) {
-          // split across day boundaries so overnight entries land on the right bars
-          let cursor = e.startMs;
-          while (cursor < e.endMs) {
-            const day = utcMsToLocalDate(cursor, q.tzOffsetMinutes);
-            const dayEnd = localDateToUtcMs(day, q.tzOffsetMinutes) + 86_400_000;
-            const slice = overlapSeconds(cursor, e.endMs, cursor, dayEnd);
-            dayBuckets.set(day, (dayBuckets.get(day) ?? 0) + slice);
-            cursor = dayEnd;
+          for (const { date, seconds } of bucketSecondsByDay(e.startMs, e.endMs, q.tzOffsetMinutes)) {
+            dayBuckets.set(date, (dayBuckets.get(date) ?? 0) + seconds);
           }
         }
         const daily = dateRange(q.from, q.to).map((date) => ({

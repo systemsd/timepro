@@ -4,15 +4,9 @@ import { useEffect, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import { getAgentLogs, type AgentLog, type DiagUser } from '@/lib/api';
+import { todayLocal } from '@/lib/date';
 
 type LevelFilter = '' | 'info' | 'warn' | 'error';
-
-const pad = (n: number) => String(n).padStart(2, '0');
-/** Today as a local `YYYY-MM-DD` (matches the <input type="date"> value). */
-function todayLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 export default function DiagnosticsPage() {
   const { session, checked } = useSession();
