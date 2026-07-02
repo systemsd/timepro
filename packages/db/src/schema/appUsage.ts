@@ -1,4 +1,4 @@
-import { index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { pkId, timestamps, tsCol } from './_common';
 
 /** Active-application intervals (B5). Window titles truncated to 256 chars. */
@@ -23,6 +23,17 @@ export const appUsage = pgTable(
       t.organizationId,
       t.userId,
       t.startedAt.desc(),
+    ),
+    // Idempotency key: a retried ingest batch must not double-insert an interval.
+    // A user's foreground app sessions are serial, so (started_at, app_name) is
+    // effectively unique per user+device. Paired with .onConflictDoNothing() in
+    // the ingest route.
+    naturalUnique: uniqueIndex('app_usage_natural_uniq').on(
+      t.organizationId,
+      t.userId,
+      t.deviceId,
+      t.startedAt,
+      t.appName,
     ),
   }),
 );

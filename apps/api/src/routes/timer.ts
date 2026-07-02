@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
@@ -52,6 +52,16 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
     async (req) => {
       const body = req.body;
       return req.withTenantDb(async (tx) => {
+        // Serialize concurrent starts for this user so the check-then-insert below
+        // is race-free (double-click / two devices / offline replay carry different
+        // client_event_ids, so the unique key can't dedupe them). Transaction-scoped
+        // advisory lock → auto-released on commit/rollback, pool-safe. Two-arg
+        // hashtext keys on (org, user); a hash collision only serializes briefly and
+        // never affects correctness (the real (org,user) re-check does that).
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${req.organizationId!}), hashtext(${req.userId!}))`,
+        );
+
         // Idempotent: if a timer is already running for this user, return it.
         const running = await tx
           .select()

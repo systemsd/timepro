@@ -5,9 +5,9 @@ import { projects } from './projects';
 import { users } from './users';
 
 /**
- * Partitioned by `started_at` (monthly) in the manually-edited migration —
- * drizzle-kit doesn't generate partitioning DDL today, so the partition
- * setup lives in `migrations/0001_partitions.sql`.
+ * NOTE: not partitioned today. Monthly partitioning by `started_at` was
+ * planned (docs/02) but never created — no PARTITION DDL exists in any
+ * migration. This is a plain table; treat it as such when adding indexes.
  */
 export const timeEntries = pgTable(
   'time_entries',

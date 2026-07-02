@@ -1,4 +1,4 @@
-import { index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { pkId, timestamps, tsCol } from './_common';
 
 /**
@@ -27,6 +27,17 @@ export const urlUsage = pgTable(
       t.organizationId,
       t.domain,
       t.startedAt.desc(),
+    ),
+    // Idempotency key: a retried ingest batch must not double-insert an interval.
+    // `browser` is part of the key so the same domain/instant reported by two
+    // browsers for one user doesn't collapse. Paired with .onConflictDoNothing().
+    naturalUnique: uniqueIndex('url_usage_natural_uniq').on(
+      t.organizationId,
+      t.userId,
+      t.deviceId,
+      t.startedAt,
+      t.domain,
+      t.browser,
     ),
   }),
 );
