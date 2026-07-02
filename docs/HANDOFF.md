@@ -5,7 +5,7 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
-## 🚧 CURRENT STATE (2026-07-01) — Live product: field-debugging the desktop agent + timeline
+## 🚧 CURRENT STATE (2026-07-02) — Live product: strengthening Reports; field-debugging the desktop agent + timeline
 
 > Backend + downloads have been LIVE since 2026-06-18 (prod `timepro.systemsd.co` / `api.timepro.systemsd.co`,
 > push-to-`main` auto-deploy). The recent arc: **editable Timeline activities + screenshot UX**, a
@@ -13,6 +13,25 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 > self-healing sweep** for inflated reports, **desktop persistent login + idle auto-resume**, and a
 > **timeline screenshot-grouping fix**. Current desktop version on `main` = **v0.1.12**. Historical
 > deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+
+### Shipped 2026-07-02 (Reports: activity + real weekly + xlsx export — PR #42)
+Admin flagged Reports as a priority; after a gap audit we did 3 of 4 tracks (money/billable deferred).
+`apps/api/src/routes/reports.ts` + `apps/web/src/app/reports/page.tsx` + new `apps/web/src/lib/xlsx.ts`.
+- **Activity/productivity** — `POST /v1/reports/run` attributes `activity_samples` to entries via `time_entry_id`
+  and rolls a **0–100 activity score** (Timeline-donut basis) + **active/idle seconds** into every group, pivot, and
+  detail row, plus top-level `avg_activity_score`/`active_seconds`/`idle_seconds`. UI: an **Activity column** across
+  the tables + a headline **Activity % / Active** stat by the chart. Apps/URLs carry no activity (`null`).
+- **Real Weekly report** — `type=weekly` now returns a `weeks[]` block (**ISO week, Monday-start**): per-week card →
+  per-employee rows × **Mon..Sun** + activity + total; seconds split across day/week boundaries. Was previously
+  identical to "Summary by employee". New expandable `WeeklyTable`.
+- **Export upgrade** — new **zero-dep `.xlsx` writer** (`apps/web/src/lib/xlsx.ts`: STORE zip + CRC32, inline strings,
+  numeric cells) and **"export what you see"**: CSV *and* Excel export the **active result tab** (incl. the weekly
+  timesheet). Separate CSV + Excel buttons; PDF still browser-print.
+- **Verified:** api + web typecheck, web build, xlsx zip integrity (`unzip -t`) + XML escaping. **Not** run live e2e
+  (needs OpsCore + DB + tracked data). No desktop change → no `tauri.conf.json` bump.
+- **Still open on Reports:** money/billable report (rates + `is_billable` exist in schema, unused — the highest-value
+  remaining track); approval-aware reporting; DST-correct tz (single viewer offset today); server/async export for
+  >90-day ranges (Detailed still capped at 5000 rows).
 
 ### Shipped 2026-07-01 (timeline grouping fix)
 - **Timeline no longer misfiles orphan screenshots** (`routes/timeline.ts`, PR #40, deployed + prod-verified).
