@@ -506,7 +506,16 @@ packages/auth/
 
 **Dependencies**: `argon2`, `otplib`, `jose`, `@casl/ability`.
 
-### 3.4 `packages/ui`
+### 3.4 `packages/ui` — ✅ BUILT (but not as specced below)
+
+> **Status update.** This package is now scaffolded and in use by `web`, but the shadcn/ui + Tailwind + Radix
+> design below was **not** adopted — the app is plain-CSS + CSS-variable tokens with zero UI deps, so a
+> shadcn/tailwind migration would be a big-bang rewrite against the grain. The actual package is **source-only
+> React + one plain `styles.css`**, consumed via Next `transpilePackages` (no build step). First batch: `Button`,
+> `Modal`/`ConfirmModal`/`PromptModal`, an accessible `Select`, and the shared line-icons. The living catalog +
+> design-token contract is **[`packages/ui/ui.md`](../packages/ui/ui.md)** — read/update that, not this section.
+> The library grows gradually (per-screen extraction). The block below is the original aspiration, kept for
+> reference only.
 
 **Responsibility**: shadcn/ui components + TimePro-branded primitives, used by `web` and `desktop`.
 

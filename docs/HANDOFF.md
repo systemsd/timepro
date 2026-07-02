@@ -5,14 +5,38 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
-## 🚧 CURRENT STATE (2026-07-02) — Live product: strengthening Reports; field-debugging the desktop agent + timeline
+## 🚧 CURRENT STATE (2026-07-02) — Live product; post-audit engineering-quality arc
 
 > Backend + downloads have been LIVE since 2026-06-18 (prod `timepro.systemsd.co` / `api.timepro.systemsd.co`,
-> push-to-`main` auto-deploy). The recent arc: **editable Timeline activities + screenshot UX**, a
-> diagnose→fix→verify loop on the desktop agent (inflated time, missing screenshots), a **server-side
-> self-healing sweep** for inflated reports, **desktop persistent login + idle auto-resume**, and a
-> **timeline screenshot-grouping fix**. Current desktop version on `main` = **v0.1.12**. Historical
-> deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+> push-to-`main` auto-deploy). Current desktop version on `main` = **v0.1.12**.
+>
+> **Latest arc — a post-audit quality push (4 merged PRs #44–47, all CI-green):** an engineering audit graded the
+> app strong on domain logic but weak on tests/CI, DRY/coupling, UI standards, and observability (and found the
+> docs' "RLS fail-closed" claim was false). We ran it as a 4-step roadmap:
+> **(1)** fixed live data bugs (double-counted app/URL time, double timers, roster full-scan) — deployed + prod-verified;
+> **(2)** the safety net — Sentry (DSN-gated) + first unit/integration tests + a **PR CI gate** (typecheck/unit/build,
+> integration on Postgres, desktop cargo-check);
+> **(3)** clean-up — shared `lib/time.ts`, an exemplar `repositories/` layer, web helper consolidation;
+> **(4)** the UI library — `@timepro/ui` (accessible Button/Modal/Select) + `ui.md`, adopted in reports +
+> EditActivityModal, fixing the `<div onClick>`/`window.confirm` a11y gaps.
+> **Remaining priority: the security milestone (real auth + RLS + rate-limiting) before onboarding tenant #2.**
+> Historical deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+
+### Shipped 2026-07-02 (post-audit quality arc — PRs #44–47)
+- **#44 data-integrity fixes** (deployed + prod-verified): idempotent app/URL ingest (natural-key UNIQUE +
+  `onConflictDoNothing`, migration `0007`), a per-(org,user) **advisory lock** on `timer/start` (no double timers),
+  and roster latest-screenshot via **`DISTINCT ON`** (no unbounded scan).
+- **#45 safety nets:** `@sentry/node` DSN-gated (`lib/observability.ts`); vitest **unit** tests (report/time math,
+  xlsx, dedupe) + **integration** tests booting the app on a test DB (**tenancy/RBAC isolation**, ingest
+  idempotency, timer race, roster); **`.github/workflows/ci.yml`** gates every PR.
+- **#46 clean-up:** `lib/time.ts` (killed the 4× `overlapSeconds` + inline date math), `repositories/`
+  (time-entries + screenshots, adopted by timer/roster/me/timeline), web `lib/date.ts`+`lib/format.ts`.
+- **#47 UI library:** `@timepro/ui` (source-only, `transpilePackages`) — Button, Modal/Confirm/Prompt, accessible
+  Select, icons — + **`packages/ui/ui.md`**; adopted in reports + EditActivityModal (replaced `window.prompt`/
+  `confirm` and the non-keyboard dropdowns). Component tests under jsdom.
+- **Doc correction (this arc):** the long-standing "**RLS enforces isolation (fail-closed)**" claim was **false** —
+  no RLS/partitioning DDL exists; isolation is app-layer filters, now backed by the tenancy integration test.
+  CLAUDE.md + docs/12 corrected.
 
 ### Shipped 2026-07-02 (Reports: activity + real weekly + xlsx export — PR #42)
 Admin flagged Reports as a priority; after a gap audit we did 3 of 4 tracks (money/billable deferred).
@@ -321,9 +345,12 @@ C8 break-glass local owner · C9 screenshot self-delete admin-configurable defau
 
 ## 8. Git state
 
-- **TimePro: committed & clean.** `main` is current; the latest merges (all deployed): timeline grouping fix
-  (#40), abandoned-timer sweep (#37), desktop v0.1.12 persist-login + auto-resume (#38), plus the docs PRs.
-  Current shipped desktop version = **v0.1.12**.
+- **TimePro: committed & clean.** `main` is current. Latest merges: the **post-audit quality arc #44–47**
+  (data fixes, safety nets + CI, clean-up/repos, `@timepro/ui`); #44 is deployed + prod-verified, the rest are
+  code/infra (no separate deploy needed). Earlier: reports enhancements (#42), timeline grouping fix (#40).
+  Current shipped desktop version = **v0.1.12** (unchanged this arc — no desktop code changed).
+- **CI:** every PR now runs `.github/workflows/ci.yml` (typecheck/unit/build + integration on Postgres + desktop
+  cargo-check). Keep it green; add tests with the code they cover.
 - **Working tree:** only untracked strays (`video*.mov`, `List`, `SETUP-FOR-HAMID.md`) — ignore them.
 - ⚠️ **OpsCore (separate repo): may still have uncommitted integration files** —
   `app/api/timepro/`, `lib/timepro.ts`, edited `lib/auth.config.ts`, `.env`. Commit there so they survive a reset.
