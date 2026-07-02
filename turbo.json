@@ -34,6 +34,10 @@
       "outputs": ["coverage/**"],
       "dependsOn": ["^build"]
     },
+    "test:int": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
     "clean": {
       "cache": false
     },

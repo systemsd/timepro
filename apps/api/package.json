@@ -11,6 +11,7 @@
     "lint": "echo '[api] lint stub — wire @timepro/eslint-config later' && exit 0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:int": "vitest run -c vitest.integration.config.ts",
     "gen:openapi": "tsx scripts/gen-openapi.ts"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "@fastify/sensible": "^6.0.0",
     "@fastify/under-pressure": "^9.0.0",
     "@fastify/websocket": "^11",
+    "@sentry/node": "^10.63.0",
     "@timepro/db": "workspace:*",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.0",

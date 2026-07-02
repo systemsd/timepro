@@ -6,7 +6,7 @@ import { requireAuth } from '../plugins/tenant';
 const ZERO_DEVICE = '00000000-0000-0000-0000-000000000000';
 
 /** Keep the first row per key (drops in-batch duplicates before insert). */
-function dedupeBy<T>(rows: T[], keyOf: (r: T) => string): T[] {
+export function dedupeBy<T>(rows: T[], keyOf: (r: T) => string): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
   for (const r of rows) {

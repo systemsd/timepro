@@ -1,0 +1,95 @@
+name: CI
+
+# PR gate (and a re-check on main). Runs typecheck + unit tests + build for the
+# whole workspace, boots the API against a Postgres for integration tests, and
+# compile-checks the desktop Rust agent. All Ubuntu runners (1× minutes).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: typecheck · unit · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  integration:
+    name: integration (api + postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: timepro_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The integration globalSetup migrates this DB (and creates citext/pgcrypto).
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/timepro_test
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/timepro_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SIGNING_KEY_PRIMARY: ci-jwt-signing-key-0123456789-abcdefgh
+      AUTH_INTERNAL_SHARED_SECRET: ci-internal-shared-secret
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @timepro/api test:int
+
+  desktop:
+    name: desktop (cargo check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgbm-dev libxdo-dev libssl-dev build-essential file \
+            libx11-dev libxss-dev libxrandr-dev libxi-dev \
+            libpipewire-0.3-dev libdbus-1-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      # Tauri's build script needs the frontend dist (tauri.conf frontendDist) to exist.
+      - name: Build desktop frontend
+        run: pnpm --filter @timepro/desktop build
+      - name: cargo check
+        working-directory: apps/desktop/src-tauri
+        run: cargo check

@@ -15,6 +15,7 @@
     "lint:fix": "turbo run lint -- --fix",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:int": "turbo run test:int",
     "test:watch": "turbo run test -- --watch",
     "clean": "turbo run clean && rimraf node_modules .turbo",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
