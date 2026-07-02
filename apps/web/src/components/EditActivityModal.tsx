@@ -11,7 +11,7 @@ import {
   type TimeEntryHistory,
   type TimelineActivity,
 } from '@/lib/api';
-import { CloseIcon } from '@/components/icons';
+import { Button, ConfirmModal, Modal } from '@timepro/ui';
 import { pad } from '@/lib/format';
 const toHM = (iso: string) => {
   const d = new Date(iso);
@@ -53,7 +53,7 @@ export function EditActivityModal({
   const [description, setDescription] = useState(activity.description ?? '');
   const [start, setStart] = useState(toHM(activity.started_at));
   const [end, setEnd] = useState(activity.ended_at ? toHM(activity.ended_at) : '');
-  const [markDelete, setMarkDelete] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitAt, setSplitAt] = useState(toHM(activity.started_at));
   const [busy, setBusy] = useState(false);
@@ -63,12 +63,6 @@ export function EditActivityModal({
     getAssignableProjects(userId).then((r) => setProjects(r.projects)).catch(() => {});
     getTimeEntryHistory(activity.id).then((r) => setHistory(r.history)).catch(() => {});
   }, [activity.id, userId]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   const newStartIso = withHM(activity.started_at, start);
   const newEndIso = running || !end ? null : withHM(activity.ended_at!, end);
@@ -84,15 +78,16 @@ export function EditActivityModal({
     return opts;
   }, [projects, activity.project_id, activity.project_name]);
 
+  const performDelete = async () => {
+    setError(null);
+    setConfirmDelete(false);
+    setBusy(true);
+    try { await deleteTimeEntry(activity.id); onSaved(); onClose(); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false); }
+  };
+
   const save = async () => {
     setError(null);
-    if (markDelete) {
-      if (!window.confirm('Delete this activity? This removes its tracked time.')) return;
-      setBusy(true);
-      try { await deleteTimeEntry(activity.id); onSaved(); onClose(); }
-      catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false); }
-      return;
-    }
     if (rangeInvalid) { setError('Start must be before end.'); return; }
     const patch: Parameters<typeof updateTimeEntry>[1] = {};
     if ((projectId || null) !== (activity.project_id ?? null)) patch.project_id = projectId || null;
@@ -121,13 +116,23 @@ export function EditActivityModal({
   };
 
   return (
-    <div className="act-modal" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="act-card" onClick={(e) => e.stopPropagation()}>
-        <div className="act-head">
-          <h3>Edit Time</h3>
-          <button className="act-x" onClick={onClose} aria-label="Close"><CloseIcon size={18} /></button>
-        </div>
-        <p className="act-sub">Trim the time range, change the project or note, split, or delete.</p>
+    <>
+      <Modal
+        open={!confirmDelete}
+        onClose={onClose}
+        title="Edit Time"
+        width={480}
+        footer={
+          <>
+            <Button variant="danger" disabled={busy} style={{ marginRight: 'auto' }} onClick={() => setConfirmDelete(true)}>
+              Delete
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>
+            <Button variant="primary" disabled={busy || rangeInvalid} onClick={save}>Save Changes</Button>
+          </>
+        }
+      >
+        <p className="act-sub">Trim the time range, change the project or note, or split.</p>
 
         <div className="act-times">
           <input type="time" value={start} disabled={running} onChange={(e) => setStart(e.target.value)} />
@@ -156,23 +161,20 @@ export function EditActivityModal({
 
         {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
 
-        <div className="act-row-between">
-          <label className="act-del">
-            <input type="checkbox" checked={markDelete} onChange={(e) => setMarkDelete(e.target.checked)} />
-            Delete this activity
-          </label>
-          {!running && (
+        {!running && (
+          <div className="act-row-between">
+            <span />
             <button type="button" className="act-link" onClick={() => setSplitOpen((v) => !v)}>
               Split Activity
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {splitOpen && !running && (
           <div className="act-split">
             <span>Split at</span>
             <input type="time" value={splitAt} onChange={(e) => setSplitAt(e.target.value)} />
-            <button type="button" className="act-btn" disabled={busy} onClick={doSplit}>Split</button>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={doSplit}>Split</Button>
           </div>
         )}
 
@@ -189,15 +191,18 @@ export function EditActivityModal({
             </ul>
           </details>
         )}
+      </Modal>
 
-        <div className="act-actions">
-          <button type="button" className="act-btn primary" disabled={busy || (!markDelete && rangeInvalid)} onClick={save}>
-            Save Changes
-          </button>
-          <button type="button" className="act-btn" disabled={busy} onClick={onClose}>Cancel</button>
-        </div>
-      </div>
-    </div>
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete activity?"
+        message="This removes the activity and its tracked time. It can't be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={performDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    </>
   );
 }
 

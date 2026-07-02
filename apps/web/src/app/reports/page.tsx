@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
@@ -22,58 +22,8 @@ import {
 import { downloadXlsx, type Cell } from '@/lib/xlsx';
 import { hm, clock, dmy, weekdayShort, actPct } from '@/lib/format';
 import { presetRange, todayLocal, tzLabel, type Preset } from '@/lib/date';
+import { Button, ConfirmModal, PromptModal, Select } from '@timepro/ui';
 
-
-// ---- multi-select dropdown ----
-
-function MultiSelect({
-  placeholder, options, selected, onChange,
-}: {
-  placeholder: string;
-  options: Array<{ id: string; name: string }>;
-  selected: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-  const toggle = (id: string) =>
-    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-  const nameOf = (id: string) => options.find((o) => o.id === id)?.name ?? id;
-  return (
-    <div className="rep-ms" ref={ref}>
-      <div className={`rep-ms-field ${selected.length ? 'has' : ''}`} onClick={() => setOpen((v) => !v)}>
-        {selected.length === 0 && <span className="rep-ms-ph">{placeholder}</span>}
-        {selected.map((id) => (
-          <span className="rep-ms-chip" key={id}>
-            <button type="button" aria-label={`Remove ${nameOf(id)}`}
-              onClick={(e) => { e.stopPropagation(); toggle(id); }}>×</button>
-            {nameOf(id)}
-          </span>
-        ))}
-        <span className="rep-caret">▾</span>
-      </div>
-      {open && (
-        <div className="rep-ms-menu">
-          {selected.length > 0 && (
-            <button type="button" className="rep-ms-clear" onClick={() => onChange([])}>Clear selection</button>
-          )}
-          {options.length === 0 && <div className="rep-ms-empty">None</div>}
-          {options.map((o) => (
-            <label key={o.id} className="rep-ms-item">
-              <input type="checkbox" checked={selected.includes(o.id)} onChange={() => toggle(o.id)} />
-              {o.name}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ---- group table (recursive) ----
 
@@ -172,44 +122,6 @@ const REPORT_LINKS: Array<{ id: string; label: string; mode: ReportType; groupBy
   { id: 'detailed', label: 'Detailed', mode: 'detailed', tab: 'timeline' },
   { id: 'apps', label: 'Apps & URLs', mode: 'summary', groupBy: ['employee'], tab: 'apps' },
 ];
-
-/** Group-by chip field: selected dims as removable "Group by X" chips + a dropdown to add more. */
-function GroupByField({ value, onChange }: { value: GroupDim[]; onChange: (v: GroupDim[]) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-  const remaining = GROUP_DIMS.filter((d) => !value.includes(d.value));
-  const lbl = (v: GroupDim) => GROUP_DIMS.find((d) => d.value === v)?.label.toLowerCase() ?? v;
-  return (
-    <div className="rep-gb" ref={ref}>
-      <div className="rep-gb-field" onClick={() => setOpen((o) => !o)}>
-        {value.length === 0 && <span className="rep-gb-ph">Group by…</span>}
-        {value.map((v) => (
-          <span className="rep-gb-chip" key={v}>
-            <button type="button" aria-label={`Remove group by ${lbl(v)}`}
-              onClick={(e) => { e.stopPropagation(); onChange(value.filter((x) => x !== v)); }}>×</button>
-            Group by {lbl(v)}
-          </span>
-        ))}
-        <span className="rep-caret">▾</span>
-      </div>
-      {open && remaining.length > 0 && (
-        <div className="rep-ms-menu">
-          {remaining.map((d) => (
-            <button type="button" key={d.value} className="rep-ms-clear"
-              onClick={() => { onChange([...value, d.value]); setOpen(false); }}>
-              Group by {d.label.toLowerCase()}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 type Tab = 'timeline' | 'employees' | 'projects' | 'clients' | 'notes' | 'apps';
 
@@ -362,22 +274,25 @@ function ReportsInner() {
     });
   };
 
-  const saveCurrent = async () => {
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const doSave = async (name: string, isShared: boolean) => {
     const input = currentInput();
+    setSaveOpen(false);
     if (!input) return;
-    const name = window.prompt('Name this report:');
-    if (!name || !name.trim()) return;
-    const isShared = window.confirm('Share with the whole organization?\n(OK = shared, Cancel = just me)');
     try {
-      await createSavedReport(name.trim(), { ...input, preset: activePreset }, isShared);
+      await createSavedReport(name, { ...input, preset: activePreset }, isShared);
       await reloadSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const removeSaved = async (id: string) => {
-    if (!window.confirm('Delete this saved report?')) return;
+  const doDelete = async () => {
+    if (!deleteId) return;
+    const id = deleteId;
+    setDeleteId(null);
     try {
       await deleteSavedReport(id);
       await reloadSaved();
@@ -424,11 +339,11 @@ function ReportsInner() {
 
           {/* row 2: filters — stacked full-width fields (clients/projects are manager/admin only) */}
           <div className="rep-stack">
-            <MultiSelect placeholder="Select employees and groups" options={filters?.employees ?? []} selected={userIds} onChange={setUserIds} />
+            <Select multiple placeholder="Select employees and groups" ariaLabel="Select employees" options={filters?.employees ?? []} value={userIds} onChange={setUserIds} />
             {session.role !== 'employee' && (
               <>
-                <MultiSelect placeholder="Select projects" options={(filters?.projects ?? []).map((p) => ({ id: p.id, name: p.name }))} selected={projectIds} onChange={setProjectIds} />
-                <MultiSelect placeholder="Select clients" options={filters?.clients ?? []} selected={clientIds} onChange={setClientIds} />
+                <Select multiple placeholder="Select projects" ariaLabel="Select projects" options={(filters?.projects ?? []).map((p) => ({ id: p.id, name: p.name }))} value={projectIds} onChange={setProjectIds} />
+                <Select multiple placeholder="Select clients" ariaLabel="Select clients" options={filters?.clients ?? []} value={clientIds} onChange={setClientIds} />
               </>
             )}
             <input className="rep-note" placeholder="Note contains text" value={noteContains} onChange={(e) => setNoteContains(e.target.value)} />
@@ -454,7 +369,14 @@ function ReportsInner() {
           </div>
 
           {(mode === 'summary' || mode === 'weekly') && (
-            <GroupByField value={groupBy} onChange={setGroupBy} />
+            <Select
+              multiple
+              ariaLabel="Group by"
+              placeholder="Group by…"
+              options={GROUP_DIMS.map((d) => ({ id: d.value, name: `Group by ${d.label.toLowerCase()}` }))}
+              value={groupBy}
+              onChange={(v) => setGroupBy(v as GroupDim[])}
+            />
           )}
 
           {/* row 4: toggles + actions */}
@@ -465,13 +387,13 @@ function ReportsInner() {
               <label className="rep-check disabled" title="Absences arrive in sub-phase 5F"><input type="checkbox" disabled /> Include absences</label>
             )}
             <div className="rep-actions-right">
-              <button className="rep-export" onClick={exportXlsx} disabled={!result} title="Download the current tab as an Excel workbook (.xlsx)">Excel</button>
-              <button className="rep-export" onClick={exportCsv} disabled={!result} title="Download the current tab as CSV">CSV</button>
-              <button className="rep-export" onClick={exportPdf} disabled={!result} title="Print / save as PDF">PDF</button>
-              <button className="rep-export" onClick={saveCurrent} disabled={mode === 'saved'} title="Save this report configuration">Save report</button>
-              <button className="rep-show" onClick={run} disabled={loading || mode === 'saved'}>
+              <Button variant="secondary" size="sm" onClick={exportXlsx} disabled={!result} title="Download the current tab as an Excel workbook (.xlsx)">Excel</Button>
+              <Button variant="secondary" size="sm" onClick={exportCsv} disabled={!result} title="Download the current tab as CSV">CSV</Button>
+              <Button variant="secondary" size="sm" onClick={exportPdf} disabled={!result} title="Print / save as PDF">PDF</Button>
+              <Button variant="secondary" size="sm" onClick={() => setSaveOpen(true)} disabled={mode === 'saved'} title="Save this report configuration">Save report</Button>
+              <Button variant="primary" size="sm" onClick={run} disabled={loading || mode === 'saved'}>
                 {loading ? 'Running…' : 'Show report'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -479,7 +401,7 @@ function ReportsInner() {
         {error && <div className="error">{error}</div>}
 
         {mode === 'saved' ? (
-          <SavedList saved={saved} onLoad={loadSaved} onDelete={removeSaved} />
+          <SavedList saved={saved} onLoad={loadSaved} onDelete={setDeleteId} />
         ) : !result ? (
           <div className="rep-placeholder">Pick a range and click <strong>Show report</strong>.</div>
         ) : (
@@ -489,6 +411,26 @@ function ReportsInner() {
           </div>
         )}
       </div>
+
+      <PromptModal
+        open={saveOpen}
+        title="Save report"
+        label="Report name"
+        placeholder="e.g. Weekly team summary"
+        confirmLabel="Save"
+        checkboxLabel="Share with the whole organization"
+        onSubmit={doSave}
+        onCancel={() => setSaveOpen(false)}
+      />
+      <ConfirmModal
+        open={deleteId !== null}
+        title="Delete saved report?"
+        message="This removes the saved report configuration. It can't be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={doDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }
