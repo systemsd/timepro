@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import { CheckIcon, CloseIcon, PencilIcon, TrashIcon } from '@/components/icons';
+import { pad } from '@/lib/format';
+import { todayLocal, tzLabel } from '@/lib/date';
 import {
   deleteScreenshot,
   getMyEffectiveSettings,
@@ -21,16 +23,11 @@ import { EditActivityModal } from '@/components/EditActivityModal';
 import { useScreenshotUrl } from '@/lib/useScreenshotUrl';
 
 // ---- calendar-strip helpers (viewer-local) ----
-const pad = (n: number) => String(n).padStart(2, '0');
 const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = Date.getDay()
 const FULL_DAY_SECONDS = 8 * 3600; // a "full" day bar = 8h tracked
 // 24-hour ruler labels: 12am, 1am … 11pm
 const HOURS = Array.from({ length: 24 }, (_, i) => `${i % 12 === 0 ? 12 : i % 12}${i < 12 ? 'am' : 'pm'}`);
 
-function todayLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 function monthOf(date: string): string {
   return date.slice(0, 7);
 }
@@ -64,14 +61,6 @@ function weekSeconds(activity: Record<string, number>, date: string): number {
     total += activity[`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`] ?? 0;
   }
   return total;
-}
-/** Viewer UTC offset, e.g. "UTC+5" / "UTC-4:30". */
-function tzLabel(): string {
-  const off = -new Date().getTimezoneOffset(); // minutes east of UTC
-  const sign = off >= 0 ? '+' : '-';
-  const h = Math.floor(Math.abs(off) / 60);
-  const m = Math.abs(off) % 60;
-  return `UTC${sign}${h}${m ? ':' + pad(m) : ''}`;
 }
 
 export default function TimelinePage() {

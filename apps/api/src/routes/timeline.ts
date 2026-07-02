@@ -1,9 +1,11 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, asc, eq, gte, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, gte, isNull, lt, or } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, visibleUsers } from '../lib/access';
+import { DAY_MS, bucketSecondsByDay, localDateToUtcMs } from '../lib/time';
+import { listForUserDay } from '../repositories/screenshots';
 
 /**
  * Employee daily timeline (S3): a day's tracked total + the day's activities
@@ -68,11 +70,11 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
       // an employee may view their own timeline; managers their team; admins all
       if (!canView(visible, req.params.userId)) forbid('Not allowed to view this timeline');
 
-      const [yy, mm, dd] = req.query.date.split('-').map(Number) as [number, number, number];
       const tz = req.query.tzOffsetMinutes;
-      const dayStartMs = Date.UTC(yy, mm - 1, dd) + tz * 60_000; // local midnight → real UTC
+      const dayStartMs = localDateToUtcMs(req.query.date, tz); // local midnight → real UTC
+      const dayEndMs = dayStartMs + DAY_MS;
       const dayStart = new Date(dayStartMs);
-      const dayEnd = new Date(dayStartMs + 86_400_000);
+      const dayEnd = new Date(dayEndMs);
 
       return req.withTenantDb(async (tx) => {
         const [user] = await tx
@@ -125,7 +127,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
         for (const e of entries) {
           const endMs = e.endedAt ? e.endedAt.getTime() : Date.now();
           const s = Math.max(e.startedAt.getTime(), dayStartMs);
-          const en = Math.min(endMs, dayStartMs + 86_400_000);
+          const en = Math.min(endMs, dayEndMs);
           if (en > s) {
             tracked += Math.floor((en - s) / 1000);
             intervals.push({ start: new Date(s).toISOString(), end: new Date(en).toISOString() });
@@ -171,23 +173,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           return best;
         };
 
-        const shots = await tx
-          .select({
-            id: schema.screenshots.id,
-            capturedAt: schema.screenshots.capturedAt,
-            appName: schema.screenshots.appName,
-            activityScore: schema.screenshots.activityScore,
-          })
-          .from(schema.screenshots)
-          .where(
-            and(
-              eq(schema.screenshots.organizationId, req.organizationId!),
-              eq(schema.screenshots.userId, req.params.userId),
-              gte(schema.screenshots.capturedAt, dayStart),
-              lt(schema.screenshots.capturedAt, dayEnd),
-            ),
-          )
-          .orderBy(asc(schema.screenshots.capturedAt));
+        const shots = await listForUserDay(tx, req.organizationId!, req.params.userId, dayStart, dayEnd);
 
         // activity samples for the day (B4)
         const samples = await tx
@@ -295,10 +281,6 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
       const monthEnd = lm(yy, mm, 1);
       const now = Date.now();
       const windowEnd = Math.min(monthEnd, now);
-      const toLocalDate = (ms: number) => {
-        const s = new Date(ms - tz * 60_000);
-        return `${s.getUTCFullYear()}-${String(s.getUTCMonth() + 1).padStart(2, '0')}-${String(s.getUTCDate()).padStart(2, '0')}`;
-      };
 
       return req.withTenantDb(async (tx) => {
         const entries = await tx
@@ -319,15 +301,10 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
 
         const buckets = new Map<string, number>();
         for (const e of entries) {
-          let cursor = Math.max(e.startedAt.getTime(), monthStart);
+          const start = Math.max(e.startedAt.getTime(), monthStart);
           const end = Math.min(e.endedAt ? e.endedAt.getTime() : now, windowEnd);
-          while (cursor < end) {
-            const day = toLocalDate(cursor);
-            const [dy, dm, dd] = day.split('-').map(Number) as [number, number, number];
-            const dayEnd = lm(dy, dm - 1, dd) + 86_400_000;
-            const slice = Math.min(end, dayEnd) - cursor;
-            if (slice > 0) buckets.set(day, (buckets.get(day) ?? 0) + Math.floor(slice / 1000));
-            cursor = dayEnd;
+          for (const { date, seconds } of bucketSecondsByDay(start, end, tz)) {
+            if (seconds > 0) buckets.set(date, (buckets.get(date) ?? 0) + seconds);
           }
         }
 
@@ -366,13 +343,14 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
       const visible = await visibleUsers(req);
       if (!canView(visible, req.params.userId)) forbid('Not allowed to view this timeline');
 
-      const [yy, mm, dd] = req.query.date.split('-').map(Number) as [number, number, number];
       const tz = req.query.tzOffsetMinutes;
-      const dayStartMs = Date.UTC(yy, mm - 1, dd) + tz * 60_000;
+      const dayStartMs = localDateToUtcMs(req.query.date, tz);
+      const dayEndMs = dayStartMs + DAY_MS;
       const dayStart = new Date(dayStartMs);
-      const dayEnd = new Date(dayStartMs + 86_400_000);
+      const dayEnd = new Date(dayEndMs);
+      // NOTE: rounds (not floors) — preserved as-is so per-app/domain totals don't shift.
       const overlap = (s: number, e: number) =>
-        Math.max(0, Math.min(e, dayStartMs + 86_400_000) - Math.max(s, dayStartMs)) / 1000;
+        Math.max(0, Math.min(e, dayEndMs) - Math.max(s, dayStartMs)) / 1000;
 
       return req.withTenantDb(async (tx) => {
         const appRows = await tx

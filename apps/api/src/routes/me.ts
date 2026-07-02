@@ -1,9 +1,10 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
+import { listForUsersStartedSince } from '../repositories/time-entries';
 
 const TodayResponse = z.object({
   tracked_seconds: z.number(),
@@ -40,18 +41,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
     async (req) => {
       const dayStart = startOfUtcDay();
       return req.withTenantDb(async (tx) => {
-        const entries = await tx
-          .select()
-          .from(schema.timeEntries)
-          .where(
-            and(
-              eq(schema.timeEntries.organizationId, req.organizationId!),
-              eq(schema.timeEntries.userId, req.userId!),
-              isNull(schema.timeEntries.deletedAt),
-              gte(schema.timeEntries.startedAt, dayStart),
-            ),
-          )
-          .orderBy(sql`started_at desc`);
+        const entries = await listForUsersStartedSince(tx, req.organizationId!, [req.userId!], dayStart);
 
         let tracked = 0;
         let running = false;

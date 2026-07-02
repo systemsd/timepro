@@ -5,16 +5,7 @@ import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import { getProfile, type Profile } from '@/lib/api';
 import { KeyIcon, MailIcon, ShieldIcon, TrashIcon, UserIcon } from '@/components/icons';
-
-/** Browser timezone as `UTC±HH:MM` (C6 — viewer timezone). */
-function tzLabel(): string {
-  const off = -new Date().getTimezoneOffset(); // minutes east of UTC
-  const sign = off >= 0 ? '+' : '-';
-  const a = Math.abs(off);
-  const hh = String(Math.floor(a / 60)).padStart(2, '0');
-  const mm = String(a % 60).padStart(2, '0');
-  return `UTC${sign}${hh}:${mm}`;
-}
+import { tzLabel } from '@/lib/date';
 
 // Account actions backed by real password/JWT auth — arrives in Phase 6.
 const SOON = 'Available once account auth ships (Phase 6)';

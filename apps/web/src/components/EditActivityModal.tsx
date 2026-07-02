@@ -12,8 +12,7 @@ import {
   type TimelineActivity,
 } from '@/lib/api';
 import { CloseIcon } from '@/components/icons';
-
-const pad = (n: number) => String(n).padStart(2, '0');
+import { pad } from '@/lib/format';
 const toHM = (iso: string) => {
   const d = new Date(iso);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
