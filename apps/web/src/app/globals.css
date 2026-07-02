@@ -7,6 +7,25 @@
   --border: #e6e8eb;
   --green: #2faa46;
   --accent: #5b56e0;
+
+  /* Extended design tokens (consumed by @timepro/ui — see packages/ui/ui.md). */
+  --accent-hover: #4a45cf;
+  --on-accent: #ffffff;
+  --danger: #e2604f;
+  --danger-hover: #cf4f3f;
+  --warn: #d9932b;
+  --success: var(--green);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --shadow-modal: 0 12px 40px rgba(20, 24, 33, 0.22);
+  --overlay: rgba(20, 24, 33, 0.42);
 }
 
 * { box-sizing: border-box; }

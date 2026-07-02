@@ -15,7 +15,7 @@ A production-grade, multi-tenant employee time-tracking and productivity-monitor
 
 - **`docs/`** — complete architecture documentation. Start with [`docs/00-overview.md`](docs/00-overview.md); for live build status read [`docs/STATUS.md`](docs/STATUS.md) and [`docs/HANDOFF.md`](docs/HANDOFF.md).
 - **`apps/`** — `api` (Fastify), `web` (Next.js), `desktop` (Tauri + Rust + React). *Built.*
-- **`packages/`** — `db` (Drizzle), `tsconfig`, `eslint-config`. *Built.*
+- **`packages/`** — `db` (Drizzle), `ui` (shared React primitives — catalog in [`packages/ui/ui.md`](packages/ui/ui.md)), `tsconfig`, `eslint-config`. *Built.*
 - **`infra/`** — Docker Compose for local dev (Postgres, Redis, Minio, MailHog), OTel collector.
 
 > The docs describe additional services (`worker`, `scheduler`, `realtime`) and packages
