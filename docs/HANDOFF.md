@@ -5,13 +5,31 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
-## 🚧 CURRENT STATE (2026-06-30) — Live product: editable timeline + field-debugging the desktop agent
+## 🚧 CURRENT STATE (2026-07-01) — Live product: field-debugging the desktop agent + timeline
 
 > Backend + downloads have been LIVE since 2026-06-18 (prod `timepro.systemsd.co` / `api.timepro.systemsd.co`,
 > push-to-`main` auto-deploy). The recent arc: **editable Timeline activities + screenshot UX**, a
 > diagnose→fix→verify loop on the desktop agent (inflated time, missing screenshots), a **server-side
-> self-healing sweep** for inflated reports, and **desktop persistent login + idle auto-resume**. Current
-> desktop version on `main` = **v0.1.12**. Historical deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+> self-healing sweep** for inflated reports, **desktop persistent login + idle auto-resume**, and a
+> **timeline screenshot-grouping fix**. Current desktop version on `main` = **v0.1.12**. Historical
+> deploy/download detail: [`docs/14-deploy-and-download-progress.md`](14-deploy-and-download-progress.md).
+
+### Shipped 2026-07-01 (timeline grouping fix)
+- **Timeline no longer misfiles orphan screenshots** (`routes/timeline.ts`, PR #40, deployed + prod-verified).
+  Hamza saw 6:16 AM screenshots under a 12:19 PM activity. Root cause: the activities query pulled only entries
+  that *started* within ~1.25 days while the screenshots query pulled the whole day, so screenshots owned by an
+  earlier long-running/overnight entry had no activity to group under — and `actAt`'s `?? acts[0]` fallback
+  dumped them onto the **first** activity. Fix: (1) activities query now includes entries that **overlap** the
+  day (`started < dayEnd AND (ended IS NULL OR ended >= dayStart)`, matching the Tasks query); (2) `actAt`
+  attaches a capture only to an activity whose range **contains** it (+90s grace) and returns `null` otherwise,
+  so a genuine orphan is dropped, never misfiled. **Verified:** the noon activity went from 78 screenshots
+  (span 6:16 AM–12:34 PM) to 7 (12:20–12:34); every activity now shows only its own shots.
+- **Hamza's "time stuck at 2h 04m" (2026-06-30)** was diagnosed as the idle/sleep pause-without-resume issue on
+  **v0.1.11** (his logs show the timer constantly pausing on sleep/idle and needing a manual restart). **Already
+  fixed by v0.1.12 idle auto-resume — Hamza just needs to update** (he's still on v0.1.11). Not a code change.
+- **Open follow-up:** the ~70 orphan morning screenshots are now *dropped* (no owning entry surfaced even with the
+  overlap query — likely a deleted/pre-window entry). Optional: investigate their origin, or add an "Untracked"
+  bucket so orphans stay visible at their real times instead of hidden.
 
 ### Shipped 2026-06-30 (reporting self-heal + desktop UX)
 - **Abandoned-timer sweep (server, self-healing)** — `apps/api/src/lib/timer-sweep.ts`, scheduled in
@@ -284,24 +302,33 @@ C8 break-glass local owner · C9 screenshot self-delete admin-configurable defau
 
 ## 8. Git state
 
-- **TimePro: committed & clean.** `main` @ `0002431 feat: implement OpsCore integration…`
-  (Phases 1/3/4 + the TrackFlow→TimePro rename are in history).
-- ⚠️ **OpsCore: still has uncommitted files** — the integration I added:
-  `app/api/timepro/` (handoff + sync routes), `lib/timepro.ts`, edited `lib/auth.config.ts`, and `.env`.
-  These need committing in the OpsCore repo or they'll be lost on a fresh checkout/reset.
+- **TimePro: committed & clean.** `main` is current; the latest merges (all deployed): timeline grouping fix
+  (#40), abandoned-timer sweep (#37), desktop v0.1.12 persist-login + auto-resume (#38), plus the docs PRs.
+  Current shipped desktop version = **v0.1.12**.
+- **Working tree:** only untracked strays (`video*.mov`, `List`, `SETUP-FOR-HAMID.md`) — ignore them.
+- ⚠️ **OpsCore (separate repo): may still have uncommitted integration files** —
+  `app/api/timepro/`, `lib/timepro.ts`, edited `lib/auth.config.ts`, `.env`. Commit there so they survive a reset.
 
 ---
 
 ## 9. Recommended next steps
 
-Phases 0–5 are done; **Phase 6 (multi-tenancy) is PAUSED** — the focus is the single-tenant Systemsd product,
-which is **live against production OpsCore and verified end-to-end** (web + desktop). Sensible next work:
+Phases 0–5 done; **Phase 6 (multi-tenancy) PAUSED** (single-tenant Systemsd is the focus, live + verified).
 
-1. **Verify & polish the built UIs** in a browser (employee dashboard, Timeline strip + screenshot modal, Reports, My Account) + remaining **Phase P** wins (keyboard/mouse activity counts, Reports shareable links).
-2. **Phase 7 — Ship pipeline** — installer sign/notarize/host so the agent can be distributed (needs signing creds + hosting).
-3. **Phase 8 / 9** — scale & storage (rollups, S3), then billing — only when needed.
-4. **Phase 6 (multi-tenancy)** — resume if/when going multi-company (real auth + onboarding + RLS).
+**Immediate follow-ups from the last session:**
+1. **Get Hamza onto v0.1.12** — fixes his "stuck time" (idle auto-resume) + persistent login. He's on v0.1.11.
+2. ⚠️ **Rotate the OpsCore shared secret** (`OPSCORE_HANDOFF_SECRET` / `TIMEPRO_HANDOFF_SECRET`) — the committed
+   `…-dev` default was exposed while the repo was public. Confirm prod `.env` overrides it; rotate if not.
+3. ⚠️ **Switch the repo back to private** at the new billing cycle, and set a **non-$0 org Actions budget** (+ a
+   payment method) so releases/deploys don't get blocked again.
+4. *(Optional)* Investigate the orphan-morning-screenshots origin, or add an "Untracked" timeline bucket.
 
-> **DB note:** the production OpsCore login + sync populated the `Systemsd` org (employees/projects/clients); the migration journal is intact.
+**Larger tracks (when ready):** Phase 7 ship pipeline — **code-sign/notarize the mac build** (biggest gap:
+every unsigned update revokes Screen Recording) + re-enable Linux · Phase 8/9 scale/storage/billing · Phase 6.
+
+**How to debug a field issue (the muscle-memory from last session):** pull `/v1/admin/agent-logs` with the
+`x-dev-org`/`x-dev-user` headers (Anas is allow-listed); to inspect a specific employee's roster/timeline, set
+`x-dev-user` to *their* id (self-view is allowed). Cross-check screenshot `captured_at` vs the upload-log `ts` to
+tell a real data bug from a display bug. See §3 for run commands.
 
 Everything verified this session is reproducible via the commands in §3.

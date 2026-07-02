@@ -177,6 +177,13 @@ employees get no clients/projects) · `realtime` (ws presence).
   (project/description/trim), `POST /:id/split`, `DELETE /:id` (soft-delete), `GET /:id/history`. Every mutation
   is written to `audit_logs` via `lib/audit.ts`. RBAC mirrors screenshot-delete; employee self-edit is gated by
   the `time.allow_self_edit` setting (default on). Soft-deleted entries are filtered in `timeline`/`roster`/`me`.
+- **Timeline groups screenshots under the activity whose time range contains them.** `routes/timeline.ts` builds
+  the day's activities from entries that **overlap** the day (`started < dayEnd AND (ended IS NULL OR ended >=
+  dayStart)` — not just ones that *started* in-window, else long-running/overnight entries' screenshots orphan),
+  and `actAt` attaches a capture only to a containing activity (+90s grace), returning `null` for a genuine
+  orphan so it's **dropped, not misfiled onto the first activity** (the old `?? acts[0]` bug showed 6am shots
+  under a noon entry). A capture's `captured_at` is agent-stamped but has matched the server upload time in the
+  field (no clock skew) — trust it.
 - **Desktop capture loop offloads uploads.** `capture/mod.rs` `run_capture_loop` reserves the cadence slot then
   spawns capture+upload as a task — a slow upload (seen ~11–21 s on weak links) no longer freezes the single-task
   loop. Diagnostics: `capture status`, `capture_ms`/`upload_ms`, `capture loop slow` (in agent logs).
