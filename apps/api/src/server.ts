@@ -4,11 +4,14 @@ loadRootEnv();
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { closeDb } from '@timepro/db';
+import { initObservability } from './lib/observability';
 import { pruneAgentLogs, pruneAllOrgs } from './lib/retention';
 import { sweepAbandonedTimers } from './lib/timer-sweep';
 
 async function main() {
   const config = loadConfig();
+  // Initialize error tracking before anything else (no-op unless SENTRY_DSN is set).
+  initObservability(config);
   const app = await buildApp(config);
 
   try {

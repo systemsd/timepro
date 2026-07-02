@@ -1,5 +1,6 @@
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
+import { captureError } from '../lib/observability';
 
 /**
  * RFC 9457 `application/problem+json` error envelope.
@@ -36,9 +37,22 @@ export const errorMapperPlugin = fp(async (app) => {
     const statusCode = e.statusCode ?? 500;
     const code = e.code ?? 'internal_error';
     const message = e.message ?? 'Internal Server Error';
+    // Don't leak internal error text (constraint names, SQL, paths) to clients on
+    // a 5xx in production — mask both title and detail, keep the full stack in logs.
+    const maskServerError = statusCode >= 500 && process.env.NODE_ENV === 'production';
+    const publicMessage = maskServerError
+      ? 'An unexpected error occurred. The error has been logged.'
+      : message;
 
     if (statusCode >= 500) {
       req.log.error({ err, request_id: requestId }, 'request failed');
+      captureError(err, {
+        request_id: requestId,
+        method: req.method,
+        url: req.url,
+        org: (req as { organizationId?: string }).organizationId,
+        user: (req as { userId?: string }).userId,
+      });
     } else {
       req.log.warn({ err, request_id: requestId }, 'request rejected');
     }
@@ -48,13 +62,10 @@ export const errorMapperPlugin = fp(async (app) => {
       .type('application/problem+json')
       .send({
         type: `https://api.timepro.app/errors/${code}`,
-        title: message,
+        title: maskServerError ? 'Internal Server Error' : message,
         status: statusCode,
         code,
-        detail:
-          statusCode >= 500 && process.env.NODE_ENV === 'production'
-            ? 'An unexpected error occurred. The error has been logged.'
-            : message,
+        detail: publicMessage,
         request_id: requestId,
       });
   });

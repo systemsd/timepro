@@ -4,6 +4,19 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
+import {
+  buildGroups,
+  buildWeeks,
+  dateRange,
+  DEFAULT_GROUP_BY,
+  isWeekendLocal,
+  localDateToUtcMs,
+  meanScore,
+  overlapSeconds,
+  pivot,
+  utcMsToLocalDate,
+  type FlatEntry,
+} from '../lib/report-time';
 
 /**
  * Reports console query API (B7 / Phase 5, sub-phase 5A).
@@ -115,244 +128,6 @@ const ReportResponse = z.object({
 });
 
 const DETAIL_CAP = 5000; // sync read guard; large pulls move to exports (5C/§8)
-
-// ---- date helpers (viewer-local, shifted by tzOffsetMinutes) ----
-
-/** Parse `YYYY-MM-DD` into numeric [year, month(1-12), day]. */
-function ymd(date: string): [number, number, number] {
-  const parts = date.split('-');
-  return [Number(parts[0]), Number(parts[1]), Number(parts[2])];
-}
-
-/** Local `YYYY-MM-DD` (00:00 wall-clock) → real UTC ms. */
-function localDateToUtcMs(date: string, tzOffsetMinutes: number): number {
-  const [y, m, d] = ymd(date);
-  return Date.UTC(y, m - 1, d) + tzOffsetMinutes * 60_000;
-}
-
-/** UTC ms → local `YYYY-MM-DD`. */
-function utcMsToLocalDate(ms: number, tzOffsetMinutes: number): string {
-  const shifted = new Date(ms - tzOffsetMinutes * 60_000);
-  const y = shifted.getUTCFullYear();
-  const m = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(shifted.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function isWeekendLocal(date: string): boolean {
-  const [y, m, d] = ymd(date);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun, 6=Sat
-  return dow === 0 || dow === 6;
-}
-
-/** Inclusive list of local dates from..to. */
-function dateRange(from: string, to: string): string[] {
-  const out: string[] = [];
-  const [fy, fm, fd] = ymd(from);
-  const end = localDateToUtcMs(to, 0);
-  for (let t = Date.UTC(fy, fm - 1, fd); t <= end; t += 86_400_000) {
-    out.push(utcMsToLocalDate(t, 0));
-  }
-  return out;
-}
-
-function overlapSeconds(start: number, end: number, winStart: number, winEnd: number): number {
-  const s = Math.max(start, winStart);
-  const e = Math.min(end, winEnd);
-  return e > s ? Math.floor((e - s) / 1000) : 0;
-}
-
-// ---- grouping ----
-
-const DEFAULT_GROUP_BY: Record<ReportQuery['type'], ReturnType<typeof GroupDim.parse>[]> = {
-  summary: ['employee', 'project'],
-  detailed: [],
-  weekly: ['employee'],
-};
-
-interface FlatEntry {
-  entryId: string;
-  userId: string;
-  displayName: string;
-  projectId: string | null;
-  projectName: string | null;
-  clientId: string | null;
-  clientName: string | null;
-  note: string | null;
-  startMs: number; // clipped to range
-  endMs: number; // clipped to range
-  seconds: number; // clipped duration
-  isManual: boolean;
-  // Activity attributed to this entry (from activity_samples via time_entry_id).
-  activeSeconds: number;
-  idleSeconds: number;
-  scoreSum: number; // Σ activity_score over the entry's minute samples
-  sampleCount: number; // number of samples (for the mean)
-}
-
-/** Mean activity score (0-100) or null when there were no samples. */
-function meanScore(scoreSum: number, sampleCount: number): number | null {
-  return sampleCount > 0 ? Math.round(scoreSum / sampleCount) : null;
-}
-
-function dimValue(e: FlatEntry, dim: z.infer<typeof GroupDim>): { key: string | null; label: string } {
-  if (dim === 'employee') return { key: e.userId, label: e.displayName };
-  if (dim === 'project') return { key: e.projectId, label: e.projectName ?? 'No project' };
-  return { key: e.clientId, label: e.clientName ?? 'No client' };
-}
-
-interface MutableNode {
-  dim: z.infer<typeof GroupDim>;
-  key: string | null;
-  label: string;
-  seconds: number;
-  scoreSum: number;
-  sampleCount: number;
-  children: Map<string, MutableNode>;
-}
-
-function buildGroups(entries: FlatEntry[], groupBy: z.infer<typeof GroupDim>[]) {
-  const roots = new Map<string, MutableNode>();
-  for (const e of entries) {
-    let level = roots;
-    for (const dim of groupBy) {
-      const { key, label } = dimValue(e, dim);
-      const mapKey = `${key ?? '∅'}`;
-      let node = level.get(mapKey);
-      if (!node) {
-        node = { dim, key, label, seconds: 0, scoreSum: 0, sampleCount: 0, children: new Map() };
-        level.set(mapKey, node);
-      }
-      node.seconds += e.seconds;
-      node.scoreSum += e.scoreSum;
-      node.sampleCount += e.sampleCount;
-      level = node.children;
-    }
-  }
-  const toArray = (m: Map<string, MutableNode>): unknown[] =>
-    Array.from(m.values())
-      .sort((a, b) => b.seconds - a.seconds)
-      .map((n) => ({
-        dim: n.dim,
-        key: n.key,
-        label: n.label,
-        seconds: n.seconds,
-        activity_score: meanScore(n.scoreSum, n.sampleCount),
-        ...(n.children.size > 0 ? { children: toArray(n.children) } : {}),
-      }));
-  return toArray(roots);
-}
-
-function pivot(entries: FlatEntry[], dim: z.infer<typeof GroupDim>) {
-  const m = new Map<
-    string,
-    { key: string | null; label: string; seconds: number; scoreSum: number; sampleCount: number }
-  >();
-  for (const e of entries) {
-    const { key, label } = dimValue(e, dim);
-    const mk = `${key ?? '∅'}`;
-    const cur = m.get(mk);
-    if (cur) {
-      cur.seconds += e.seconds;
-      cur.scoreSum += e.scoreSum;
-      cur.sampleCount += e.sampleCount;
-    } else {
-      m.set(mk, { key, label, seconds: e.seconds, scoreSum: e.scoreSum, sampleCount: e.sampleCount });
-    }
-  }
-  return Array.from(m.values())
-    .sort((a, b) => b.seconds - a.seconds)
-    .map((n) => ({
-      key: n.key,
-      label: n.label,
-      seconds: n.seconds,
-      activity_score: meanScore(n.scoreSum, n.sampleCount),
-    }));
-}
-
-// ---- weekly (ISO week, Monday-start) ----
-
-/** Monday of the week containing `date` (viewer-local YYYY-MM-DD; pure calendar). */
-function weekStartLocal(date: string): string {
-  const [y, m, d] = ymd(date);
-  const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // 0 = Monday
-  return utcMsToLocalDate(Date.UTC(y, m - 1, d) - dow * 86_400_000, 0);
-}
-function addCalendarDays(date: string, n: number): string {
-  const [y, m, d] = ymd(date);
-  return utcMsToLocalDate(Date.UTC(y, m - 1, d) + n * 86_400_000, 0);
-}
-/** Mon..Sun index (0..6) of `date` within its own week. */
-function dayIndexInWeek(date: string): number {
-  const [y, m, d] = ymd(date);
-  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
-}
-
-interface WeekUser {
-  key: string;
-  label: string;
-  days: number[]; // length 7, Mon..Sun seconds
-  scoreSum: number;
-  sampleCount: number;
-}
-
-/**
- * Real weekly report: split each entry's seconds across day boundaries into the
- * containing ISO week (so overnight/overlong entries land on the right week+day);
- * activity is attributed once, to the entry's start week. Rows are per employee.
- */
-function buildWeeks(entries: FlatEntry[], tz: number): z.infer<typeof WeekBlock>[] {
-  const weeks = new Map<string, Map<string, WeekUser>>();
-  const userOf = (weekStart: string, e: FlatEntry): WeekUser => {
-    let users = weeks.get(weekStart);
-    if (!users) weeks.set(weekStart, (users = new Map()));
-    let u = users.get(e.userId);
-    if (!u) users.set(e.userId, (u = { key: e.userId, label: e.displayName, days: [0, 0, 0, 0, 0, 0, 0], scoreSum: 0, sampleCount: 0 }));
-    return u;
-  };
-
-  for (const e of entries) {
-    // seconds → split across day boundaries, each day into its own week
-    let cursor = e.startMs;
-    while (cursor < e.endMs) {
-      const day = utcMsToLocalDate(cursor, tz);
-      const dayEnd = localDateToUtcMs(day, tz) + 86_400_000;
-      const slice = overlapSeconds(cursor, e.endMs, cursor, dayEnd);
-      const u = userOf(weekStartLocal(day), e);
-      u.days[dayIndexInWeek(day)]! += slice;
-      cursor = dayEnd;
-    }
-    // activity → once, to the entry's start week
-    const startWeek = weekStartLocal(utcMsToLocalDate(e.startMs, tz));
-    const su = userOf(startWeek, e);
-    su.scoreSum += e.scoreSum;
-    su.sampleCount += e.sampleCount;
-  }
-
-  return Array.from(weeks.entries())
-    .sort(([a], [b]) => (a < b ? -1 : 1))
-    .map(([weekStart, users]) => {
-      const rows = Array.from(users.values())
-        .map((u) => ({
-          key: u.key,
-          label: u.label,
-          seconds: u.days.reduce((t, s) => t + s, 0),
-          activity_score: meanScore(u.scoreSum, u.sampleCount),
-          days: u.days,
-        }))
-        .sort((a, b) => b.seconds - a.seconds);
-      const seconds = rows.reduce((t, r) => t + r.seconds, 0);
-      const scoreSum = Array.from(users.values()).reduce((t, u) => t + u.scoreSum, 0);
-      const sampleCount = Array.from(users.values()).reduce((t, u) => t + u.sampleCount, 0);
-      return {
-        week_start: weekStart,
-        week_end: addCalendarDays(weekStart, 6),
-        seconds,
-        activity_score: meanScore(scoreSum, sampleCount),
-        rows,
-      };
-    });
-}
 
 export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
   /** Filter-bar options (RBAC-scoped employees + the client/project catalogs). */
