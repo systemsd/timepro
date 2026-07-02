@@ -3,8 +3,9 @@ import { index, pgTable, primaryKey, smallint, uuid } from 'drizzle-orm/pg-core'
 import { tsCol } from './_common';
 
 /**
- * One row per (user, minute). Partitioned monthly on bucket_minute
- * (DDL in migrations/0001_partitions.sql).
+ * One row per (user, minute). NOTE: not partitioned today — the monthly
+ * partitioning described in docs/02 was never created (no PARTITION DDL exists
+ * in any migration). This is a plain table; treat it as such when adding indexes.
  */
 export const activitySamples = pgTable(
   'activity_samples',

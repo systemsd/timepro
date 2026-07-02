@@ -180,9 +180,12 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             ),
           );
 
-        // latest screenshot per user (cap to month for cheapness; "last active")
+        // latest screenshot per user ("last active"). DISTINCT ON keeps exactly one
+        // row per user — the newest, of any age — served directly by
+        // screenshots_user_captured_idx (org fixed by the WHERE equality). This
+        // replaces an unbounded full-table scan that fetched every screenshot ever.
         const shots = await tx
-          .select({
+          .selectDistinctOn([schema.screenshots.userId], {
             userId: schema.screenshots.userId,
             id: schema.screenshots.id,
             capturedAt: schema.screenshots.capturedAt,
@@ -194,7 +197,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
               inArray(schema.screenshots.userId, userIds),
             ),
           )
-          .orderBy(desc(schema.screenshots.capturedAt));
+          .orderBy(schema.screenshots.userId, desc(schema.screenshots.capturedAt));
 
         const lastShot = new Map<string, { id: string; at: number }>();
         for (const s of shots) {

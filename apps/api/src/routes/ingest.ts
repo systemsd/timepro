@@ -5,6 +5,19 @@ import { requireAuth } from '../plugins/tenant';
 
 const ZERO_DEVICE = '00000000-0000-0000-0000-000000000000';
 
+/** Keep the first row per key (drops in-batch duplicates before insert). */
+function dedupeBy<T>(rows: T[], keyOf: (r: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const r of rows) {
+    const k = keyOf(r);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
 /**
  * High-volume capture ingest from the desktop agent (B4/B5).
  * Idempotent — duplicate buckets/events are ignored.
@@ -88,8 +101,11 @@ export const ingestRoutes: FastifyPluginAsyncZod = async (app) => {
           startedAt: new Date(e.started_at),
           endedAt: new Date(e.ended_at),
         }));
-        await tx.insert(schema.appUsage).values(rows);
-        return { accepted: rows.length };
+        // Idempotent (matches app_usage_natural_uniq): dedupe within the batch,
+        // then ignore any interval already stored from an earlier retry.
+        const deduped = dedupeBy(rows, (r) => `${r.startedAt.getTime()}|${r.appName}`);
+        await tx.insert(schema.appUsage).values(deduped).onConflictDoNothing();
+        return { accepted: req.body.events.length };
       });
     },
   );
@@ -132,8 +148,11 @@ export const ingestRoutes: FastifyPluginAsyncZod = async (app) => {
           startedAt: new Date(e.started_at),
           endedAt: new Date(e.ended_at),
         }));
-        await tx.insert(schema.urlUsage).values(rows);
-        return { accepted: rows.length };
+        // Idempotent (matches url_usage_natural_uniq): dedupe within the batch,
+        // then ignore any interval already stored from an earlier retry.
+        const deduped = dedupeBy(rows, (r) => `${r.startedAt.getTime()}|${r.domain}|${r.browser}`);
+        await tx.insert(schema.urlUsage).values(deduped).onConflictDoNothing();
+        return { accepted: req.body.events.length };
       });
     },
   );
