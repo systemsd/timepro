@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
@@ -49,6 +49,7 @@ const GroupNode: z.ZodType<unknown> = z.lazy(() =>
     key: z.string().nullable(),
     label: z.string(),
     seconds: z.number(),
+    activity_score: z.number().nullable(), // mean 0-100 across the group's samples, null if none
     children: z.array(GroupNode).optional(),
   }),
 );
@@ -64,6 +65,7 @@ const DetailRow = z.object({
   from: z.string(), // ISO
   to: z.string(), // ISO (running timers clipped to now)
   duration_seconds: z.number(),
+  activity_score: z.number().nullable(), // mean 0-100 across the entry's samples, null if none
   is_manual: z.boolean(),
 });
 
@@ -71,6 +73,24 @@ const Pivot = z.object({
   key: z.string().nullable(),
   label: z.string(),
   seconds: z.number(),
+  activity_score: z.number().nullable(),
+});
+
+// One ISO week (Monday-start) for the Weekly report: total + per-employee rows,
+// each with a Mon..Sun day breakdown.
+const WeekRow = z.object({
+  key: z.string().nullable(),
+  label: z.string(),
+  seconds: z.number(),
+  activity_score: z.number().nullable(),
+  days: z.array(z.number()), // length 7, Mon..Sun, seconds per day
+});
+const WeekBlock = z.object({
+  week_start: z.string(), // YYYY-MM-DD (Monday, viewer-local)
+  week_end: z.string(), // YYYY-MM-DD (Sunday)
+  seconds: z.number(),
+  activity_score: z.number().nullable(),
+  rows: z.array(WeekRow), // one per employee, desc by seconds
 });
 
 const ReportResponse = z.object({
@@ -78,8 +98,12 @@ const ReportResponse = z.object({
   type: z.enum(['summary', 'detailed', 'weekly']),
   group_by: z.array(GroupDim),
   total_seconds: z.number(),
+  active_seconds: z.number(), // summed active seconds from activity samples
+  idle_seconds: z.number(), // summed idle seconds from activity samples
+  avg_activity_score: z.number().nullable(), // overall mean 0-100, null if no samples
   daily: z.array(z.object({ date: z.string(), seconds: z.number(), is_weekend: z.boolean() })),
   groups: z.array(GroupNode), // populated for summary + weekly
+  weeks: z.array(WeekBlock), // populated for weekly
   detailed: z.array(DetailRow), // populated for detailed
   detailed_truncated: z.boolean(),
   by_employee: z.array(Pivot),
@@ -159,6 +183,16 @@ interface FlatEntry {
   endMs: number; // clipped to range
   seconds: number; // clipped duration
   isManual: boolean;
+  // Activity attributed to this entry (from activity_samples via time_entry_id).
+  activeSeconds: number;
+  idleSeconds: number;
+  scoreSum: number; // Σ activity_score over the entry's minute samples
+  sampleCount: number; // number of samples (for the mean)
+}
+
+/** Mean activity score (0-100) or null when there were no samples. */
+function meanScore(scoreSum: number, sampleCount: number): number | null {
+  return sampleCount > 0 ? Math.round(scoreSum / sampleCount) : null;
 }
 
 function dimValue(e: FlatEntry, dim: z.infer<typeof GroupDim>): { key: string | null; label: string } {
@@ -172,6 +206,8 @@ interface MutableNode {
   key: string | null;
   label: string;
   seconds: number;
+  scoreSum: number;
+  sampleCount: number;
   children: Map<string, MutableNode>;
 }
 
@@ -184,10 +220,12 @@ function buildGroups(entries: FlatEntry[], groupBy: z.infer<typeof GroupDim>[]) 
       const mapKey = `${key ?? '∅'}`;
       let node = level.get(mapKey);
       if (!node) {
-        node = { dim, key, label, seconds: 0, children: new Map() };
+        node = { dim, key, label, seconds: 0, scoreSum: 0, sampleCount: 0, children: new Map() };
         level.set(mapKey, node);
       }
       node.seconds += e.seconds;
+      node.scoreSum += e.scoreSum;
+      node.sampleCount += e.sampleCount;
       level = node.children;
     }
   }
@@ -199,21 +237,121 @@ function buildGroups(entries: FlatEntry[], groupBy: z.infer<typeof GroupDim>[]) 
         key: n.key,
         label: n.label,
         seconds: n.seconds,
+        activity_score: meanScore(n.scoreSum, n.sampleCount),
         ...(n.children.size > 0 ? { children: toArray(n.children) } : {}),
       }));
   return toArray(roots);
 }
 
 function pivot(entries: FlatEntry[], dim: z.infer<typeof GroupDim>) {
-  const m = new Map<string, { key: string | null; label: string; seconds: number }>();
+  const m = new Map<
+    string,
+    { key: string | null; label: string; seconds: number; scoreSum: number; sampleCount: number }
+  >();
   for (const e of entries) {
     const { key, label } = dimValue(e, dim);
     const mk = `${key ?? '∅'}`;
     const cur = m.get(mk);
-    if (cur) cur.seconds += e.seconds;
-    else m.set(mk, { key, label, seconds: e.seconds });
+    if (cur) {
+      cur.seconds += e.seconds;
+      cur.scoreSum += e.scoreSum;
+      cur.sampleCount += e.sampleCount;
+    } else {
+      m.set(mk, { key, label, seconds: e.seconds, scoreSum: e.scoreSum, sampleCount: e.sampleCount });
+    }
   }
-  return Array.from(m.values()).sort((a, b) => b.seconds - a.seconds);
+  return Array.from(m.values())
+    .sort((a, b) => b.seconds - a.seconds)
+    .map((n) => ({
+      key: n.key,
+      label: n.label,
+      seconds: n.seconds,
+      activity_score: meanScore(n.scoreSum, n.sampleCount),
+    }));
+}
+
+// ---- weekly (ISO week, Monday-start) ----
+
+/** Monday of the week containing `date` (viewer-local YYYY-MM-DD; pure calendar). */
+function weekStartLocal(date: string): string {
+  const [y, m, d] = ymd(date);
+  const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // 0 = Monday
+  return utcMsToLocalDate(Date.UTC(y, m - 1, d) - dow * 86_400_000, 0);
+}
+function addCalendarDays(date: string, n: number): string {
+  const [y, m, d] = ymd(date);
+  return utcMsToLocalDate(Date.UTC(y, m - 1, d) + n * 86_400_000, 0);
+}
+/** Mon..Sun index (0..6) of `date` within its own week. */
+function dayIndexInWeek(date: string): number {
+  const [y, m, d] = ymd(date);
+  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+}
+
+interface WeekUser {
+  key: string;
+  label: string;
+  days: number[]; // length 7, Mon..Sun seconds
+  scoreSum: number;
+  sampleCount: number;
+}
+
+/**
+ * Real weekly report: split each entry's seconds across day boundaries into the
+ * containing ISO week (so overnight/overlong entries land on the right week+day);
+ * activity is attributed once, to the entry's start week. Rows are per employee.
+ */
+function buildWeeks(entries: FlatEntry[], tz: number): z.infer<typeof WeekBlock>[] {
+  const weeks = new Map<string, Map<string, WeekUser>>();
+  const userOf = (weekStart: string, e: FlatEntry): WeekUser => {
+    let users = weeks.get(weekStart);
+    if (!users) weeks.set(weekStart, (users = new Map()));
+    let u = users.get(e.userId);
+    if (!u) users.set(e.userId, (u = { key: e.userId, label: e.displayName, days: [0, 0, 0, 0, 0, 0, 0], scoreSum: 0, sampleCount: 0 }));
+    return u;
+  };
+
+  for (const e of entries) {
+    // seconds → split across day boundaries, each day into its own week
+    let cursor = e.startMs;
+    while (cursor < e.endMs) {
+      const day = utcMsToLocalDate(cursor, tz);
+      const dayEnd = localDateToUtcMs(day, tz) + 86_400_000;
+      const slice = overlapSeconds(cursor, e.endMs, cursor, dayEnd);
+      const u = userOf(weekStartLocal(day), e);
+      u.days[dayIndexInWeek(day)]! += slice;
+      cursor = dayEnd;
+    }
+    // activity → once, to the entry's start week
+    const startWeek = weekStartLocal(utcMsToLocalDate(e.startMs, tz));
+    const su = userOf(startWeek, e);
+    su.scoreSum += e.scoreSum;
+    su.sampleCount += e.sampleCount;
+  }
+
+  return Array.from(weeks.entries())
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([weekStart, users]) => {
+      const rows = Array.from(users.values())
+        .map((u) => ({
+          key: u.key,
+          label: u.label,
+          seconds: u.days.reduce((t, s) => t + s, 0),
+          activity_score: meanScore(u.scoreSum, u.sampleCount),
+          days: u.days,
+        }))
+        .sort((a, b) => b.seconds - a.seconds);
+      const seconds = rows.reduce((t, r) => t + r.seconds, 0);
+      const scoreSum = Array.from(users.values()).reduce((t, u) => t + u.scoreSum, 0);
+      const sampleCount = Array.from(users.values()).reduce((t, u) => t + u.sampleCount, 0);
+      return {
+        week_start: weekStart,
+        week_end: addCalendarDays(weekStart, 6),
+        seconds,
+        activity_score: meanScore(scoreSum, sampleCount),
+        rows,
+      };
+    });
 }
 
 export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -359,6 +497,44 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(and(...conds))
           .orderBy(asc(schema.timeEntries.startedAt));
 
+        // Activity per entry: aggregate the minute-level activity_samples by
+        // time_entry_id (the agent stamps it). SUM/COUNT come back as strings from
+        // the pg driver, so coerce with Number().
+        const actUserScope =
+          userFilter === 'all' ? undefined : inArray(schema.activitySamples.userId, userFilter);
+        const activityRows = await tx
+          .select({
+            entryId: schema.activitySamples.timeEntryId,
+            activeSeconds: sql<number>`COALESCE(SUM(${schema.activitySamples.activeSeconds}), 0)`,
+            idleSeconds: sql<number>`COALESCE(SUM(${schema.activitySamples.idleSeconds}), 0)`,
+            scoreSum: sql<number>`COALESCE(SUM(${schema.activitySamples.activityScore}), 0)`,
+            sampleCount: sql<number>`COUNT(*)`,
+          })
+          .from(schema.activitySamples)
+          .where(
+            and(
+              eq(schema.activitySamples.organizationId, req.organizationId!),
+              isNotNull(schema.activitySamples.timeEntryId),
+              gte(schema.activitySamples.bucketMinute, new Date(rangeStart)),
+              lt(schema.activitySamples.bucketMinute, new Date(windowEnd)),
+              actUserScope,
+            ),
+          )
+          .groupBy(schema.activitySamples.timeEntryId);
+        const actByEntry = new Map<
+          string,
+          { activeSeconds: number; idleSeconds: number; scoreSum: number; sampleCount: number }
+        >();
+        for (const a of activityRows) {
+          if (!a.entryId) continue;
+          actByEntry.set(a.entryId, {
+            activeSeconds: Number(a.activeSeconds),
+            idleSeconds: Number(a.idleSeconds),
+            scoreSum: Number(a.scoreSum),
+            sampleCount: Number(a.sampleCount),
+          });
+        }
+
         const clientFilter = q.clientIds && q.clientIds.length > 0 ? new Set(q.clientIds) : null;
 
         // Build clipped flat entries, applying the JS-side filters.
@@ -376,6 +552,7 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           const seconds = overlapSeconds(start, end, rangeStart, windowEnd);
           if (seconds <= 0) continue;
 
+          const act = actByEntry.get(r.entryId);
           flat.push({
             entryId: r.entryId,
             userId: r.userId,
@@ -389,6 +566,10 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
             endMs: clippedEnd,
             seconds,
             isManual: r.isManual,
+            activeSeconds: act?.activeSeconds ?? 0,
+            idleSeconds: act?.idleSeconds ?? 0,
+            scoreSum: act?.scoreSum ?? 0,
+            sampleCount: act?.sampleCount ?? 0,
           });
         }
 
@@ -412,6 +593,12 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
         }));
 
         const total_seconds = flat.reduce((t, e) => t + e.seconds, 0);
+        const active_seconds = flat.reduce((t, e) => t + e.activeSeconds, 0);
+        const idle_seconds = flat.reduce((t, e) => t + e.idleSeconds, 0);
+        const avg_activity_score = meanScore(
+          flat.reduce((t, e) => t + e.scoreSum, 0),
+          flat.reduce((t, e) => t + e.sampleCount, 0),
+        );
 
         const toDetail = (e: FlatEntry): z.infer<typeof DetailRow> => ({
           entry_id: e.entryId,
@@ -424,6 +611,7 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           from: new Date(e.startMs).toISOString(),
           to: new Date(e.endMs).toISOString(),
           duration_seconds: e.seconds,
+          activity_score: meanScore(e.scoreSum, e.sampleCount),
           is_manual: e.isManual,
         });
 
@@ -468,7 +656,8 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
             if (secs > 0) m.set(r.key, (m.get(r.key) ?? 0) + secs);
           }
           return Array.from(m.entries())
-            .map(([key, seconds]) => ({ key, label: key, seconds }))
+            // apps/URLs have no activity concept → activity_score is always null
+            .map(([key, seconds]) => ({ key, label: key, seconds, activity_score: null }))
             .sort((a, b) => b.seconds - a.seconds);
         };
 
@@ -477,8 +666,12 @@ export const reportRoutes: FastifyPluginAsyncZod = async (app) => {
           type: q.type,
           group_by: groupBy,
           total_seconds,
+          active_seconds,
+          idle_seconds,
+          avg_activity_score,
           daily,
           groups: q.type === 'detailed' ? [] : (buildGroups(flat, groupBy) as z.infer<typeof GroupNode>[]),
+          weeks: q.type === 'weekly' ? buildWeeks(flat, q.tzOffsetMinutes) : [],
           detailed,
           detailed_truncated: detailedFull && flat.length > DETAIL_CAP,
           by_employee: pivot(flat, 'employee'),

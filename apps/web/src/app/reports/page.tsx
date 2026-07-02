@@ -15,9 +15,11 @@ import {
   type ReportGroupNode,
   type ReportResult,
   type ReportType,
+  type ReportWeekBlock,
   type RunReportInput,
   type SavedReport,
 } from '@/lib/api';
+import { downloadXlsx, type Cell } from '@/lib/xlsx';
 
 // ---- date helpers (viewer-local) ----
 
@@ -74,6 +76,10 @@ function hm(seconds: number): string {
 }
 function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+/** Activity score → "74%" (or "—" when there were no samples). */
+function actPct(score: number | null): string {
+  return score == null ? '—' : `${score}%`;
 }
 function dmy(date: string): string {
   const [y, m, d] = date.split('-') as [string, string, string];
@@ -161,6 +167,7 @@ function GroupRow({ node, depth }: { node: ReportGroupNode; depth: number }) {
             {node.label}
           </button>
         </td>
+        <td className="rep-act">{actPct(node.activity_score)}</td>
         <td className="rep-dur">{hm(node.seconds)}</td>
       </tr>
       {open && hasChildren && <GroupRows nodes={node.children!} depth={depth + 1} />}
@@ -170,11 +177,20 @@ function GroupRow({ node, depth }: { node: ReportGroupNode; depth: number }) {
 
 // ---- bar chart ----
 
-function Chart({ daily, total }: { daily: ReportResult['daily']; total: number }) {
+function Chart({ result }: { result: ReportResult }) {
+  const { daily, total_seconds: total, avg_activity_score, active_seconds } = result;
   const max = Math.max(1, ...daily.map((d) => d.seconds));
   return (
     <div className="rep-chart">
-      <div className="rep-chart-total">{hm(total)}</div>
+      <div className="rep-chart-head">
+        <div className="rep-chart-total">{hm(total)}</div>
+        <div className="rep-chart-stats">
+          <span className="rep-stat"><span className="rep-stat-lbl">Activity</span> {actPct(avg_activity_score)}</span>
+          {active_seconds > 0 && (
+            <span className="rep-stat"><span className="rep-stat-lbl">Active</span> {hm(active_seconds)}</span>
+          )}
+        </div>
+      </div>
       <div className="rep-bars">
         {daily.map((d) => (
           <div className="rep-bar-col" key={d.date}>
@@ -436,7 +452,9 @@ function ReportsInner() {
     }
   };
 
-  const exportCsv = () => { if (result) downloadCsv(result); };
+  // Export what's on the active tab ("export what you see").
+  const exportCsv = () => { if (result) exportReport(result, tab, 'csv'); };
+  const exportXlsx = () => { if (result) exportReport(result, tab, 'xlsx'); };
   const exportPdf = () => window.print();
 
   const tzLabel = useMemo(() => {
@@ -518,7 +536,8 @@ function ReportsInner() {
               <label className="rep-check disabled" title="Absences arrive in sub-phase 5F"><input type="checkbox" disabled /> Include absences</label>
             )}
             <div className="rep-actions-right">
-              <button className="rep-export" onClick={exportCsv} disabled={!result} title="Download as CSV (opens in Excel)">Excel</button>
+              <button className="rep-export" onClick={exportXlsx} disabled={!result} title="Download the current tab as an Excel workbook (.xlsx)">Excel</button>
+              <button className="rep-export" onClick={exportCsv} disabled={!result} title="Download the current tab as CSV">CSV</button>
               <button className="rep-export" onClick={exportPdf} disabled={!result} title="Print / save as PDF">PDF</button>
               <button className="rep-export" onClick={saveCurrent} disabled={mode === 'saved'} title="Save this report configuration">Save report</button>
               <button className="rep-show" onClick={run} disabled={loading || mode === 'saved'}>
@@ -566,8 +585,14 @@ function ResultArea({ result, tab, setTab }: { result: ReportResult; tab: Tab; s
 
       {tab === 'timeline' && (
         <>
-          <Chart daily={result.daily} total={result.total_seconds} />
-          {result.type === 'detailed' ? <DetailTable rows={result.detailed} truncated={result.detailed_truncated} /> : <GroupTable result={result} />}
+          <Chart result={result} />
+          {result.type === 'detailed' ? (
+            <DetailTable rows={result.detailed} truncated={result.detailed_truncated} />
+          ) : result.type === 'weekly' ? (
+            <WeeklyTable weeks={result.weeks} />
+          ) : (
+            <GroupTable result={result} />
+          )}
         </>
       )}
       {tab === 'employees' && <PivotTable label="Employee" rows={result.by_employee} />}
@@ -584,9 +609,59 @@ function GroupTable({ result }: { result: ReportResult }) {
   const heading = result.group_by.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(' / ');
   return (
     <table className="rep-table">
-      <thead><tr><th>{heading || 'Total'}</th><th className="rep-dur">Duration</th></tr></thead>
+      <thead><tr><th>{heading || 'Total'}</th><th className="rep-act">Activity</th><th className="rep-dur">Duration</th></tr></thead>
       <tbody><GroupRows nodes={result.groups} depth={0} /></tbody>
     </table>
+  );
+}
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** Weekly report: one card per ISO week, employees as rows, expandable to a Mon..Sun breakdown. */
+function WeeklyTable({ weeks }: { weeks: ReportWeekBlock[] }) {
+  if (weeks.length === 0) return <div className="rep-empty">No tracked time in this range.</div>;
+  return (
+    <div className="rep-weeks">
+      {weeks.map((w) => <WeekCard key={w.week_start} week={w} />)}
+    </div>
+  );
+}
+
+function WeekCard({ week }: { week: ReportWeekBlock }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rep-week">
+      <button type="button" className="rep-week-head" onClick={() => setOpen((v) => !v)}>
+        <span className="rep-grp-caret">{open ? '⊟' : '⊞'}</span>
+        <span className="rep-week-range">{dmy(week.week_start)} – {dmy(week.week_end)}</span>
+        <span className="rep-week-act">{actPct(week.activity_score)}</span>
+        <span className="rep-week-total">{hm(week.seconds)}</span>
+      </button>
+      {open && (
+        <table className="rep-table rep-week-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              {WEEKDAYS.map((d) => <th key={d} className="rep-dur">{d}</th>)}
+              <th className="rep-act">Activity</th>
+              <th className="rep-dur">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {week.rows.map((r) => (
+              <tr key={r.key ?? '∅'}>
+                <td>{r.label}</td>
+                {r.days.map((s, i) => (
+                  <td key={i} className="rep-dur">{s > 0 ? hm(s) : <span className="muted">·</span>}</td>
+                ))}
+                <td className="rep-act">{actPct(r.activity_score)}</td>
+                <td className="rep-dur">{hm(r.seconds)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
@@ -597,7 +672,7 @@ function DetailTable({ rows, truncated }: { rows: ReportResult['detailed']; trun
       <table className="rep-table">
         <thead>
           <tr>
-            <th>Date</th><th>Employee</th><th>Project</th><th>Note</th><th>From</th><th>To</th><th className="rep-dur">Duration</th>
+            <th>Date</th><th>Employee</th><th>Project</th><th>Note</th><th>From</th><th>To</th><th className="rep-act">Activity</th><th className="rep-dur">Duration</th>
           </tr>
         </thead>
         <tbody>
@@ -609,6 +684,7 @@ function DetailTable({ rows, truncated }: { rows: ReportResult['detailed']; trun
               <td>{r.note ?? ''}</td>
               <td>{clock(r.from)}</td>
               <td>{clock(r.to)}</td>
+              <td className="rep-act">{actPct(r.activity_score)}</td>
               <td className="rep-dur">{hm(r.duration_seconds)}</td>
             </tr>
           ))}
@@ -626,24 +702,40 @@ function AppsUrls({ apps, urls }: { apps: ReportResult['apps']; urls: ReportResu
     <div className="rep-appsurls">
       <div>
         <h3 className="rep-subhead">Applications</h3>
-        {apps.length === 0 ? <div className="rep-empty">No app activity.</div> : <PivotTable label="Application" rows={apps} />}
+        {apps.length === 0 ? <div className="rep-empty">No app activity.</div> : <PivotTable label="Application" rows={apps} showActivity={false} />}
       </div>
       <div>
         <h3 className="rep-subhead">Websites</h3>
-        {urls.length === 0 ? <div className="rep-empty">No URL activity — the browser extension isn&apos;t reporting yet.</div> : <PivotTable label="Domain" rows={urls} />}
+        {urls.length === 0 ? <div className="rep-empty">No URL activity — the browser extension isn&apos;t reporting yet.</div> : <PivotTable label="Domain" rows={urls} showActivity={false} />}
       </div>
     </div>
   );
 }
 
-function PivotTable({ label, rows }: { label: string; rows: ReportResult['by_employee'] }) {
+function PivotTable({
+  label, rows, showActivity = true,
+}: {
+  label: string;
+  rows: ReportResult['by_employee'];
+  showActivity?: boolean;
+}) {
   if (rows.length === 0) return <div className="rep-empty">No tracked time in this range.</div>;
   return (
     <table className="rep-table">
-      <thead><tr><th>{label}</th><th className="rep-dur">Duration</th></tr></thead>
+      <thead>
+        <tr>
+          <th>{label}</th>
+          {showActivity && <th className="rep-act">Activity</th>}
+          <th className="rep-dur">Duration</th>
+        </tr>
+      </thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.key ?? '∅'}><td>{r.label}</td><td className="rep-dur">{hm(r.seconds)}</td></tr>
+          <tr key={r.key ?? '∅'}>
+            <td>{r.label}</td>
+            {showActivity && <td className="rep-act">{actPct(r.activity_score)}</td>}
+            <td className="rep-dur">{hm(r.seconds)}</td>
+          </tr>
         ))}
       </tbody>
     </table>
@@ -679,47 +771,104 @@ function SavedList({
   );
 }
 
-// ---- CSV export (client-side, zero-dep) ----
+// ---- export (client-side, zero-dep): "export what you see" ----
+//
+// Both CSV and .xlsx share one 2D-array builder keyed on the active result tab,
+// so the download always matches what's on screen. Numbers stay numeric so Excel
+// can sum them; durations are also written as an "Hh Mm" string for readability.
 
-function csvCell(v: string | number): string {
+function csvCell(v: Cell): string {
   const s = String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
-function csvRow(cells: Array<string | number>): string {
+function csvRow(cells: Cell[]): string {
   return cells.map(csvCell).join(',');
 }
-function flattenGroups(nodes: ReportGroupNode[], trail: string[], out: string[][]): void {
+/** Activity score as a numeric cell (empty when there were no samples). */
+function actCell(score: number | null): Cell {
+  return score == null ? '' : score;
+}
+function flattenGroups(nodes: ReportGroupNode[], trail: string[], out: Cell[][]): void {
   for (const n of nodes) {
     const path = [...trail, n.label];
     if (n.children && n.children.length > 0) flattenGroups(n.children, path, out);
-    else out.push([...path, hm(n.seconds), String(n.seconds)]);
+    else out.push([...path, actCell(n.activity_score), hm(n.seconds), n.seconds]);
   }
 }
-function downloadCsv(result: ReportResult): void {
-  const lines: string[] = [];
-  if (result.type === 'detailed') {
-    lines.push(csvRow(['Date', 'Employee', 'Project', 'Note', 'From', 'To', 'Duration', 'Seconds']));
-    for (const r of result.detailed) {
-      lines.push(csvRow([dmy(r.date), r.display_name, r.project_name ?? 'No project', r.note ?? '', clock(r.from), clock(r.to), hm(r.duration_seconds), r.duration_seconds]));
-    }
-    lines.push('');
-    lines.push(csvRow(['Total', '', '', '', '', '', hm(result.total_seconds), result.total_seconds]));
-  } else {
-    const dims = result.group_by.map((d) => d.charAt(0).toUpperCase() + d.slice(1));
-    lines.push(csvRow([...dims, 'Duration', 'Seconds']));
-    const rows: string[][] = [];
-    flattenGroups(result.groups, [], rows);
-    for (const r of rows) lines.push(csvRow(r));
-    lines.push('');
-    const pad = Array(Math.max(0, dims.length - 1)).fill('');
-    lines.push(csvRow(['Total', ...pad, hm(result.total_seconds), result.total_seconds]));
-  }
+function pivotSheet(label: string, rows: ReportResult['by_employee']): Cell[][] {
+  return [
+    [label, 'Activity %', 'Duration', 'Seconds'],
+    ...rows.map((r): Cell[] => [r.label, actCell(r.activity_score), hm(r.seconds), r.seconds]),
+  ];
+}
+function detailSheet(rows: ReportResult['detailed']): Cell[][] {
+  return [
+    ['Date', 'Employee', 'Project', 'Note', 'From', 'To', 'Activity %', 'Duration', 'Seconds'],
+    ...rows.map((r): Cell[] => [
+      dmy(r.date), r.display_name, r.project_name ?? 'No project', r.note ?? '',
+      clock(r.from), clock(r.to), actCell(r.activity_score), hm(r.duration_seconds), r.duration_seconds,
+    ]),
+  ];
+}
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+/** Build the header + rows for the active tab. */
+function buildExportRows(result: ReportResult, tab: Tab): { sheet: string; rows: Cell[][] } {
+  switch (tab) {
+    case 'employees': return { sheet: 'Employees', rows: pivotSheet('Employee', result.by_employee) };
+    case 'projects': return { sheet: 'Projects', rows: pivotSheet('Project', result.by_project) };
+    case 'clients': return { sheet: 'Clients', rows: pivotSheet('Client', result.by_client) };
+    case 'notes': return { sheet: 'Notes', rows: detailSheet(result.notes) };
+    case 'apps': {
+      const rows: Cell[][] = [['Type', 'Name', 'Duration', 'Seconds']];
+      for (const a of result.apps) rows.push(['Application', a.label, hm(a.seconds), a.seconds]);
+      for (const u of result.urls) rows.push(['Website', u.label, hm(u.seconds), u.seconds]);
+      return { sheet: 'Apps & URLs', rows };
+    }
+    case 'timeline':
+    default: {
+      if (result.type === 'detailed') {
+        const rows = detailSheet(result.detailed);
+        rows.push(['Total', ...Array(6).fill(''), hm(result.total_seconds), result.total_seconds]);
+        return { sheet: 'Detailed', rows };
+      }
+      if (result.type === 'weekly') {
+        const rows: Cell[][] = [['Week starting', 'Employee', ...WEEKDAYS, 'Activity %', 'Total', 'Total seconds']];
+        for (const w of result.weeks) {
+          for (const r of w.rows) {
+            rows.push([
+              dmy(w.week_start), r.label, ...r.days.map((s): Cell => (s > 0 ? hm(s) : '')),
+              actCell(r.activity_score), hm(r.seconds), r.seconds,
+            ]);
+          }
+        }
+        rows.push(['Total', ...Array(9).fill(''), hm(result.total_seconds), result.total_seconds]);
+        return { sheet: 'Weekly', rows };
+      }
+      // summary
+      const dims = result.group_by.map((d) => d.charAt(0).toUpperCase() + d.slice(1));
+      const rows: Cell[][] = [[...dims, 'Activity %', 'Duration', 'Seconds']];
+      const leaves: Cell[][] = [];
+      flattenGroups(result.groups, [], leaves);
+      rows.push(...leaves);
+      const pad = Array(Math.max(0, dims.length - 1)).fill('');
+      rows.push(['Total', ...pad, actCell(result.avg_activity_score), hm(result.total_seconds), result.total_seconds]);
+      return { sheet: 'Summary', rows };
+    }
+  }
+}
+
+function exportReport(result: ReportResult, tab: Tab, format: 'csv' | 'xlsx'): void {
+  const { sheet, rows } = buildExportRows(result, tab);
+  const base = `report-${result.type}-${tab}-${result.range.from}_${result.range.to}`;
+  if (format === 'xlsx') {
+    downloadXlsx(`${base}.xlsx`, sheet, rows);
+    return;
+  }
+  const blob = new Blob([rows.map(csvRow).join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `report-${result.type}-${result.range.from}_${result.range.to}.csv`;
+  a.download = `${base}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();

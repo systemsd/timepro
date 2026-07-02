@@ -582,6 +582,7 @@ export interface ReportGroupNode {
   key: string | null;
   label: string;
   seconds: number;
+  activity_score: number | null;
   children?: ReportGroupNode[];
 }
 
@@ -596,6 +597,7 @@ export interface ReportDetailRow {
   from: string;
   to: string;
   duration_seconds: number;
+  activity_score: number | null;
   is_manual: boolean;
 }
 
@@ -603,6 +605,23 @@ export interface ReportPivot {
   key: string | null;
   label: string;
   seconds: number;
+  activity_score: number | null;
+}
+
+export interface ReportWeekRow {
+  key: string | null;
+  label: string;
+  seconds: number;
+  activity_score: number | null;
+  days: number[]; // length 7, Mon..Sun seconds
+}
+
+export interface ReportWeekBlock {
+  week_start: string;
+  week_end: string;
+  seconds: number;
+  activity_score: number | null;
+  rows: ReportWeekRow[];
 }
 
 export interface ReportResult {
@@ -610,8 +629,12 @@ export interface ReportResult {
   type: ReportType;
   group_by: GroupDim[];
   total_seconds: number;
+  active_seconds: number;
+  idle_seconds: number;
+  avg_activity_score: number | null;
   daily: Array<{ date: string; seconds: number; is_weekend: boolean }>;
   groups: ReportGroupNode[];
+  weeks: ReportWeekBlock[];
   detailed: ReportDetailRow[];
   detailed_truncated: boolean;
   by_employee: ReportPivot[];
