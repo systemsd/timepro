@@ -222,6 +222,13 @@ employees get no clients/projects) · `realtime` (ws presence).
 - **Error tracking is DSN-gated Sentry.** `apps/api/src/lib/observability.ts` (`initObservability`/`captureError`,
   wired in `server.ts` + `error-mapper.ts`). No-op unless `SENTRY_DSN` is set — turn it on by setting the DSN in
   the prod `.env`. The error-mapper also masks the internal 500 message from clients in production.
+- **API docs = OpenAPI (Zod-generated) + Scalar at `/docs`.** `@fastify/swagger` (registered in `app.ts` with
+  `jsonSchemaTransform`) builds the spec from the Zod route schemas — single source of truth, can't drift.
+  `pnpm gen:openapi` writes the spec to `apps/api/openapi/openapi.json` (gitignored; regenerate on demand). The
+  interactive **Scalar** UI is gated by a **dedicated Basic-auth credential, separate from the app login**:
+  `API_DOCS_PASSWORD` set → `/docs` exposed in **every env** behind Basic auth (`API_DOCS_USER`/`API_DOCS_PASSWORD`);
+  unset → open in non-prod only, **not exposed in prod** (fail-closed). Turn on prod docs by setting
+  `API_DOCS_PASSWORD` in the prod `.env` (same on/off pattern as `SENTRY_DSN`).
 - **Data-integrity invariants (don't regress — they were live bugs).** `/ingest/app-usage` + `/ingest/url-usage`
   are **idempotent** via a natural-key UNIQUE index + `onConflictDoNothing` (a retried batch must not double-count).
   `timer/start` takes a **per-(org,user) advisory lock** so concurrent starts can't open two timers. Roster's
