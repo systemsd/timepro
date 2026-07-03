@@ -225,10 +225,12 @@ employees get no clients/projects) · `realtime` (ws presence).
 - **API docs = OpenAPI (Zod-generated) + Scalar at `/docs`.** `@fastify/swagger` (registered in `app.ts` with
   `jsonSchemaTransform`) builds the spec from the Zod route schemas — single source of truth, can't drift.
   `pnpm gen:openapi` writes the spec to `apps/api/openapi/openapi.json` (gitignored; regenerate on demand). The
-  interactive **Scalar** UI is gated by a **dedicated Basic-auth credential, separate from the app login**:
-  `API_DOCS_PASSWORD` set → `/docs` exposed in **every env** behind Basic auth (`API_DOCS_USER`/`API_DOCS_PASSWORD`);
-  unset → open in non-prod only, **not exposed in prod** (fail-closed). Turn on prod docs by setting
-  `API_DOCS_PASSWORD` in the prod `.env` (same on/off pattern as `SENTRY_DSN`).
+  interactive **Scalar** UI is exposed **only when `API_DOCS_PASSWORD` is set** (any env), always behind Basic
+  auth with a **dedicated credential separate from the app login** (`API_DOCS_USER`/`API_DOCS_PASSWORD`). Unset →
+  `/docs` is not exposed anywhere. Set a password locally to view docs; set a strong one in the prod `.env` to
+  expose them there. ⚠️ We do **not** gate docs on `NODE_ENV` — **prod currently runs without
+  `NODE_ENV=production`** (same reason the `x-dev` dev-login shim still works in prod), so `NODE_ENV` can't be
+  trusted for prod-vs-local decisions. Fixing that is part of the Phase 6 security milestone.
 - **Data-integrity invariants (don't regress — they were live bugs).** `/ingest/app-usage` + `/ingest/url-usage`
   are **idempotent** via a natural-key UNIQUE index + `onConflictDoNothing` (a retried batch must not double-count).
   `timer/start` takes a **per-(org,user) advisory lock** so concurrent starts can't open two timers. Roster's
