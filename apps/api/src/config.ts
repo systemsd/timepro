@@ -45,6 +45,16 @@ const Schema = z.object({
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 
   /**
+   * Interactive API docs at `/docs` (Scalar). Protected by HTTP Basic auth with a
+   * **dedicated** credential — NOT the app/OpsCore login. Behaviour:
+   * - `API_DOCS_PASSWORD` set → docs exposed in EVERY env, Basic-auth gated.
+   * - unset → docs exposed only in non-production (open, for local convenience);
+   *   in production, unset means **not exposed at all** (fail-closed).
+   */
+  API_DOCS_USER: z.string().default('docs'),
+  API_DOCS_PASSWORD: z.string().optional(),
+
+  /**
    * Where screenshots are written. MVP: local filesystem. Set to an
    * absolute path; defaults to `./data/screenshots` next to the api process.
    *
