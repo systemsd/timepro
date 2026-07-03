@@ -109,40 +109,40 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
     transform: jsonSchemaTransform,
   });
 
-  // Docs are password-gated in every env when `API_DOCS_PASSWORD` is set (a
-  // dedicated Basic-auth credential, separate from the app login). Without a
-  // password, they're open in non-prod only, and NOT exposed in prod (fail-closed).
+  // Docs are exposed ONLY when a dedicated password is configured (in ANY env),
+  // always behind Basic auth (`API_DOCS_USER`/`API_DOCS_PASSWORD` — separate from
+  // the app login). No password → not exposed anywhere. We deliberately do NOT
+  // fall back to "open in non-prod": NODE_ENV is unreliable on this deployment
+  // (prod currently runs without NODE_ENV=production), so keying exposure off it
+  // would leak the docs publicly. To view docs locally, set a password in `.env`.
   const docsPassword = config.API_DOCS_PASSWORD;
-  const docsExposed = !!docsPassword || config.NODE_ENV !== 'production';
-  if (docsExposed) {
-    if (docsPassword) {
-      const expectedUser = Buffer.from(config.API_DOCS_USER);
-      const expectedPass = Buffer.from(docsPassword);
-      // Basic-auth guard on the /docs routes only. Registered before the Scalar
-      // plugin so it applies to its routes; constant-time credential comparison.
-      app.addHook('onRequest', async (req, reply) => {
-        if (req.url !== '/docs' && !req.url.startsWith('/docs/')) return;
-        const header = req.headers.authorization ?? '';
-        const [scheme, encoded] = header.split(' ');
-        let ok = false;
-        if (scheme === 'Basic' && encoded) {
-          const [user = '', pass = ''] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
-          const u = Buffer.from(user);
-          const p = Buffer.from(pass);
-          ok =
-            u.length === expectedUser.length &&
-            p.length === expectedPass.length &&
-            timingSafeEqual(u, expectedUser) &&
-            timingSafeEqual(p, expectedPass);
-        }
-        if (!ok) {
-          return reply
-            .header('WWW-Authenticate', 'Basic realm="TimePro API docs", charset="UTF-8"')
-            .code(401)
-            .send({ error: 'unauthorized' });
-        }
-      });
-    }
+  if (docsPassword) {
+    const expectedUser = Buffer.from(config.API_DOCS_USER);
+    const expectedPass = Buffer.from(docsPassword);
+    // Basic-auth guard on the /docs routes only. Registered before the Scalar
+    // plugin so it applies to its routes; constant-time credential comparison.
+    app.addHook('onRequest', async (req, reply) => {
+      if (req.url !== '/docs' && !req.url.startsWith('/docs/')) return;
+      const header = req.headers.authorization ?? '';
+      const [scheme, encoded] = header.split(' ');
+      let ok = false;
+      if (scheme === 'Basic' && encoded) {
+        const [user = '', pass = ''] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
+        const u = Buffer.from(user);
+        const p = Buffer.from(pass);
+        ok =
+          u.length === expectedUser.length &&
+          p.length === expectedPass.length &&
+          timingSafeEqual(u, expectedUser) &&
+          timingSafeEqual(p, expectedPass);
+      }
+      if (!ok) {
+        return reply
+          .header('WWW-Authenticate', 'Basic realm="TimePro API docs", charset="UTF-8"')
+          .code(401)
+          .send({ error: 'unauthorized' });
+      }
+    });
     await app.register(scalarApiReference, { routePrefix: '/docs' });
   }
 
