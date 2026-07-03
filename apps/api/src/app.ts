@@ -5,7 +5,14 @@ import multipart from '@fastify/multipart';
 import sensible from '@fastify/sensible';
 import underPressure from '@fastify/under-pressure';
 import websocket from '@fastify/websocket';
-import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
+import swagger from '@fastify/swagger';
+import scalarApiReference from '@scalar/fastify-api-reference';
+import {
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from 'fastify-type-provider-zod';
 import { createDb } from '@timepro/db';
 
 import type { Config } from './config';
@@ -82,6 +89,28 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
       fields: 4,
     },
   });
+
+  // -------- API docs (OpenAPI, generated from the Zod route schemas) --------
+  // @fastify/swagger builds the spec in-memory (no exposed route — it just enables
+  // `app.swagger()`, used by `scripts/gen-openapi.ts`). The interactive Scalar UI
+  // at `/docs` (reads the spec from @fastify/swagger) is served ONLY outside
+  // production — the API surface isn't public.
+  await app.register(swagger, {
+    openapi: {
+      openapi: '3.1.0',
+      info: {
+        title: 'TimePro API',
+        version: '0.1.0',
+        description:
+          'Internal REST API for the TimePro time-tracking platform. Generated from the Fastify + Zod route schemas.',
+      },
+      servers: [{ url: config.API_PUBLIC_URL }],
+    },
+    transform: jsonSchemaTransform,
+  });
+  if (config.NODE_ENV !== 'production') {
+    await app.register(scalarApiReference, { routePrefix: '/docs' });
+  }
 
   // -------- domain plugins --------
   await app.register(errorMapperPlugin);
