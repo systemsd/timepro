@@ -101,3 +101,23 @@ export const PencilIcon = (p: IconProps) => (
     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
   </Svg>
 );
+
+export const ClockIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <polyline points="12 7 12 12 15 14" />
+  </Svg>
+);
+
+export const ChevronDownIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <polyline points="6 9 12 15 18 9" />
+  </Svg>
+);
+
+export const PlusIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 5v14" />
+    <path d="M5 12h14" />
+  </Svg>
+);

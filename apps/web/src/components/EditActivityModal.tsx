@@ -11,7 +11,7 @@ import {
   type TimeEntryHistory,
   type TimelineActivity,
 } from '@/lib/api';
-import { Button, ConfirmModal, Modal } from '@timepro/ui';
+import { Button, ChevronDownIcon, ClockIcon, ConfirmModal, Modal, PlusIcon } from '@timepro/ui';
 import { pad } from '@/lib/format';
 const toHM = (iso: string) => {
   const d = new Date(iso);
@@ -132,65 +132,99 @@ export function EditActivityModal({
           </>
         }
       >
-        <p className="act-sub">Trim the time range, change the project or note, or split.</p>
+        <div className="et-body">
+        <p className="et-lead">Trim the time range, change the project or note, or split this activity into two.</p>
 
-        <div className="act-times">
-          <input type="time" value={start} disabled={running} onChange={(e) => setStart(e.target.value)} />
-          <span>–</span>
-          <input type="time" value={end} disabled={running} onChange={(e) => setEnd(e.target.value)} />
-          <span className="act-dur">{running ? 'running' : durSecs != null ? fmtDur(durSecs) : '—'}</span>
+        <div className="et-group">
+          <span className="et-label">Time range</span>
+          <div className="et-timerow">
+            <div className={`et-field ${running ? 'is-disabled' : ''}`}>
+              <ClockIcon size={15} />
+              <input type="time" value={start} disabled={running} aria-label="Start time" onChange={(e) => setStart(e.target.value)} />
+            </div>
+            <span className="et-dash">–</span>
+            <div className={`et-field ${running ? 'is-disabled' : ''}`}>
+              <ClockIcon size={15} />
+              <input type="time" value={end} disabled={running} aria-label="End time" onChange={(e) => setEnd(e.target.value)} />
+            </div>
+            <span className="et-dur">{running ? 'running' : durSecs != null ? fmtDur(durSecs) : '—'}</span>
+          </div>
+          <p className="et-hint">
+            {running ? 'Stop the running timer to edit its times.' : 'Times are shown in your local timezone.'}
+          </p>
         </div>
-        {running
-          ? <p className="act-note">Stop the running timer to edit its times.</p>
-          : <p className="act-eg">e.g. 7:00 AM – 9:10 AM</p>}
 
-        <label className="act-label">Project</label>
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-          <option value="">— No project —</option>
-          {projectOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <div className="et-group">
+          <span className="et-label">Project</span>
+          <div className="et-select">
+            <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project">
+              <option value="">— No project —</option>
+              {projectOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <ChevronDownIcon size={16} className="et-chev" />
+          </div>
+        </div>
 
-        <label className="act-label">Description</label>
-        <textarea
-          value={description}
-          rows={2}
-          maxLength={500}
-          placeholder="What was this activity?"
-          onChange={(e) => setDescription(e.target.value)}
-        />
+        <div className="et-group">
+          <span className="et-label">Description</span>
+          <div className="et-ta">
+            <textarea
+              value={description}
+              rows={3}
+              maxLength={500}
+              placeholder="What did you work on?"
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <span className="et-counter">{description.length} / 500</span>
+          </div>
+        </div>
 
-        {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
+        {error && <div className="error">{error}</div>}
 
         {!running && (
-          <div className="act-row-between">
-            <span />
-            <button type="button" className="act-link" onClick={() => setSplitOpen((v) => !v)}>
-              Split Activity
-            </button>
-          </div>
+          <button type="button" className="et-split-toggle" onClick={() => setSplitOpen((v) => !v)}>
+            <PlusIcon size={14} /> Split activity
+          </button>
         )}
 
         {splitOpen && !running && (
-          <div className="act-split">
-            <span>Split at</span>
-            <input type="time" value={splitAt} onChange={(e) => setSplitAt(e.target.value)} />
+          <div className="et-split">
+            <span className="et-split-lbl">Split at</span>
+            <div className="et-field et-field--sm">
+              <ClockIcon size={14} />
+              <input type="time" value={splitAt} aria-label="Split time" onChange={(e) => setSplitAt(e.target.value)} />
+            </div>
             <Button variant="secondary" size="sm" disabled={busy} onClick={doSplit}>Split</Button>
           </div>
         )}
 
         {history.length > 0 && (
-          <details className="act-history">
-            <summary>Edit history ({history.length})</summary>
-            <ul>
+          <div className="et-hist">
+            <span className="et-label">
+              Edit history <span className="et-hist-count">{history.length} change{history.length > 1 ? 's' : ''}</span>
+            </span>
+            <ul className="et-timeline">
               {history.map((h, i) => (
-                <li key={i}>
-                  <span className="act-hist-action">{historyLabel(h)}</span>
-                  <span className="act-hist-meta">{h.actor_name ?? 'someone'} · {new Date(h.at).toLocaleString()}</span>
+                <li className="et-tl" key={i}>
+                  <div className="et-rail">
+                    <span className={`et-dot ${historyKind(h)}`} />
+                    <span className="et-line" />
+                  </div>
+                  <div className="et-tl-content">
+                    <div className="et-tl-title">
+                      {historyLabel(h)}
+                      {historyKind(h) === 'system' && <span className="et-tag system">Auto</span>}
+                    </div>
+                    <div className="et-tl-meta">
+                      {h.actor_name ?? (historyKind(h) === 'system' ? 'System' : 'Someone')} · {formatWhen(h.at)}
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>
-          </details>
+          </div>
         )}
+        </div>
       </Modal>
 
       <ConfirmModal
@@ -206,13 +240,33 @@ export function EditActivityModal({
   );
 }
 
+/** Plain-English summary of an audit action (no raw `time_entry.*` codes). */
 function historyLabel(h: TimeEntryHistory): string {
-  if (h.action === 'time_entry.split') return 'Split';
-  if (h.action === 'time_entry.delete') return 'Deleted';
+  if (h.action === 'time_entry.auto_closed') return 'End time auto-adjusted to the last recorded activity';
+  if (h.action === 'time_entry.split') return 'Split into two activities';
+  if (h.action === 'time_entry.delete') return 'Activity deleted';
   if (h.action === 'time_entry.update') {
     const ch = (h.metadata?.changes ?? {}) as Record<string, unknown>;
-    const fields = Object.keys(ch).map((k) => k.replace(/_/g, ' '));
-    return fields.length ? `Edited ${fields.join(', ')}` : 'Edited';
+    const parts: string[] = [];
+    if ('started_at' in ch || 'ended_at' in ch) parts.push('time range');
+    if ('project_id' in ch) parts.push('project');
+    if ('description' in ch) parts.push('note');
+    return parts.length ? `Changed ${parts.join(', ')}` : 'Edited';
   }
-  return h.action;
+  return h.action.replace(/^time_entry\./, '').replace(/_/g, ' ');
+}
+
+type HistoryKind = 'system' | 'edit' | 'split' | 'delete';
+function historyKind(h: TimeEntryHistory): HistoryKind {
+  if (h.action === 'time_entry.auto_closed') return 'system';
+  if (h.action === 'time_entry.split') return 'split';
+  if (h.action === 'time_entry.delete') return 'delete';
+  return 'edit';
+}
+
+/** e.g. "3 Jul 2026, 1:39 PM". */
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
 }

@@ -56,8 +56,8 @@ click-outside and Tab. Multi renders removable chips; single renders the selecte
   `ariaLabel?`.
 
 ### Icons
-Feather-style line icons (`HomeIcon`, `TrashIcon`, `CloseIcon`, …); `stroke = currentColor`, `aria-hidden`.
-Props: `size?`, `className?`.
+Feather-style line icons (`HomeIcon`, `TrashIcon`, `CloseIcon`, `PencilIcon`, `ClockIcon`, `ChevronDownIcon`,
+`PlusIcon`, …); `stroke = currentColor`, `aria-hidden`. Props: `size?`, `className?`.
 
 ## Testing
 Component tests live beside the source (`src/*.test.tsx`, jsdom + `@testing-library/react`) and run under
