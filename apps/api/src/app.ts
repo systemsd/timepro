@@ -24,6 +24,7 @@ import { timerRoutes } from './routes/timer';
 import { timeEntryRoutes } from './routes/time-entries';
 import { authRoutes } from './routes/auth';
 import { projectRoutes } from './routes/projects';
+import { taskRoutes } from './routes/tasks';
 import { screenshotRoutes } from './routes/screenshots';
 import { meRoutes } from './routes/me';
 import { teamRoutes } from './routes/team';
@@ -154,6 +155,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(authRoutes, { prefix: '/v1' });
   await app.register(projectRoutes, { prefix: '/v1' });
+  await app.register(taskRoutes, { prefix: '/v1' });
   await app.register(timerRoutes, { prefix: '/v1' });
   await app.register(timeEntryRoutes, { prefix: '/v1' });
   await app.register(screenshotRoutes, { prefix: '/v1' });

@@ -55,6 +55,8 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
             projects: z.number(),
             assignments: z.number(),
             disabled: z.number(),
+            tasks: z.number(),
+            tasksDisabled: z.number(),
           }),
         },
         tags: ['admin'],
@@ -65,10 +67,11 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
       const orgId = req.organizationId!;
       const db = getDb();
 
-      const [emp, proj, bp] = await Promise.all([
+      const [emp, proj, bp, tsk] = await Promise.all([
         opscoreApi.employees(),
         opscoreApi.projects(),
         opscoreApi.businessPartners(),
+        opscoreApi.tasks(),
       ]);
 
       // 1) Clients (business partners) — match by opscore id, then by name
@@ -196,6 +199,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
 
       // 3) Projects (+ client link) and project membership (reconciled from OpsCore).
       let assignments = 0;
+      const projectByOps = new Map<string, string>(); // OpsCore project id → local uuid
       for (const p of proj.projects) {
         const clientId = p.business_partner_id ? clientByOps.get(p.business_partner_id) ?? null : null;
         const status = mapProjectStatus(p.status);
@@ -232,6 +236,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
             .set({ name: p.name, status, clientId, opscoreProjectId: p.id })
             .where(eq(schema.projects.id, project.id));
         }
+        projectByOps.set(p.id, project!.id);
 
         // reconcile members from OpsCore team list
         const memberUserIds = p.member_ids
@@ -247,12 +252,56 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
         }
       }
 
+      // 4) Tasks (read-only mirror). CLOSED/deleted tasks vanish from the feed →
+      // deactivate locally (keep the row so historical time entries stay valid).
+      const presentTaskOps = new Set<string>();
+      for (const t of tsk.tasks) {
+        presentTaskOps.add(t.id);
+        // Resolve the OpsCore project id → local uuid; unknown/absent → null
+        // ("No project" bucket), so assigned work is never silently dropped.
+        const projectId = t.project_id ? projectByOps.get(t.project_id) ?? null : null;
+        const values = {
+          name: t.name,
+          status: t.status,
+          priority: t.priority,
+          projectId,
+          assignedOpscoreEmployeeId: t.assigned_employee_id,
+          collaboratorOpscoreEmployeeIds: t.collaborator_ids ?? [],
+          active: true,
+          opscoreUpdatedAt: new Date(t.updated_at),
+        };
+        const [existing] = await db
+          .select({ id: schema.tasks.id })
+          .from(schema.tasks)
+          .where(and(eq(schema.tasks.organizationId, orgId), eq(schema.tasks.opscoreTaskId, t.id)))
+          .limit(1);
+        if (existing) {
+          await db.update(schema.tasks).set(values).where(eq(schema.tasks.id, existing.id));
+        } else {
+          await db.insert(schema.tasks).values({ organizationId: orgId, opscoreTaskId: t.id, ...values });
+        }
+      }
+      // Deactivate any local task no longer in the feed (closed/deleted upstream).
+      let tasksDisabled = 0;
+      const localTasks = await db
+        .select({ id: schema.tasks.id, opsId: schema.tasks.opscoreTaskId, active: schema.tasks.active })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.organizationId, orgId));
+      for (const lt of localTasks) {
+        if (!presentTaskOps.has(lt.opsId) && lt.active) {
+          await db.update(schema.tasks).set({ active: false }).where(eq(schema.tasks.id, lt.id));
+          tasksDisabled += 1;
+        }
+      }
+
       return {
         users: emp.employees.length,
         clients: bp.business_partners.length,
         projects: proj.projects.length,
         assignments,
         disabled,
+        tasks: tsk.tasks.length,
+        tasksDisabled,
       };
     },
   );

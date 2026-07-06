@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { boolean, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { pkId, softDeletedAt, timestamps, tsCol } from './_common';
 import { projects } from './projects';
+import { tasks } from './tasks';
 import { users } from './users';
 
 /**
@@ -18,7 +19,7 @@ export const timeEntries = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.id),
-    taskId: uuid('task_id'),
+    taskId: uuid('task_id').references(() => tasks.id),
     deviceId: uuid('device_id'),
     startedAt: tsCol('started_at').notNull(),
     endedAt: tsCol('ended_at'), // null while running

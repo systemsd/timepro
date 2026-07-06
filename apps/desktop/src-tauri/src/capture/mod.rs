@@ -166,6 +166,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                     match client
                         .timer_start(
                             p.project_id.as_deref(),
+                            p.task_id.as_deref(),
                             p.description.as_deref(),
                             &Uuid::new_v4().to_string(),
                         )
@@ -175,6 +176,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                             state.set_timer(RunningTimer {
                                 time_entry_id: snap.id.clone(),
                                 project_id: snap.project_id.clone(),
+                                task_id: p.task_id.clone(),
                                 description: p.description.clone(),
                                 started_at: snap.started_at.parse().unwrap_or_else(|_| Utc::now()),
                             });
@@ -255,6 +257,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 // input returns (no manual "play" click).
                 state.set_paused(PausedTimer {
                     project_id: timer.project_id.clone(),
+                    task_id: timer.task_id.clone(),
                     description: timer.description.clone(),
                 });
                 state.clear_timer();

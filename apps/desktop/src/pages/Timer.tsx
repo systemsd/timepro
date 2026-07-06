@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ipc } from '../ipc';
-import type { Project, ScreenshotUploadEvent, Session, TimerView } from '../types';
+import type { Project, ScreenshotUploadEvent, Session, Task, TimerView } from '../types';
 import { ChevronDown, GearIcon, KebabIcon, PlayIcon, StopIcon } from '../icons';
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
 
 const LS_TASK = 'tf_task';
 const LS_PROJECT = 'tf_project';
+const LS_TASKID = 'tf_task_id';
 const LS_AUTOSTART = 'tf_autostart';
 
 export function Timer({ session, onLogout, onOpenSettings }: Props) {
@@ -21,6 +22,11 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     () => localStorage.getItem(LS_PROJECT) || null,
   );
   const [task, setTask] = useState(() => localStorage.getItem(LS_TASK) || '');
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [selectedTask, setSelectedTask] = useState<string | null>(
+    () => localStorage.getItem(LS_TASKID) || null,
+  );
+  const [taskMenuOpen, setTaskMenuOpen] = useState(false);
   const [timer, setTimer] = useState<TimerView | null>(null);
   const [pausedReason, setPausedReason] = useState<'idle' | 'suspended' | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -47,6 +53,10 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     () => projects.find((p) => p.id === selectedProject) ?? null,
     [projects, selectedProject],
   );
+  const activeTask = useMemo(
+    () => tasks.find((t) => t.id === selectedTask) ?? null,
+    [tasks, selectedTask],
+  );
 
   // initial load
   useEffect(() => {
@@ -63,6 +73,26 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
       }
     })();
   }, []);
+
+  // Load the OpsCore tasks for the selected project (or the "No project" bucket).
+  // Server-side these are scoped to the signed-in resource (assignee/collaborator).
+  // Drop the current task selection if it's not in the new project's set.
+  useEffect(() => {
+    let cancelled = false;
+    ipc
+      .listTasks(selectedProject ?? 'none')
+      .then((ts) => {
+        if (cancelled) return;
+        setTasks(ts);
+        setSelectedTask((cur) => (cur && ts.some((t) => t.id === cur) ? cur : null));
+      })
+      .catch(() => {
+        if (!cancelled) setTasks([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProject]);
 
   // reflect tracking state in the native window title
   useEffect(() => {
@@ -131,6 +161,10 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     if (selectedProject) localStorage.setItem(LS_PROJECT, selectedProject);
     else localStorage.removeItem(LS_PROJECT);
   }, [selectedProject]);
+  useEffect(() => {
+    if (selectedTask) localStorage.setItem(LS_TASKID, selectedTask);
+    else localStorage.removeItem(LS_TASKID);
+  }, [selectedTask]);
 
   // auto-start tracking on launch when the user opted in
   useEffect(() => {
@@ -154,7 +188,7 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const t = await ipc.timerStart(selectedProject, task.trim() || null);
+      const t = await ipc.timerStart(selectedProject, selectedTask, task.trim() || null);
       setTimer(t);
       setPausedReason(null);
     } catch (err) {
@@ -248,6 +282,18 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           >
             {project ? project.name : 'Select project'}
           </button>
+          {/* Task picker — only shown when the resource has tasks on this
+              project (or the No-project bucket). Task is optional: project-only
+              tracking still works with no task selected. */}
+          {tasks.length > 0 && (
+            <button
+              className={`task-chip ${activeTask ? '' : 'empty'}`}
+              onClick={() => setTaskMenuOpen((v) => !v)}
+              disabled={busy}
+            >
+              {activeTask ? activeTask.name : 'Select task'}
+            </button>
+          )}
         </div>
 
         <button
@@ -280,6 +326,29 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
               >
                 <span className="dot" style={{ background: p.color }} />
                 {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {taskMenuOpen && (
+          <div className="task-menu">
+            <button onClick={() => { setSelectedTask(null); setTaskMenuOpen(false); }}>
+              No task
+            </button>
+            {tasks.map((t) => (
+              <button
+                key={t.id}
+                className="task-option"
+                onClick={() => { setSelectedTask(t.id); setTaskMenuOpen(false); }}
+              >
+                <span className="task-name">{t.name}</span>
+                <span className={`task-badge status-${t.status.toLowerCase()}`}>
+                  {t.status.replace(/_/g, ' ').toLowerCase()}
+                </span>
+                <span className={`task-badge prio-${t.priority.toLowerCase()}`}>
+                  {t.priority.toLowerCase()}
+                </span>
               </button>
             ))}
           </div>

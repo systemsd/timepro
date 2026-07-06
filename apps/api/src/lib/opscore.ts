@@ -67,6 +67,16 @@ export interface OpsPartner {
   name: string;
   status: string;
 }
+export interface OpsTask {
+  id: string;
+  name: string;
+  status: string; // TODO | IN_PROGRESS | REVIEW | BLOCKED | DONE (CLOSED never returned)
+  priority: string; // LOW | MEDIUM | HIGH | URGENT
+  project_id: string | null;
+  assigned_employee_id: string | null;
+  collaborator_ids: string[];
+  updated_at: string;
+}
 
 async function fetchJson<T>(path: string): Promise<T> {
   const config = loadConfig();
@@ -88,4 +98,5 @@ export const opscoreApi = {
   projects: () => fetchJson<{ projects: OpsProject[] }>('/api/timepro/sync/projects'),
   businessPartners: () =>
     fetchJson<{ business_partners: OpsPartner[] }>('/api/timepro/sync/business-partners'),
+  tasks: () => fetchJson<{ tasks: OpsTask[] }>('/api/timepro/sync/tasks'),
 };

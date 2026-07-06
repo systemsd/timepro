@@ -99,11 +99,30 @@ impl ApiClient {
         Self::parse(resp).await
     }
 
+    // ---- tasks (OpsCore, read-only, scoped to the signed-in resource) ----
+
+    /// Tasks the caller can track against. `project_id` filters to one project;
+    /// pass `"none"` for the "No project" bucket, or `None` for all visible.
+    pub async fn list_tasks(&self, project_id: Option<&str>) -> ApiResult<TasksResponse> {
+        let s = self.require_session()?;
+        let mut req = self
+            .http
+            .get(self.url("/v1/tasks"))
+            .header("x-dev-org", &s.organization_id)
+            .header("x-dev-user", &s.user_id);
+        if let Some(p) = project_id {
+            req = req.query(&[("project_id", p)]);
+        }
+        let resp = req.send().await?;
+        Self::parse(resp).await
+    }
+
     // ---- timer ----
 
     pub async fn timer_start(
         &self,
         project_id: Option<&str>,
+        task_id: Option<&str>,
         description: Option<&str>,
         client_event_id: &str,
     ) -> ApiResult<TimerSnapshot> {
@@ -114,6 +133,9 @@ impl ApiClient {
         });
         if let Some(p) = project_id {
             body["project_id"] = serde_json::Value::String(p.to_string());
+        }
+        if let Some(t) = task_id {
+            body["task_id"] = serde_json::Value::String(t.to_string());
         }
         if let Some(d) = description {
             if !d.is_empty() {
@@ -396,6 +418,20 @@ pub struct Project {
     pub color: String,
     pub status: String,
     pub is_billable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TasksResponse {
+    pub tasks: Vec<Task>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Task {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub priority: String,
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
