@@ -1,14 +1,51 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, unlink, readFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { and, desc, eq } from 'drizzle-orm';
-import { schema } from '@timepro/db';
+import sharp from 'sharp';
+import { getDb, schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
 import { getEffectiveForUser } from '../lib/settings';
+import { verifyImageToken } from '../lib/signed-url';
 import { loadConfig } from '../config';
+
+/** Thumbnail path derived from the original's stored path (no DB column needed). */
+const thumbPathFor = (s3Key: string): string => s3Key.replace(/\.png$/i, '.thumb.webp');
+const THUMB_WIDTH = 400;
+const IMMUTABLE_CACHE = 'private, max-age=31536000, immutable';
+
+async function makeThumb(pngBytes: Buffer): Promise<Buffer> {
+  return sharp(pngBytes).resize({ width: THUMB_WIDTH, withoutEnlargement: true }).webp({ quality: 72 }).toBuffer();
+}
+
+function httpError(status: number) {
+  const code = status === 404 ? 'not_found' : status === 403 ? 'forbidden' : 'unauthorized';
+  return Object.assign(new Error(code), { statusCode: status, code });
+}
+
+/**
+ * Authorize a signed image request: verify the `?t=` token and that the
+ * screenshot belongs to `{ orgId, targetUserId }` from the token — so a token
+ * can only reach screenshots of a user the viewer was allowed to list.
+ */
+async function authScreenshot(
+  token: string | undefined,
+  id: string,
+): Promise<{ ok: true; s3Key: string } | { ok: false; status: number }> {
+  const scope = verifyImageToken(token);
+  if (!scope) return { ok: false, status: 401 };
+  const [r] = await getDb()
+    .select({ s3Key: schema.screenshots.s3Key, userId: schema.screenshots.userId })
+    .from(schema.screenshots)
+    .where(and(eq(schema.screenshots.organizationId, scope.orgId), eq(schema.screenshots.id, id)))
+    .limit(1);
+  if (!r || !r.s3Key) return { ok: false, status: 404 };
+  if (r.userId !== scope.targetUserId) return { ok: false, status: 403 };
+  return { ok: true, s3Key: r.s3Key };
+}
 
 const ScreenshotResponse = z.object({
   id: z.string().uuid(),
@@ -107,6 +144,11 @@ export const screenshotRoutes: FastifyPluginAsyncZod = async (app) => {
 
         const fullPath = join(orgDir, `${row!.id}.png`);
         await writeFile(fullPath, imageBytes!);
+        // Generate the WebP thumbnail now so first-view is instant. Best-effort —
+        // the /thumb route regenerates on demand if this fails.
+        try {
+          await writeFile(thumbPathFor(fullPath), await makeThumb(imageBytes!));
+        } catch { /* on-demand fallback covers it */ }
 
         const [updated] = await tx
           .update(schema.screenshots)
@@ -180,42 +222,62 @@ export const screenshotRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   );
 
-  // Stream the raw image bytes. MVP reads from the local filesystem path
-  // stored in s3_key; the S3 driver later swaps this for a signed-URL redirect.
+  // Image routes are authed by a short-lived signed token (`?t=`) minted by the
+  // timeline/roster endpoints — so the web can use native <img> (no auth header).
+  // The token scopes to {org, targetUser}; the screenshot must match. Screenshots
+  // are immutable, so both variants cache immutably with an ETag.
+
+  // Full-resolution PNG — used by the lightbox. Streamed from disk.
   app.get(
     '/screenshots/:id/raw',
     {
-      preHandler: [requireAuth],
       schema: {
         params: z.object({ id: z.string().uuid() }),
+        querystring: z.object({ t: z.string().optional() }),
         tags: ['screenshots'],
       },
     },
     async (req, reply) => {
-      const row = await req.withTenantDb(async (tx) => {
-        const [r] = await tx
-          .select({ s3Key: schema.screenshots.s3Key })
-          .from(schema.screenshots)
-          .where(
-            and(
-              eq(schema.screenshots.organizationId, req.organizationId!),
-              eq(schema.screenshots.id, req.params.id),
-            ),
-          )
-          .limit(1);
-        return r ?? null;
-      });
-
-      if (!row || !row.s3Key) {
-        throw Object.assign(new Error('screenshot not found'), {
-          statusCode: 404,
-          code: 'not_found',
-        });
-      }
-
+      const res = await authScreenshot(req.query.t, req.params.id);
+      if (!res.ok) throw httpError(res.status);
+      const etag = `"${req.params.id}"`;
+      if (req.headers['if-none-match'] === etag) return reply.code(304).send();
       reply.header('Content-Type', 'image/png');
-      reply.header('Cache-Control', 'private, max-age=300');
-      return reply.send(createReadStream(row.s3Key));
+      reply.header('Cache-Control', IMMUTABLE_CACHE);
+      reply.header('ETag', etag);
+      return reply.send(createReadStream(res.s3Key));
+    },
+  );
+
+  // Small WebP thumbnail — used by the Timeline grid + dashboard. Generated on
+  // upload; regenerated + cached on demand if missing (covers old screenshots).
+  app.get(
+    '/screenshots/:id/thumb',
+    {
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        querystring: z.object({ t: z.string().optional() }),
+        tags: ['screenshots'],
+      },
+    },
+    async (req, reply) => {
+      const res = await authScreenshot(req.query.t, req.params.id);
+      if (!res.ok) throw httpError(res.status);
+      const etag = `"${req.params.id}-t"`;
+      if (req.headers['if-none-match'] === etag) return reply.code(304).send();
+
+      const thumbPath = thumbPathFor(res.s3Key);
+      let buf: Buffer;
+      try {
+        buf = await readFile(thumbPath);
+      } catch {
+        buf = await makeThumb(await readFile(res.s3Key));
+        void writeFile(thumbPath, buf).catch(() => {}); // cache for next time
+      }
+      reply.header('Content-Type', 'image/webp');
+      reply.header('Cache-Control', IMMUTABLE_CACHE);
+      reply.header('ETag', etag);
+      return reply.send(buf);
     },
   );
 
@@ -267,6 +329,7 @@ export const screenshotRoutes: FastifyPluginAsyncZod = async (app) => {
           );
         if (shot.s3Key) {
           try { await unlink(shot.s3Key); } catch { /* file may already be gone */ }
+          try { await unlink(thumbPathFor(shot.s3Key)); } catch { /* thumb may not exist */ }
         }
         return { ok: true };
       });

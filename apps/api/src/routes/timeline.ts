@@ -6,6 +6,7 @@ import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, visibleUsers } from '../lib/access';
 import { DAY_MS, bucketSecondsByDay, localDateToUtcMs } from '../lib/time';
 import { listForUserDay } from '../repositories/screenshots';
+import { signImageToken } from '../lib/signed-url';
 
 /**
  * Employee daily timeline (S3): a day's tracked total + the day's activities
@@ -48,6 +49,8 @@ const TimelineResponse = z.object({
   // tracked tracker run/stop segments (clipped to the day) — the ruler "green bar"
   intervals: z.array(z.object({ start: z.string(), end: z.string() })),
   activities: z.array(Activity),
+  // Signed token for this user's screenshot image URLs (thumb/raw), ~1h TTL.
+  image_token: z.string(),
 });
 
 export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -247,6 +250,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           activity_score: dayScore,
           intervals,
           activities,
+          image_token: signImageToken(req.organizationId!, req.params.userId),
         };
       });
     },
