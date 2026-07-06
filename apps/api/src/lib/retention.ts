@@ -32,6 +32,7 @@ export async function pruneOrgScreenshots(tx: DB, orgId: string, retentionDays: 
   for (const s of olds) {
     if (s.s3Key) {
       try { await unlink(s.s3Key); } catch { /* file already gone */ }
+      try { await unlink(s.s3Key.replace(/\.png$/i, '.thumb.webp')); } catch { /* thumb may not exist */ }
     }
   }
   return olds.length;

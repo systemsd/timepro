@@ -11,16 +11,15 @@ import { todayLocal, tzLabel } from '@/lib/date';
 import {
   deleteScreenshot,
   getMyEffectiveSettings,
-  getScreenshotObjectUrl,
   getTimeline,
   getTimelineActivity,
   getTimelineAppsUrls,
+  screenshotUrl,
   type Timeline,
   type TimelineActivity,
   type TimelineAppsUrls,
 } from '@/lib/api';
 import { EditActivityModal } from '@/components/EditActivityModal';
-import { useScreenshotUrl } from '@/lib/useScreenshotUrl';
 
 // ---- calendar-strip helpers (viewer-local) ----
 const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = Date.getDay()
@@ -363,6 +362,7 @@ export default function TimelinePage() {
                         at={s.captured_at}
                         app={s.app_name}
                         score={s.activity_score}
+                        token={data?.image_token ?? ''}
                         onOpen={() => setShotIndex(allShots.findIndex((x) => x.id === s.id))}
                         canDelete={canDeleteShots}
                         onDeleted={() => { setRefreshTick((t) => t + 1); setToast('Screenshot deleted'); }}
@@ -380,6 +380,7 @@ export default function TimelinePage() {
         <ScreenshotModal
           shots={allShots}
           index={shotIndex}
+          token={data?.image_token ?? ''}
           onIndex={setShotIndex}
           onClose={() => setShotIndex(null)}
         />
@@ -408,25 +409,19 @@ export default function TimelinePage() {
 function ScreenshotModal({
   shots,
   index,
+  token,
   onIndex,
   onClose,
 }: {
   shots: Array<{ id: string; captured_at: string }>;
   index: number;
+  token: string;
   onIndex: (i: number) => void;
   onClose: () => void;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
   const cur = shots[index]!;
   const hasPrev = index > 0;
   const hasNext = index < shots.length - 1;
-
-  useEffect(() => {
-    let revoked: string | null = null;
-    setUrl(null);
-    getScreenshotObjectUrl(cur.id).then((u) => { revoked = u; setUrl(u); }).catch(() => {});
-    return () => { if (revoked) URL.revokeObjectURL(revoked); };
-  }, [cur.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -450,7 +445,7 @@ function ScreenshotModal({
             <CloseIcon size={20} />
           </button>
         </div>
-        {url ? <img src={url} alt="Screenshot" /> : <div className="ss-modal-loading">Loading…</div>}
+        <img src={screenshotUrl(cur.id, token, 'raw')} alt="Screenshot" decoding="async" />
       </div>
       <button className="ss-nav next" disabled={!hasNext} aria-label="Next"
         onClick={(e) => { e.stopPropagation(); onIndex(index + 1); }}>›</button>
@@ -459,17 +454,17 @@ function ScreenshotModal({
 }
 
 function TLThumb({
-  id, at, app, score, onOpen, canDelete, onDeleted,
+  id, at, app, score, token, onOpen, canDelete, onDeleted,
 }: {
   id: string;
   at: string;
   app: string | null;
   score: number | null;
+  token: string;
   onOpen: () => void;
   canDelete: boolean;
   onDeleted: () => void;
 }) {
-  const { url, ref } = useScreenshotUrl(id);
   const [busy, setBusy] = useState(false);
   const del = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -477,7 +472,7 @@ function TLThumb({
     try { await deleteScreenshot(id); onDeleted(); } catch { setBusy(false); }
   };
   return (
-    <figure ref={ref} className="tl-thumb">
+    <figure className="tl-thumb">
       <div className="tl-thumb-bar">
         <span className="tl-thumb-meta">
           <span className="tl-thumb-time">{time(at)}</span>
@@ -495,13 +490,9 @@ function TLThumb({
           )}
         </span>
       </div>
-      {url ? (
-        <button type="button" className="tl-thumb-btn" onClick={onOpen} title="Open screenshot">
-          <img src={url} alt="" />
-        </button>
-      ) : (
-        <div className="tl-thumb-ph" />
-      )}
+      <button type="button" className="tl-thumb-btn" onClick={onOpen} title="Open screenshot">
+        <img src={screenshotUrl(id, token, 'thumb')} alt="" loading="lazy" decoding="async" />
+      </button>
     </figure>
   );
 }

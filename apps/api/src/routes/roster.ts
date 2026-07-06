@@ -9,6 +9,7 @@ import { resolveWeeklyLimitHours } from '../lib/limits';
 import { DAY_MS, overlapSeconds } from '../lib/time';
 import { listForUsersStartedSince } from '../repositories/time-entries';
 import { getLatestPerUser } from '../repositories/screenshots';
+import { signImageToken } from '../lib/signed-url';
 
 /**
  * Manager/Admin "My Home" roster (S2). One row per visible employee with
@@ -36,6 +37,8 @@ const RosterRow = z.object({
   over_limit: z.boolean(),
   last_active: z.string().nullable(),
   last_screenshot_id: z.string().nullable(),
+  // Signed token for this user's last-screenshot thumbnail (~1h TTL). null when no shot.
+  thumb_token: z.string().nullable(),
 });
 
 const RosterResponse = z.object({
@@ -228,6 +231,7 @@ export const rosterRoutes: FastifyPluginAsyncZod = async (app) => {
             over_limit: limitHours > 0 && a.week > limitHours * 3600,
             last_active: lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null,
             last_screenshot_id: ls?.id ?? null,
+            thumb_token: ls ? signImageToken(req.organizationId!, m.userId) : null,
           };
         });
 

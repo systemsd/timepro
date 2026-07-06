@@ -7,11 +7,11 @@ import { useSession } from '@/lib/useSession';
 import { useRealtimePresence } from '@/lib/useRealtimePresence';
 import {
   getRoster,
+  screenshotUrl,
   type Presence,
   type Roster,
   type RosterRow,
 } from '@/lib/api';
-import { useScreenshotUrl } from '@/lib/useScreenshotUrl';
 
 const isManagerOrAdmin = (r: string) => ['owner', 'admin', 'manager'].includes(r);
 
@@ -114,7 +114,7 @@ function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Pr
       <td className="l thumb-cell">
         {row.last_screenshot_id ? (
           <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={onOpen}>
-            <RosterThumb id={row.last_screenshot_id} at={row.last_active} />
+            <RosterThumb id={row.last_screenshot_id} at={row.last_active} token={row.thumb_token} />
           </button>
         ) : (
           <span className="muted-2">…</span>
@@ -133,11 +133,14 @@ function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Pr
   );
 }
 
-function RosterThumb({ id, at }: { id: string; at: string | null }) {
-  const { url, ref } = useScreenshotUrl(id);
+function RosterThumb({ id, at, token }: { id: string; at: string | null; token: string | null }) {
   return (
-    <figure ref={ref} style={{ margin: 0, position: 'relative' }}>
-      {url ? <img src={url} alt="" /> : <div className="thumb-ph" />}
+    <figure style={{ margin: 0, position: 'relative' }}>
+      {token ? (
+        <img src={screenshotUrl(id, token, 'thumb')} alt="" loading="lazy" decoding="async" />
+      ) : (
+        <div className="thumb-ph" />
+      )}
       {at && <figcaption style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{relative(at)}</figcaption>}
     </figure>
   );
@@ -209,7 +212,7 @@ function EmployeeHome() {
               <td className="l thumb-cell">
                 {me?.last_screenshot_id ? (
                   <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={openTimeline}>
-                    <RosterThumb id={me.last_screenshot_id} at={me.last_active} />
+                    <RosterThumb id={me.last_screenshot_id} at={me.last_active} token={me.thumb_token} />
                   </button>
                 ) : (
                   <span className="muted-2">…</span>

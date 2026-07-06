@@ -222,6 +222,12 @@ export interface RosterRow {
   over_limit: boolean;
   last_active: string | null;
   last_screenshot_id: string | null;
+  thumb_token: string | null;
+}
+
+/** Build a native <img> src for a screenshot, authed by a signed token. */
+export function screenshotUrl(id: string, token: string, variant: 'thumb' | 'raw'): string {
+  return `${API_BASE}/v1/screenshots/${id}/${variant}?t=${encodeURIComponent(token)}`;
 }
 
 export type RosterPeriod = 'day' | 'month';
@@ -280,6 +286,7 @@ export interface Timeline {
   activity_score: number | null;
   intervals: Array<{ start: string; end: string }>;
   activities: TimelineActivity[];
+  image_token: string;
 }
 
 export async function getTimeline(userId: string, date: string): Promise<Timeline> {
@@ -732,19 +739,6 @@ export async function getScreenshots(limit = 24): Promise<{ screenshots: Screens
   });
   if (!res.ok) return asError(res);
   return res.json();
-}
-
-/**
- * Fetch the raw image with auth headers and return an object URL.
- * (An <img src> can't carry headers, so we fetch-as-blob.)
- */
-export async function getScreenshotObjectUrl(id: string): Promise<string> {
-  const res = await fetch(`${API_BASE}/v1/screenshots/${id}/raw`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) return asError(res);
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
 }
 
 export async function deleteScreenshot(id: string): Promise<{ ok: boolean }> {
