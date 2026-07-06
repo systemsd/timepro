@@ -20,23 +20,22 @@ describe('tenancy + RBAC scoping', () => {
   afterAll(async () => { await app.close(); });
   beforeEach(resetDb);
 
-  function today(hour: number): Date {
-    const d = new Date();
-    d.setUTCHours(hour, 0, 0, 0);
-    return d;
-  }
+  // A day safely in the past, so the report window (clipped to `now`) always
+  // contains the seeded entries regardless of the time of day the suite runs.
+  const day = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const at = (hour: number): Date => new Date(`${day}T${String(hour).padStart(2, '0')}:00:00Z`);
 
   it('a report scoped to org A never includes org B data', async () => {
     const orgA = await seedOrg('Alpha', 'alpha');
     const adminA = await seedUser(orgA, { name: 'AdminA', role: 'admin' });
     const empA = await seedUser(orgA, { name: 'EmpA', role: 'employee' });
-    await seedTimeEntry(orgA, empA, { startedAt: today(9), endedAt: today(10) }); // 1h
+    await seedTimeEntry(orgA, empA, { startedAt: at(9), endedAt: at(10) }); // 1h
 
     const orgB = await seedOrg('Bravo', 'bravo');
     const empB = await seedUser(orgB, { name: 'EmpB', role: 'employee' });
-    await seedTimeEntry(orgB, empB, { startedAt: today(9), endedAt: today(14) }); // 5h
+    await seedTimeEntry(orgB, empB, { startedAt: at(9), endedAt: at(14) }); // 5h
 
-    const from = new Date().toISOString().slice(0, 10);
+    const from = day;
     const res = await app.inject({
       method: 'POST',
       url: '/v1/reports/run',
