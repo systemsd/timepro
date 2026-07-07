@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
@@ -87,6 +87,39 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
               new Error(`Weekly time limit of ${limitHours}h reached`),
               { statusCode: 409, code: 'weekly_limit_reached' },
             );
+          }
+        }
+
+        // If tracking against a task, it must be an active task in this org that
+        // the caller can see (assignee or collaborator) — mirrors GET /v1/tasks.
+        if (body.task_id) {
+          const [me] = await tx
+            .select({ opsId: schema.users.opscoreEmployeeId })
+            .from(schema.users)
+            .where(eq(schema.users.id, req.userId!))
+            .limit(1);
+          const [task] = me?.opsId
+            ? await tx
+                .select({ id: schema.tasks.id })
+                .from(schema.tasks)
+                .where(
+                  and(
+                    eq(schema.tasks.organizationId, req.organizationId!),
+                    eq(schema.tasks.id, body.task_id),
+                    eq(schema.tasks.active, true),
+                    or(
+                      eq(schema.tasks.assignedOpscoreEmployeeId, me.opsId),
+                      sql`${me.opsId} = ANY(${schema.tasks.collaboratorOpscoreEmployeeIds})`,
+                    ),
+                  ),
+                )
+                .limit(1)
+            : [];
+          if (!task) {
+            throw Object.assign(new Error('Task not found or not assigned to you'), {
+              statusCode: 400,
+              code: 'task_not_trackable',
+            });
           }
         }
 

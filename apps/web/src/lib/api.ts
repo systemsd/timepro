@@ -268,6 +268,8 @@ export interface TimelineActivity {
   id: string;
   project_id: string | null;
   project_name: string | null;
+  task_id: string | null;
+  task_name: string | null;
   description: string | null;
   started_at: string;
   ended_at: string | null;

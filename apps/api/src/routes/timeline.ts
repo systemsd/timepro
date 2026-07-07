@@ -30,6 +30,8 @@ const Activity = z.object({
   id: z.string(),
   project_id: z.string().nullable(),
   project_name: z.string().nullable(),
+  task_id: z.string().nullable(),
+  task_name: z.string().nullable(),
   description: z.string().nullable(),
   started_at: z.string(),
   ended_at: z.string().nullable(),
@@ -94,6 +96,8 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
             id: schema.timeEntries.id,
             projectId: schema.timeEntries.projectId,
             projectName: schema.projects.name,
+            taskId: schema.timeEntries.taskId,
+            taskName: schema.tasks.name,
             description: schema.timeEntries.description,
             source: schema.timeEntries.source,
             isManual: schema.timeEntries.isManual,
@@ -102,6 +106,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           })
           .from(schema.timeEntries)
           .leftJoin(schema.projects, eq(schema.projects.id, schema.timeEntries.projectId))
+          .leftJoin(schema.tasks, eq(schema.tasks.id, schema.timeEntries.taskId))
           .where(
             and(
               eq(schema.timeEntries.organizationId, req.organizationId!),
@@ -144,6 +149,8 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
                 id: e.id,
                 project_id: e.projectId ?? null,
                 project_name: e.projectName ?? null,
+                task_id: e.taskId ?? null,
+                task_name: e.taskName ?? null,
                 description: e.description ?? null,
                 started_at: e.startedAt.toISOString(),
                 ended_at: e.endedAt ? e.endedAt.toISOString() : null,

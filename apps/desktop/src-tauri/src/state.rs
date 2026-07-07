@@ -26,16 +26,18 @@ pub struct Session {
 pub struct RunningTimer {
     pub time_entry_id: String,
     pub project_id: Option<String>,
+    pub task_id: Option<String>,
     pub description: Option<String>,
     pub started_at: DateTime<Utc>,
 }
 
 /// Context captured when tracking auto-pauses on idle, so the same
-/// project/description can be resumed automatically once the user is active
+/// project/task/description can be resumed automatically once the user is active
 /// again (no manual "play" click). Runtime-only — never persisted.
 #[derive(Debug, Clone)]
 pub struct PausedTimer {
     pub project_id: Option<String>,
+    pub task_id: Option<String>,
     pub description: Option<String>,
 }
 

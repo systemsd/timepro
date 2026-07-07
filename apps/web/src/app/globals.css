@@ -911,6 +911,11 @@ body {
   font-size: 13px; font-weight: 600; color: #3a3f45; background: #eef1f4;
   border-radius: 4px; padding: 2px 8px; white-space: nowrap;
 }
+.tl-act-task {
+  font-size: 13px; font-weight: 600; color: var(--accent); background: #edecfb;
+  border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+}
 .tl-act-desc { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tl-act-dur { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: auto; }
 .tl-act-edited {

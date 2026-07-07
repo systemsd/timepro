@@ -162,6 +162,51 @@ button:disabled { cursor: default; }
 .proj-menu button:hover { background: #f4f5f6; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
+/* task picker (OpsCore tasks under the selected project) */
+.task-chip {
+  flex: none;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #eef0f2;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-chip.empty { color: var(--muted-2); }
+
+.task-menu {
+  position: absolute;
+  right: 20px; top: 64px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.14);
+  min-width: 240px; max-height: 320px; overflow-y: auto;
+  padding: 6px; z-index: 30;
+}
+.task-menu button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; text-align: left;
+  padding: 9px 12px; border-radius: 7px;
+  color: var(--text); font-size: 13px;
+}
+.task-menu button:hover { background: #f4f5f6; }
+.task-option .task-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-badge {
+  flex: none; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.3px;
+  padding: 2px 6px; border-radius: 4px;
+  background: #eef0f2; color: #5a6068;
+}
+.task-badge.prio-high, .task-badge.prio-urgent { background: #fdeaea; color: #c0392b; }
+.task-badge.prio-medium { background: #fff4e5; color: #b9770e; }
+.task-badge.status-done { background: #e8f5ec; color: #2e7d46; }
+.task-badge.status-blocked { background: #fdeaea; color: #c0392b; }
+
 /* big round play/stop */
 .round-btn {
   width: 76px; height: 76px;

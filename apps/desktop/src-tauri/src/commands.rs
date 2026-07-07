@@ -11,7 +11,7 @@ use tauri::State;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::api::{ApiClient, ApiError, Project, TimerSnapshot};
+use crate::api::{ApiClient, ApiError, Project, Task, TimerSnapshot};
 use crate::capture::{idle, screenshot};
 use crate::state::{AppState, RunningTimer, Session};
 
@@ -218,11 +218,24 @@ pub async fn list_projects(state: State<'_, Arc<AppState>>) -> Result<Vec<Projec
     Ok(resp.projects)
 }
 
+/// OpsCore tasks the signed-in resource can track against, for the picker.
+/// `project_id` = a project uuid, `"none"` for the No-project bucket, or omitted.
+#[tauri::command]
+pub async fn list_tasks(
+    state: State<'_, Arc<AppState>>,
+    project_id: Option<String>,
+) -> Result<Vec<Task>> {
+    let api = client(&state)?;
+    let resp = api.list_tasks(project_id.as_deref()).await.map_err(map_err)?;
+    Ok(resp.tasks)
+}
+
 // ---- timer ----
 
 #[derive(Debug, Deserialize)]
 pub struct TimerStartArgs {
     pub project_id: Option<String>,
+    pub task_id: Option<String>,
     pub description: Option<String>,
 }
 
@@ -252,6 +265,7 @@ pub async fn timer_start(
     let snap = api
         .timer_start(
             args.project_id.as_deref(),
+            args.task_id.as_deref(),
             args.description.as_deref(),
             &Uuid::new_v4().to_string(),
         )
@@ -261,6 +275,7 @@ pub async fn timer_start(
     state.set_timer(RunningTimer {
         time_entry_id: snap.id.clone(),
         project_id: snap.project_id.clone(),
+        task_id: args.task_id.clone(),
         description: args.description.clone(),
         started_at: snap.started_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     });

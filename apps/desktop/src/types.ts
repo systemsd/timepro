@@ -17,6 +17,14 @@ export interface Project {
   is_billable: boolean;
 }
 
+export interface Task {
+  id: string;
+  name: string;
+  status: string; // TODO | IN_PROGRESS | REVIEW | BLOCKED | DONE
+  priority: string; // LOW | MEDIUM | HIGH | URGENT
+  project_id: string | null;
+}
+
 export interface TimerView {
   time_entry_id: string;
   project_id: string | null;
