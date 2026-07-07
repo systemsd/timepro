@@ -7,6 +7,7 @@ import { closeDb } from '@timepro/db';
 import { initObservability } from './lib/observability';
 import { pruneAgentLogs, pruneAllOrgs } from './lib/retention';
 import { sweepAbandonedTimers } from './lib/timer-sweep';
+import { runScheduledOpscoreSync } from './lib/opscore-sync';
 
 async function main() {
   const config = loadConfig();
@@ -56,6 +57,21 @@ async function main() {
   };
   setTimeout(timerSweep, 45_000).unref();
   setInterval(timerSweep, 10 * 60 * 1000).unref();
+
+  // OpsCore directory sync — OpsCore serves read-only feeds and never pushes, so
+  // a new task/project/employee assignment only reaches TimePro when the sync
+  // runs. No scheduler service yet (Phase 8), so pull in-process: soon after boot,
+  // then every 10 min. No-op when OpsCore isn't configured.
+  const opscoreSync = async () => {
+    try {
+      const res = await runScheduledOpscoreSync();
+      if (res) app.log.info({ orgId: res.orgId, ...res.result }, 'opscore directory sync');
+    } catch (err) {
+      app.log.error({ err }, 'opscore directory sync failed');
+    }
+  };
+  setTimeout(opscoreSync, 60_000).unref();
+  setInterval(opscoreSync, 10 * 60 * 1000).unref();
 
   const shutdown = async (signal: NodeJS.Signals) => {
     app.log.info({ signal }, 'shutting down');
