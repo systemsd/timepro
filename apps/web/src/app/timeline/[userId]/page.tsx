@@ -340,6 +340,7 @@ export default function TimelinePage() {
                   <span className="tl-act-level" style={{ background: actColor(a.activity_score) }} title={`${a.activity_score}% activity`} />
                 )}
                 <span className="tl-act-proj">{a.project_name ?? 'No project'}</span>
+                {a.task_name && <span className="tl-act-task" title="Task">{a.task_name}</span>}
                 {a.description && <span className="tl-act-desc">{a.description}</span>}
                 {a.is_manual && <span className="tl-act-edited">edited</span>}
                 {canEditTime && <span className="tl-act-pencil" aria-hidden="true"><PencilIcon size={14} /></span>}
