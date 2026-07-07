@@ -103,6 +103,19 @@ export const SETTINGS: SettingDef[] = [
     enforcedBy: 'idle',
   },
   {
+    key: 'tracking.require_task',
+    label: 'Require a task to track time',
+    type: 'bool',
+    // Default OFF for a staged rollout: ship the enforcement + the v0.1.14 agent
+    // (which disables Start without a task), let everyone auto-update, THEN flip
+    // this on org-wide. Turning it on before old agents update would lock them
+    // out of tracking (they send no task_id).
+    default: false,
+    overridable: true,
+    description:
+      'Employees must pick an assigned task before the timer can start. When off, tracking works with or without a task.',
+  },
+  {
     key: 'time.allow_offline',
     label: 'Allow adding Offline Time',
     type: 'bool',

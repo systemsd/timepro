@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '@timepro/db';
 import { buildTestApp, resetDb, seedOrg, seedUser, authHeaders } from './helpers';
+import { setOrgDefault } from '../../src/lib/settings';
 
 /** Give a seeded user an OpsCore directory identity (tasks scope on this id). */
 async function setOpsId(userId: string, opsId: string): Promise<void> {
@@ -81,6 +82,14 @@ describe('OpsCore task sync — picker scoping + timer enforcement', () => {
       payload: { client_event_id: randomUUID(), ...body },
     });
 
+  const stopTimer = (userId: string) =>
+    app.inject({
+      method: 'POST',
+      url: '/v1/timer/stop',
+      headers: authHeaders(org, userId),
+      payload: { client_event_id: randomUUID() },
+    });
+
   it('scopes tasks to the assignee OR a collaborator; hides them from everyone else', async () => {
     await seedTask(org, { name: 'A-owned', assignee: OPS_A });
     await seedTask(org, { name: 'Shared', assignee: OPS_A, collaborators: [OPS_C] });
@@ -138,5 +147,24 @@ describe('OpsCore task sync — picker scoping + timer enforcement', () => {
     // No task_id still works (backward compatible for old agents).
     const noTask = await startTimer(carol, {});
     expect(noTask.statusCode).toBe(200);
+  });
+
+  it('enforces tracking.require_task: a no-task start is blocked only when the setting is on', async () => {
+    const task = await seedTask(org, { name: 'A-owned', assignee: OPS_A });
+
+    // Default (off) → a no-task start is allowed.
+    expect((await startTimer(alice, {})).statusCode).toBe(200);
+    await stopTimer(alice);
+
+    // Turn it on at the org level.
+    await setOrgDefault(getDb(), org, 'tracking.require_task', true, alice);
+
+    // Now a no-task start is rejected…
+    const blocked = await startTimer(alice, {});
+    expect(blocked.statusCode).toBe(400);
+    expect(blocked.json().code).toBe('task_required');
+
+    // …but starting with an assigned task still works.
+    expect((await startTimer(alice, { task_id: task })).statusCode).toBe(200);
   });
 });

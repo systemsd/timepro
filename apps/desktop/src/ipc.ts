@@ -14,6 +14,8 @@ export const ipc = {
   listProjects: () => invoke<Project[]>('list_projects'),
   // projectId: a project uuid, or 'none' for the "No project" bucket.
   listTasks: (projectId: string) => invoke<Task[]>('list_tasks', { projectId }),
+  // Effective settings map (e.g. `tracking.require_task`) for UI gating.
+  getSettings: () => invoke<Record<string, unknown>>('get_settings'),
 
   timerStart: (projectId: string | null, taskId: string | null, description: string | null) =>
     invoke<TimerView>('timer_start', {
