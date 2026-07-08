@@ -61,7 +61,8 @@ async function main() {
   // OpsCore directory sync — OpsCore serves read-only feeds and never pushes, so
   // a new task/project/employee assignment only reaches TimePro when the sync
   // runs. No scheduler service yet (Phase 8), so pull in-process: soon after boot,
-  // then every 10 min. No-op when OpsCore isn't configured.
+  // then every 2 min so new OpsCore assignments appear quickly. No-op when
+  // OpsCore isn't configured.
   const opscoreSync = async () => {
     try {
       const res = await runScheduledOpscoreSync();
@@ -71,7 +72,7 @@ async function main() {
     }
   };
   setTimeout(opscoreSync, 60_000).unref();
-  setInterval(opscoreSync, 10 * 60 * 1000).unref();
+  setInterval(opscoreSync, 2 * 60 * 1000).unref();
 
   const shutdown = async (signal: NodeJS.Signals) => {
     app.log.info({ signal }, 'shutting down');
