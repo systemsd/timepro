@@ -124,6 +124,31 @@ export const screenshotRoutes: FastifyPluginAsyncZod = async (app) => {
       await mkdir(orgDir, { recursive: true });
 
       return req.withTenantDb(async (tx) => {
+        // Reject a screenshot for a timer the server has already closed (e.g. the
+        // abandoned-timer sweep closed it while the agent slept). Storing it would
+        // create an orphan shot with no tracked time — the desync that showed hours
+        // of screenshots against a dead entry. The agent handles `entry_closed` by
+        // dropping its stale timer and re-establishing a fresh one.
+        if (meta.time_entry_id) {
+          const [entry] = await tx
+            .select({ endedAt: schema.timeEntries.endedAt })
+            .from(schema.timeEntries)
+            .where(
+              and(
+                eq(schema.timeEntries.id, meta.time_entry_id),
+                eq(schema.timeEntries.organizationId, req.organizationId!),
+                eq(schema.timeEntries.userId, req.userId!),
+              ),
+            )
+            .limit(1);
+          if (!entry || entry.endedAt !== null) {
+            throw Object.assign(new Error('time entry is closed'), {
+              statusCode: 409,
+              code: 'entry_closed',
+            });
+          }
+        }
+
         const [row] = await tx
           .insert(schema.screenshots)
           .values({

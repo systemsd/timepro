@@ -28,6 +28,34 @@ use crate::api::{ApiClient, ApiError, ScreenshotMeta};
 use crate::capture::activity::ActivityAggregator;
 use crate::state::{AppState, PausedTimer, RunningTimer};
 
+/// The server reports our timer entry is already closed/gone — the abandoned-timer
+/// sweep closed it out from under us while the machine slept or idled. The local
+/// timer is stale and MUST be dropped. A transient network/5xx error is NOT this:
+/// there we keep the timer and retry, so a genuinely running timer isn't lost on a
+/// blip. (Root fix for the "screenshots pile up with no tracked time" desync.)
+fn timer_already_gone(err: &ApiError) -> bool {
+    matches!(err, ApiError::Server { status: 404, body } if body.contains("no_running_timer"))
+}
+
+/// A locked session / active screensaver means the user is away — even if the OS
+/// still reports low idle (Windows keeps the timer "active" while locked, which
+/// billed users' break time, e.g. namaz). We detect it from the foreground app:
+/// `LockApp.exe`/`LogonUI.exe` (Windows lock), `loginwindow` (macOS lock),
+/// `ScreenSaverEngine` (macOS screensaver). These processes are only foreground
+/// when the user is away, so a false positive is effectively impossible.
+fn is_lock_screen_process(name: &str) -> bool {
+    matches!(
+        name.trim().to_ascii_lowercase().as_str(),
+        "lockapp.exe" | "logonui.exe" | "loginwindow" | "screensaverengine"
+    )
+}
+
+/// True when the screen is locked (or the screensaver is up). None/unknown → false
+/// (never pause on uncertainty).
+fn is_screen_locked() -> bool {
+    apps::active_app().map(|a| is_lock_screen_process(&a.app_name)).unwrap_or(false)
+}
+
 /// Background loop: when a timer is running, capture a screenshot every
 /// `state.screenshot_interval()` seconds and upload it to the API.
 ///
@@ -87,11 +115,14 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             if let Some(timer) = state.timer() {
                 let client = ApiClient::new(api_base.clone(), Some(session.clone()));
                 let ended_at = before_sleep.to_rfc3339();
-                if client
-                    .timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at))
-                    .await
-                    .is_ok()
-                {
+                let res = client.timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at)).await;
+                // Success, OR the server already closed it (sweep) → drop the stale
+                // timer either way. Only a transient error keeps it for a retry.
+                let stopped = match &res {
+                    Ok(_) => true,
+                    Err(e) => timer_already_gone(e),
+                };
+                if stopped {
                     state.clear_timer();
                     if let Some((name, title, started)) = current_app.take() {
                         let _ = client
@@ -161,7 +192,9 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             // to click play. The idle gap stays unbilled (the pause back-dated the
             // stop to when input ceased).
             if let Some(p) = state.paused() {
-                if idle::seconds_idle() < RESUME_IDLE_SECS {
+                // Don't resume while the screen is still locked, even if idle reads
+                // low (Windows reports 0 idle when locked) — wait until it's unlocked.
+                if !is_screen_locked() && idle::seconds_idle() < RESUME_IDLE_SECS {
                     let client = ApiClient::new(api_base.clone(), Some(session.clone()));
                     match client
                         .timer_start(
@@ -240,6 +273,39 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             last_status_at = Some(now_ev);
         }
 
+        // Screen-lock pause: a locked session means the user is away, so pause
+        // IMMEDIATELY (no idle threshold) — this is the fix for locked break time
+        // (e.g. namaz) being billed while idle detection is unreliable on a lock.
+        // Back-dated to now (we detect within one 5s tick); auto-resume on unlock.
+        if is_screen_locked() {
+            let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+            let ended_at = now_ev.to_rfc3339();
+            let res = client.timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at)).await;
+            let stopped = match &res {
+                Ok(_) => true,
+                Err(e) => timer_already_gone(e),
+            };
+            if stopped {
+                state.set_paused(PausedTimer {
+                    project_id: timer.project_id.clone(),
+                    task_id: timer.task_id.clone(),
+                    description: timer.description.clone(),
+                });
+                state.clear_timer();
+                if let Some((name, title, started)) = current_app.take() {
+                    let _ = client
+                        .ingest_app_usage(&name, title.as_deref(), &started.to_rfc3339(), &ended_at, Some(entry_id.clone()))
+                        .await;
+                }
+                let _ = app.emit(
+                    "timer:auto-paused",
+                    serde_json::json!({ "reason": "locked", "seconds": 0 }),
+                );
+                info!("auto-paused tracking (screen locked)");
+            }
+            continue;
+        }
+
         // Auto-pause: stop tracking once the user has been idle past the
         // configured threshold (`tracking.auto_pause_minutes`; 0 = disabled).
         let auto_pause = state.auto_pause_sec();
@@ -248,11 +314,14 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             // Back-date the stop to when input actually ceased (now − idle), so
             // the idle window before the threshold tripped isn't billed.
             let ended_at = (now_ev - chrono::Duration::seconds(idle_secs as i64)).to_rfc3339();
-            if client
-                .timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at))
-                .await
-                .is_ok()
-            {
+            let res = client.timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at)).await;
+            // Success, OR the server already closed it (sweep) → pause + drop the
+            // stale timer so auto-resume can start a fresh entry. Transient → keep.
+            let stopped = match &res {
+                Ok(_) => true,
+                Err(e) => timer_already_gone(e),
+            };
+            if stopped {
                 // Remember the project/description so we can auto-resume the moment
                 // input returns (no manual "play" click).
                 state.set_paused(PausedTimer {
@@ -352,6 +421,15 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
         let task_uploads = uploads_session.clone();
         let blur_always = state.blur_always();
         let notify = state.notify_on_screenshot();
+        // For the entry_closed safety net: if the server rejects this shot because
+        // it already closed our entry, drop the stale timer and remember the context
+        // so auto-resume starts a fresh valid entry.
+        let task_state = state.clone();
+        let task_paused = PausedTimer {
+            project_id: timer.project_id.clone(),
+            task_id: timer.task_id.clone(),
+            description: timer.description.clone(),
+        };
         tokio::spawn(async move {
             // "capturing screenshot" with no following "uploaded"/"failed" pinpoints
             // a hang in capture or upload.
@@ -416,11 +494,42 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 }
                 Err(err) => {
                     let upload_ms = (Utc::now() - up_start).num_milliseconds();
-                    warn!(error = ?err, capture_ms, upload_ms, "screenshot upload failed");
+                    // The server rejects a shot whose entry it has already closed (the
+                    // sweep closed our timer while we slept). Drop the stale timer and
+                    // hand to auto-resume, so a fresh valid entry starts when the user
+                    // is active — instead of shooting a dead entry for hours. This is
+                    // the net that catches the desync even when suspend/idle didn't fire.
+                    if matches!(&err, ApiError::Server { status: 409, body } if body.contains("entry_closed")) {
+                        warn!("screenshot rejected: time entry already closed — re-syncing timer");
+                        task_state.set_paused(task_paused);
+                        task_state.clear_timer();
+                    } else {
+                        warn!(error = ?err, capture_ms, upload_ms, "screenshot upload failed");
+                    }
                 }
             }
         });
 
         debug!("capture spawned (uploading off-loop)");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_lock_screen_process;
+
+    #[test]
+    fn detects_lock_and_screensaver_processes() {
+        // Windows lock, macOS lock, macOS screensaver — case-insensitive.
+        for n in ["LockApp.exe", "lockapp.exe", "LogonUI.exe", "loginwindow", "ScreenSaverEngine"] {
+            assert!(is_lock_screen_process(n), "{n} should be treated as locked");
+        }
+    }
+
+    #[test]
+    fn does_not_flag_normal_apps() {
+        for n in ["Google Chrome", "Code", "Slack", "iTerm2", "explorer.exe", ""] {
+            assert!(!is_lock_screen_process(n), "{n} must not be treated as locked");
+        }
     }
 }
