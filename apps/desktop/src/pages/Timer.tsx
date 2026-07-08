@@ -93,18 +93,24 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   // Drop the current task selection if it's not in the new project's set.
   useEffect(() => {
     let cancelled = false;
-    ipc
-      .listTasks(selectedProject ?? 'none')
-      .then((ts) => {
-        if (cancelled) return;
-        setTasks(ts);
-        setSelectedTask((cur) => (cur && ts.some((t) => t.id === cur) ? cur : null));
-      })
-      .catch(() => {
-        if (!cancelled) setTasks([]);
-      });
+    const load = () =>
+      ipc
+        .listTasks(selectedProject ?? 'none')
+        .then((ts) => {
+          if (cancelled) return;
+          setTasks(ts);
+          setSelectedTask((cur) => (cur && ts.some((t) => t.id === cur) ? cur : null));
+        })
+        .catch(() => {
+          /* keep the current list — a transient fetch error shouldn't clear it */
+        });
+    void load();
+    // Poll so a task assigned in OpsCore (synced server-side) appears here without
+    // a logout/login. Cleared on project change / unmount.
+    const id = setInterval(load, 45_000);
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
   }, [selectedProject]);
 
