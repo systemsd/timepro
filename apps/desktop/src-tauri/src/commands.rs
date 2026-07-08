@@ -24,9 +24,13 @@ fn map_err<E: std::fmt::Display>(e: E) -> String {
 /// Turn a timer-start failure into a user-facing message. The API returns
 /// 409 `weekly_limit_reached` when the user is at/over their weekly cap.
 fn map_start_err(e: ApiError) -> String {
-    if let ApiError::Server { status: 409, body } = &e {
-        if body.contains("weekly_limit_reached") {
+    if let ApiError::Server { status, body } = &e {
+        if *status == 409 && body.contains("weekly_limit_reached") {
             return "You've reached your weekly time limit — tracking is blocked until next week.".to_string();
+        }
+        // tracking.require_task is on and no task was selected.
+        if *status == 400 && body.contains("task_required") {
+            return "Select an assigned task to start tracking.".to_string();
         }
     }
     e.to_string()
@@ -228,6 +232,16 @@ pub async fn list_tasks(
     let api = client(&state)?;
     let resp = api.list_tasks(project_id.as_deref()).await.map_err(map_err)?;
     Ok(resp.tasks)
+}
+
+/// Effective settings for the signed-in user (e.g. `tracking.require_task`), so
+/// the UI can gate the task picker without duplicating server logic. The server
+/// remains the source of truth (it also enforces on `timer/start`).
+#[tauri::command]
+pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value> {
+    let api = client(&state)?;
+    let m = api.get_effective_settings().await.map_err(map_err)?;
+    Ok(serde_json::Value::Object(m))
 }
 
 // ---- timer ----

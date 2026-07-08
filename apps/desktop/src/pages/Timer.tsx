@@ -27,6 +27,10 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     () => localStorage.getItem(LS_TASKID) || null,
   );
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
+  // tracking.require_task — when on, a task must be selected before Start.
+  // Mirrors the server (which also enforces it); defaults off if the fetch fails
+  // (the server stays authoritative, so this can only be over-permissive in UI).
+  const [requireTask, setRequireTask] = useState(false);
   const [timer, setTimer] = useState<TimerView | null>(null);
   const [pausedReason, setPausedReason] = useState<'idle' | 'suspended' | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -57,6 +61,10 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     () => tasks.find((t) => t.id === selectedTask) ?? null,
     [tasks, selectedTask],
   );
+  // When a task is required: no assigned tasks here → nothing to track; and Start
+  // stays blocked until one is picked.
+  const noTasksAvailable = requireTask && tasks.length === 0;
+  const startBlocked = requireTask && !selectedTask;
 
   // initial load
   useEffect(() => {
@@ -70,6 +78,12 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
         }
       } catch (err) {
         setError(asMessage(err));
+      }
+      // Best-effort: gate the picker on tracking.require_task. Failure → stay off.
+      try {
+        setRequireTask((await ipc.getSettings())['tracking.require_task'] === true);
+      } catch {
+        /* server still enforces on start */
       }
     })();
   }, []);
@@ -282,17 +296,23 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           >
             {project ? project.name : 'Select project'}
           </button>
-          {/* Task picker — only shown when the resource has tasks on this
-              project (or the No-project bucket). Task is optional: project-only
-              tracking still works with no task selected. */}
-          {tasks.length > 0 && (
-            <button
-              className={`task-chip ${activeTask ? '' : 'empty'}`}
-              onClick={() => setTaskMenuOpen((v) => !v)}
-              disabled={busy}
-            >
-              {activeTask ? activeTask.name : 'Select task'}
-            </button>
+          {/* Task picker. Shown whenever there are tasks here, or when a task is
+              required (so the requirement is visible even with none available).
+              When required and there are no tasks → nothing to track. */}
+          {noTasksAvailable ? (
+            <span className="task-chip empty" title="No tasks assigned to you">
+              No tasks assigned
+            </span>
+          ) : (
+            (tasks.length > 0 || requireTask) && (
+              <button
+                className={`task-chip ${activeTask ? '' : 'empty'}`}
+                onClick={() => setTaskMenuOpen((v) => !v)}
+                disabled={busy}
+              >
+                {activeTask ? activeTask.name : 'Select task'}
+              </button>
+            )
           )}
         </div>
 
@@ -300,7 +320,8 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           className="round-btn play"
           aria-label="start"
           onClick={start}
-          disabled={running || busy}
+          disabled={running || busy || startBlocked}
+          title={startBlocked ? 'Select an assigned task to start tracking' : undefined}
         >
           <PlayIcon />
         </button>
@@ -333,9 +354,11 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
 
         {taskMenuOpen && (
           <div className="task-menu">
-            <button onClick={() => { setSelectedTask(null); setTaskMenuOpen(false); }}>
-              No task
-            </button>
+            {!requireTask && (
+              <button onClick={() => { setSelectedTask(null); setTaskMenuOpen(false); }}>
+                No task
+              </button>
+            )}
             {tasks.map((t) => (
               <button
                 key={t.id}
