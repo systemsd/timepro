@@ -304,7 +304,13 @@ export async function getTimeline(userId: string, date: string): Promise<Timelin
 export interface TimelineAppsUrls {
   apps: Array<{ name: string; seconds: number }>;
   urls: Array<{ domain: string; seconds: number }>;
-  tasks: Array<{ description: string; seconds: number }>;
+  tasks: Array<{
+    task_id: string | null;
+    task_name: string | null;
+    description: string | null;
+    seconds: number;
+    running: boolean;
+  }>;
 }
 
 /** Apps + URLs used on one day for a user — Timeline summary-card panel. */
