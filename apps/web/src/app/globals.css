@@ -452,12 +452,6 @@ body {
 .tl-usage-time { font-size: 13px; color: #5a6068; font-variant-numeric: tabular-nums; }
 .tl-usage-bar { height: 12px; background: #eef1f4; border-radius: 3px; overflow: hidden; }
 .tl-usage-bar i { display: block; height: 100%; background: #8aaecb; border-radius: 3px; }
-/* Tasks tab: task name (primary) with the typed description on a sub-line. */
-.tl-usage-labels { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.tl-usage-sub {
-  font-size: 11px; color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 /* Blinking caret marking the currently-tracking task. */
 .tl-live-caret {
   display: inline-block; color: #22a06b; margin-right: 5px; font-size: 11px; line-height: 1;

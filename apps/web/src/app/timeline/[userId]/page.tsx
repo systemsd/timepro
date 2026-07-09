@@ -286,24 +286,22 @@ export default function TimelinePage() {
                 <p className="muted tl-usage-empty">No task activity for this day.</p>
               ) : (
                 taskRows.map((t, i) => {
-                  const primary = t.task_name ?? t.description ?? 'Untitled';
-                  const sub = t.task_name ? t.description : null; // description under the task
+                  // Show the typed description; fall back to the task name only when
+                  // there's no description (so time isn't left unlabeled).
+                  const label = t.description ?? t.task_name ?? 'Untitled';
                   return (
                     <div className="tl-usage-row" key={`${t.task_id ?? ''}::${t.description ?? ''}::${i}`}>
-                      <span className="tl-usage-labels">
-                        <button
-                          type="button"
-                          className="tl-usage-label tl-usage-jump"
-                          title={`Jump to “${primary}”`}
-                          onClick={() => jumpToTask(t)}
-                        >
-                          {t.running && (
-                            <span className="tl-live-caret" title="Currently tracking" aria-label="live">▸</span>
-                          )}
-                          {primary}
-                        </button>
-                        {sub && <span className="tl-usage-sub" title={sub}>{sub}</span>}
-                      </span>
+                      <button
+                        type="button"
+                        className="tl-usage-label tl-usage-jump"
+                        title={`Jump to “${label}”`}
+                        onClick={() => jumpToTask(t)}
+                      >
+                        {t.running && (
+                          <span className="tl-live-caret" title="Currently tracking" aria-label="live">▸</span>
+                        )}
+                        {label}
+                      </button>
                       <span className="tl-usage-time">{hm(t.seconds)}</span>
                       <span className="tl-usage-bar"><i style={{ width: `${(t.seconds / usageMax) * 100}%` }} /></span>
                     </div>
