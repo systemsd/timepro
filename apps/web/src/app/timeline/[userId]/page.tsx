@@ -178,17 +178,25 @@ export default function TimelinePage() {
     `/reports?from=${from}&to=${to}&user=${userId}&run=1`;
   // local midnight ms — for placing slot segments on the 24h ruler
   const dayStartMs = new Date(date + 'T00:00:00').getTime();
-  const usageRows = (usageTab === 'apps'
-    ? (usage?.apps ?? []).map((a) => ({ label: a.name, seconds: a.seconds }))
-    : usageTab === 'urls'
-    ? (usage?.urls ?? []).map((u) => ({ label: u.domain, seconds: u.seconds }))
-    : (usage?.tasks ?? []).map((t) => ({ label: t.description, seconds: t.seconds }))
-  );
-  const usageMax = usageRows.reduce((m, r) => Math.max(m, r.seconds), 0) || 1;
+  const usageRows =
+    usageTab === 'apps'
+      ? (usage?.apps ?? []).map((a) => ({ label: a.name, seconds: a.seconds }))
+      : usageTab === 'urls'
+        ? (usage?.urls ?? []).map((u) => ({ label: u.domain, seconds: u.seconds }))
+        : [];
+  const taskRows = usage?.tasks ?? []; // Tasks tab: task + description + running
+  const usageMax =
+    (usageTab === 'tasks'
+      ? taskRows.reduce((m, t) => Math.max(m, t.seconds), 0)
+      : usageRows.reduce((m, r) => Math.max(m, r.seconds), 0)) || 1;
 
-  // Clicking a task scrolls to the first activity with that description + flashes it.
-  const jumpToActivity = (description: string) => {
-    const target = data?.activities.find((a) => (a.description ?? '') === description);
+  // Clicking a task row scrolls to its first matching activity block + flashes it.
+  const jumpToTask = (t: { task_id: string | null; description: string | null }) => {
+    const target = data?.activities.find((a) =>
+      t.task_id
+        ? a.task_id === t.task_id && (a.description ?? '') === (t.description ?? '')
+        : (a.description ?? '') === (t.description ?? ''),
+    );
     if (!target) return;
     setFlashId(target.id);
     document.getElementById(`act-${target.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -273,35 +281,47 @@ export default function TimelinePage() {
             <button className={usageTab === 'urls' ? 'on' : ''} onClick={() => setUsageTab('urls')}>URLs</button>
           </div>
           <div className="tl-usage">
-            {usageRows.length === 0 ? (
+            {usageTab === 'tasks' ? (
+              taskRows.length === 0 ? (
+                <p className="muted tl-usage-empty">No task activity for this day.</p>
+              ) : (
+                taskRows.map((t, i) => {
+                  const primary = t.task_name ?? t.description ?? 'Untitled';
+                  const sub = t.task_name ? t.description : null; // description under the task
+                  return (
+                    <div className="tl-usage-row" key={`${t.task_id ?? ''}::${t.description ?? ''}::${i}`}>
+                      <span className="tl-usage-labels">
+                        <button
+                          type="button"
+                          className="tl-usage-label tl-usage-jump"
+                          title={`Jump to “${primary}”`}
+                          onClick={() => jumpToTask(t)}
+                        >
+                          {t.running && (
+                            <span className="tl-live-caret" title="Currently tracking" aria-label="live">▸</span>
+                          )}
+                          {primary}
+                        </button>
+                        {sub && <span className="tl-usage-sub" title={sub}>{sub}</span>}
+                      </span>
+                      <span className="tl-usage-time">{hm(t.seconds)}</span>
+                      <span className="tl-usage-bar"><i style={{ width: `${(t.seconds / usageMax) * 100}%` }} /></span>
+                    </div>
+                  );
+                })
+              )
+            ) : usageRows.length === 0 ? (
               <p className="muted tl-usage-empty">
-                No {usageTab === 'apps' ? 'app' : usageTab === 'urls' ? 'URL' : 'task'} activity for this day.
+                No {usageTab === 'apps' ? 'app' : 'URL'} activity for this day.
               </p>
             ) : (
-              usageRows.map((r) => {
-                // Task rows jump to their matching activity block on the page.
-                const canJump =
-                  usageTab === 'tasks' &&
-                  !!data?.activities.some((a) => (a.description ?? '') === r.label);
-                return (
-                  <div className="tl-usage-row" key={r.label}>
-                    {canJump ? (
-                      <button
-                        type="button"
-                        className="tl-usage-label tl-usage-jump"
-                        title={`Jump to “${r.label}”`}
-                        onClick={() => jumpToActivity(r.label)}
-                      >
-                        {r.label}
-                      </button>
-                    ) : (
-                      <span className="tl-usage-label" title={r.label}>{r.label}</span>
-                    )}
-                    <span className="tl-usage-time">{hm(r.seconds)}</span>
-                    <span className="tl-usage-bar"><i style={{ width: `${(r.seconds / usageMax) * 100}%` }} /></span>
-                  </div>
-                );
-              })
+              usageRows.map((r) => (
+                <div className="tl-usage-row" key={r.label}>
+                  <span className="tl-usage-label" title={r.label}>{r.label}</span>
+                  <span className="tl-usage-time">{hm(r.seconds)}</span>
+                  <span className="tl-usage-bar"><i style={{ width: `${(r.seconds / usageMax) * 100}%` }} /></span>
+                </div>
+              ))
             )}
           </div>
         </div>

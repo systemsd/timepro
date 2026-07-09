@@ -344,7 +344,15 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           200: z.object({
             apps: z.array(z.object({ name: z.string(), seconds: z.number() })),
             urls: z.array(z.object({ domain: z.string(), seconds: z.number() })),
-            tasks: z.array(z.object({ description: z.string(), seconds: z.number() })),
+            tasks: z.array(
+            z.object({
+              task_id: z.string().nullable(),
+              task_name: z.string().nullable(),
+              description: z.string().nullable(),
+              seconds: z.number(),
+              running: z.boolean(), // an entry in this group is currently live
+            }),
+          ),
           }),
         },
         tags: ['timeline'],
@@ -403,16 +411,20 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
         };
 
-        // Tasks = the day's time entries grouped by their "What are you working
-        // on?" description (entries without one are omitted). A running entry
-        // (no endedAt) counts up to now.
+        // Tasks = the day's entries grouped by the OpsCore task (primary) + the
+        // "What are you working on?" description (sub-line). An entry with neither
+        // a task nor a description is omitted. A running entry (no endedAt) counts
+        // up to now and flags its group as live (for the blinking caret on the web).
         const taskRows = await tx
           .select({
+            taskId: schema.timeEntries.taskId,
+            taskName: schema.tasks.name,
             description: schema.timeEntries.description,
             startedAt: schema.timeEntries.startedAt,
             endedAt: schema.timeEntries.endedAt,
           })
           .from(schema.timeEntries)
+          .leftJoin(schema.tasks, eq(schema.tasks.id, schema.timeEntries.taskId))
           .where(
             and(
               eq(schema.timeEntries.organizationId, req.organizationId!),
@@ -423,17 +435,37 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
             ),
           );
         const nowMs = Date.now();
-        const taskMap = new Map<string, number>();
+        type TaskAgg = {
+          task_id: string | null;
+          task_name: string | null;
+          description: string | null;
+          seconds: number;
+          running: boolean;
+        };
+        const taskMap = new Map<string, TaskAgg>();
         for (const r of taskRows) {
-          const desc = (r.description ?? '').trim();
-          if (!desc) continue;
+          const desc = (r.description ?? '').trim() || null;
+          if (!r.taskName && !desc) continue; // nothing to label this group with
+          const key = `${r.taskId ?? ''}::${desc ?? ''}`;
           const endMs = r.endedAt ? r.endedAt.getTime() : nowMs;
-          const secs = Math.round(overlap(r.startedAt.getTime(), endMs));
-          if (secs > 0) taskMap.set(desc, (taskMap.get(desc) ?? 0) + secs);
+          const secs = Math.max(0, Math.round(overlap(r.startedAt.getTime(), endMs)));
+          const cur = taskMap.get(key);
+          if (cur) {
+            cur.seconds += secs;
+            if (!r.endedAt) cur.running = true;
+          } else {
+            taskMap.set(key, {
+              task_id: r.taskId ?? null,
+              task_name: r.taskName ?? null,
+              description: desc,
+              seconds: secs,
+              running: !r.endedAt,
+            });
+          }
         }
-        const tasks = Array.from(taskMap.entries())
-          .sort((a, b) => b[1] - a[1])
-          .map(([description, seconds]) => ({ description, seconds }));
+        const tasks = Array.from(taskMap.values())
+          .filter((t) => t.seconds > 0 || t.running)
+          .sort((a, b) => b.seconds - a.seconds);
 
         return {
           apps: agg(appRows).map(([name, seconds]) => ({ name, seconds })),
