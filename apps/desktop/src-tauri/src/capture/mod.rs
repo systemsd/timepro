@@ -115,32 +115,32 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             if let Some(timer) = state.timer() {
                 let client = ApiClient::new(api_base.clone(), Some(session.clone()));
                 let ended_at = before_sleep.to_rfc3339();
-                let res = client.timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at)).await;
-                // Success, OR the server already closed it (sweep) → drop the stale
-                // timer either way. Only a transient error keeps it for a retry.
-                let stopped = match &res {
-                    Ok(_) => true,
-                    Err(e) => timer_already_gone(e),
-                };
-                if stopped {
-                    state.clear_timer();
-                    if let Some((name, title, started)) = current_app.take() {
-                        let _ = client
-                            .ingest_app_usage(
-                                &name,
-                                title.as_deref(),
-                                &started.to_rfc3339(),
-                                &ended_at,
-                                Some(timer.time_entry_id.clone()),
-                            )
-                            .await;
-                    }
-                    let _ = app.emit(
-                        "timer:auto-paused",
-                        serde_json::json!({ "reason": "suspended", "seconds": suspend_gap }),
-                    );
-                    info!(suspend_gap, "stopped tracking — resumed from sleep (back-dated)");
+                // The machine slept for `suspend_gap`s → tracking must stop, and the
+                // UI must NOT keep showing "Tracking". Best-effort back-date the
+                // stop, but drop the local timer + show Paused REGARDLESS of the
+                // result: this suspend block only fires once (on the wake tick), so
+                // if we gated on success a failed stop (e.g. Wi-Fi still reconnecting
+                // on wake) would leave the agent stuck showing a false "Tracking".
+                // A failed back-date is reconciled by the server sweep + the
+                // entry_closed guard; the UI's server re-validation is the backstop.
+                let _ = client.timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at)).await;
+                if let Some((name, title, started)) = current_app.take() {
+                    let _ = client
+                        .ingest_app_usage(
+                            &name,
+                            title.as_deref(),
+                            &started.to_rfc3339(),
+                            &ended_at,
+                            Some(timer.time_entry_id.clone()),
+                        )
+                        .await;
                 }
+                state.clear_timer();
+                let _ = app.emit(
+                    "timer:auto-paused",
+                    serde_json::json!({ "reason": "suspended", "seconds": suspend_gap }),
+                );
+                info!(suspend_gap, "stopped tracking — resumed from sleep (back-dated)");
             }
             continue;
         }

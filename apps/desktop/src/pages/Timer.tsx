@@ -134,6 +134,33 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     return () => clearInterval(id);
   }, [timer]);
 
+  // Re-validate against the SERVER while we think we're tracking. If the Rust
+  // capture loop stalls (e.g. Windows sleep/wake where its auto-paused event never
+  // fires), the entry can be closed server-side while the UI keeps counting a
+  // false "Tracking". This runs on the JS thread (independent of that loop) and
+  // hits the server (`timer_current`), so it catches it within ~30s.
+  useEffect(() => {
+    if (!timer) return;
+    const id = setInterval(async () => {
+      let server: TimerView | null;
+      try {
+        server = await ipc.timerCurrent();
+      } catch {
+        return; // network blip — keep state, retry next tick
+      }
+      if (!server) {
+        // Server has no running timer → our local one is stale (closed by
+        // sleep/sweep). Stop the false clock and offer to resume.
+        setTimer(null);
+        setPausedReason('suspended');
+        showToast('Tracking stopped — press play to resume');
+      } else if (server.time_entry_id !== timer.time_entry_id) {
+        setTimer(server); // a fresh entry (e.g. auto-resume) — follow it
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [timer]);
+
   // auto-capture + auto-pause notifications from the Rust capture loop
   useEffect(() => {
     const unlisteners: Array<() => void> = [];
