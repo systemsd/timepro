@@ -128,7 +128,11 @@ cd apps/desktop/src-tauri && cargo check
 `screenshots` · `team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ `/:userId/activity`) ·
 `clients` · `settings` · `presence` · `ingest` (activity/app-usage/url-usage) ·
 `admin` (`opscore/sync` — **disables members absent from the OpsCore response**) · `reports` (filters/run/saved;
-employees get no clients/projects) · `realtime` (ws presence).
+employees get no clients/projects) · `realtime` (ws presence) ·
+`opscore` (`/v1/opscore/tasks/time-summary` — **reverse of the sync**: OpsCore pulls per-task tracked time back for
+its task board. Bearer-authed against `OPSCORE_API_KEY` (the same shared service key), no session → resolves the
+OpsCore org by `OPSCORE_ORG_SLUG` and reads cross-tenant via `asPlatform`; returns per opscore-task `total_seconds` +
+capped `entries[]`. `apps/api/src/routes/opscore.ts`).
 (OpenAPI is generated from the Zod route schemas: `pnpm gen:openapi`.)
 
 ### Desktop Rust modules (`apps/desktop/src-tauri/src/`)
@@ -289,3 +293,10 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 - 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle + **sleep/suspend** auto-pause, back-dated so away-time isn't billed (`/v1/timer/stop` `ended_at`) · ✅ **idle auto-resume** on activity + **persistent desktop login** (v0.1.12) · ✅ **server abandoned-timer sweep** self-heals inflated reports · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
 
 See also [docs/11-roadmap.md](docs/11-roadmap.md) (original MVP/P2/P3) and the per-doc status banners.
+
+
+---
+
+## Cross-project knowledge vault (Obsidian)
+
+Sibling SystemsD product docs are in the Obsidian vault at `/Users/macos/Code/systemsd/SystemsD/` — one folder per project (see `INDEX.md`), each holding **live symlinks** into that repo's actual markdown files (CLAUDE.md, PROJECT_BRIEF, docs/). The vault and the repos are the same files — no copies, no drift. When a task touches another SystemsD product (e.g. OpsCore SSO, a cross-app integration, shared conventions), read the relevant vault folder or the sibling repo directly; they are identical. Updating a repo's CLAUDE.md/docs updates the vault automatically, and edits made in Obsidian land in the repo (visible to git).

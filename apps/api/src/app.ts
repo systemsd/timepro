@@ -37,6 +37,7 @@ import { ingestRoutes } from './routes/ingest';
 import { adminRoutes } from './routes/admin';
 import { reportRoutes } from './routes/reports';
 import { realtimeRoutes } from './routes/realtime';
+import { opscoreRoutes } from './routes/opscore';
 
 /**
  * App factory. Used by both `server.ts` and integration tests.
@@ -170,6 +171,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(adminRoutes, { prefix: '/v1' });
   await app.register(reportRoutes, { prefix: '/v1' });
   await app.register(realtimeRoutes, { prefix: '/v1' });
+  await app.register(opscoreRoutes, { prefix: '/v1' });
 
   return app;
 }
