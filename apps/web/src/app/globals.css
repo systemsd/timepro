@@ -452,6 +452,13 @@ body {
 .tl-usage-time { font-size: 13px; color: #5a6068; font-variant-numeric: tabular-nums; }
 .tl-usage-bar { height: 12px; background: #eef1f4; border-radius: 3px; overflow: hidden; }
 .tl-usage-bar i { display: block; height: 100%; background: #8aaecb; border-radius: 3px; }
+/* Blinking caret marking the currently-tracking task. */
+.tl-live-caret {
+  display: inline-block; color: #22a06b; margin-right: 5px; font-size: 11px; line-height: 1;
+  animation: tl-blink 1.1s steps(2, start) infinite;
+}
+@keyframes tl-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tl-live-caret { animation: none; } }
 .tl-step {
   position: absolute; top: 50%; transform: translateY(-50%); width: 34px; height: 34px;
   border-radius: 50%; border: 1px solid var(--border); background: #fff; color: #5a6068;
@@ -910,6 +917,11 @@ body {
 .tl-act-proj {
   font-size: 13px; font-weight: 600; color: #3a3f45; background: #eef1f4;
   border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+}
+.tl-act-task {
+  font-size: 13px; font-weight: 600; color: var(--accent); background: #edecfb;
+  border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 220px;
 }
 .tl-act-desc { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tl-act-dur { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: auto; }

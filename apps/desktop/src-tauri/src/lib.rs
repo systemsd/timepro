@@ -37,6 +37,7 @@ pub fn run() {
             commands::current_session,
             commands::list_projects,
             commands::list_tasks,
+            commands::get_settings,
             commands::timer_start,
             commands::timer_stop,
             commands::timer_current,

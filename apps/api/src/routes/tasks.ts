@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 
@@ -50,6 +50,10 @@ export const taskRoutes: FastifyPluginAsyncZod = async (app) => {
         const conds = [
           eq(schema.tasks.organizationId, req.organizationId!),
           eq(schema.tasks.active, true),
+          // Completed work isn't offered for new tracking (CLOSED is already
+          // dropped upstream by OpsCore; DONE we hide here). Historical entries
+          // that reference a now-DONE task stay valid — this only filters the picker.
+          ne(schema.tasks.status, 'DONE'),
           or(
             eq(schema.tasks.assignedOpscoreEmployeeId, me.opsId),
             sql`${me.opsId} = ANY(${schema.tasks.collaboratorOpscoreEmployeeIds})`,

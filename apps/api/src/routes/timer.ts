@@ -5,6 +5,7 @@ import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
 import { getCurrentTimer } from '../repositories/time-entries';
+import { getEffectiveForUser } from '../lib/settings';
 
 const StartBody = z.object({
   project_id: z.string().uuid().optional(),
@@ -87,6 +88,20 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
               new Error(`Weekly time limit of ${limitHours}h reached`),
               { statusCode: 409, code: 'weekly_limit_reached' },
             );
+          }
+        }
+
+        // Task-required gate (tracking.require_task) — track only against an
+        // assigned task. Staged rollout: default off; flipped on org-wide once the
+        // v0.1.14 agent (which disables Start without a task) is deployed. Only
+        // fetches settings when no task was sent — the case we might block.
+        if (!body.task_id) {
+          const { effective } = await getEffectiveForUser(tx, req.organizationId!, req.userId!);
+          if (effective['tracking.require_task'] === true) {
+            throw Object.assign(new Error('Select an assigned task to start tracking'), {
+              statusCode: 400,
+              code: 'task_required',
+            });
           }
         }
 

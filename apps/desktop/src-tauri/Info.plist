@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    TimePro is a time-tracking agent: its capture + heartbeat loop must keep
+    running even when the window is behind other apps. macOS App Nap otherwise
+    throttles/suspends the background process (seen as "capture loop slow"
+    warnings), so screenshots + activity stop reaching the server and the
+    abandoned-timer sweep trims the entry to ~0 — the desktop clock kept counting
+    while the real tracked time collapsed. Opting out of App Nap keeps the loop
+    alive. (System sleep is unaffected — the agent's suspend recovery handles a
+    lid-close / real sleep separately.)
+  -->
+  <key>NSAppSleepDisabled</key>
+  <true/>
+</dict>
+</plist>

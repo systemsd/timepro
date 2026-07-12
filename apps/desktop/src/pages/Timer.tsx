@@ -27,6 +27,10 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     () => localStorage.getItem(LS_TASKID) || null,
   );
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
+  // tracking.require_task — when on, a task must be selected before Start.
+  // Mirrors the server (which also enforces it); defaults off if the fetch fails
+  // (the server stays authoritative, so this can only be over-permissive in UI).
+  const [requireTask, setRequireTask] = useState(false);
   const [timer, setTimer] = useState<TimerView | null>(null);
   const [pausedReason, setPausedReason] = useState<'idle' | 'suspended' | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -57,6 +61,10 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     () => tasks.find((t) => t.id === selectedTask) ?? null,
     [tasks, selectedTask],
   );
+  // When a task is required: no assigned tasks here → nothing to track; and Start
+  // stays blocked until one is picked.
+  const noTasksAvailable = requireTask && tasks.length === 0;
+  const startBlocked = requireTask && !selectedTask;
 
   // initial load
   useEffect(() => {
@@ -71,6 +79,12 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
       } catch (err) {
         setError(asMessage(err));
       }
+      // Best-effort: gate the picker on tracking.require_task. Failure → stay off.
+      try {
+        setRequireTask((await ipc.getSettings())['tracking.require_task'] === true);
+      } catch {
+        /* server still enforces on start */
+      }
     })();
   }, []);
 
@@ -79,18 +93,24 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   // Drop the current task selection if it's not in the new project's set.
   useEffect(() => {
     let cancelled = false;
-    ipc
-      .listTasks(selectedProject ?? 'none')
-      .then((ts) => {
-        if (cancelled) return;
-        setTasks(ts);
-        setSelectedTask((cur) => (cur && ts.some((t) => t.id === cur) ? cur : null));
-      })
-      .catch(() => {
-        if (!cancelled) setTasks([]);
-      });
+    const load = () =>
+      ipc
+        .listTasks(selectedProject ?? 'none')
+        .then((ts) => {
+          if (cancelled) return;
+          setTasks(ts);
+          setSelectedTask((cur) => (cur && ts.some((t) => t.id === cur) ? cur : null));
+        })
+        .catch(() => {
+          /* keep the current list — a transient fetch error shouldn't clear it */
+        });
+    void load();
+    // Poll so a task assigned in OpsCore (synced server-side) appears here without
+    // a logout/login. Cleared on project change / unmount.
+    const id = setInterval(load, 45_000);
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
   }, [selectedProject]);
 
@@ -111,6 +131,33 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
         setElapsed(0);
       }
     }, 1000);
+    return () => clearInterval(id);
+  }, [timer]);
+
+  // Re-validate against the SERVER while we think we're tracking. If the Rust
+  // capture loop stalls (e.g. Windows sleep/wake where its auto-paused event never
+  // fires), the entry can be closed server-side while the UI keeps counting a
+  // false "Tracking". This runs on the JS thread (independent of that loop) and
+  // hits the server (`timer_current`), so it catches it within ~30s.
+  useEffect(() => {
+    if (!timer) return;
+    const id = setInterval(async () => {
+      let server: TimerView | null;
+      try {
+        server = await ipc.timerCurrent();
+      } catch {
+        return; // network blip — keep state, retry next tick
+      }
+      if (!server) {
+        // Server has no running timer → our local one is stale (closed by
+        // sleep/sweep). Stop the false clock and offer to resume.
+        setTimer(null);
+        setPausedReason('suspended');
+        showToast('Tracking stopped — press play to resume');
+      } else if (server.time_entry_id !== timer.time_entry_id) {
+        setTimer(server); // a fresh entry (e.g. auto-resume) — follow it
+      }
+    }, 30_000);
     return () => clearInterval(id);
   }, [timer]);
 
@@ -282,17 +329,23 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           >
             {project ? project.name : 'Select project'}
           </button>
-          {/* Task picker — only shown when the resource has tasks on this
-              project (or the No-project bucket). Task is optional: project-only
-              tracking still works with no task selected. */}
-          {tasks.length > 0 && (
-            <button
-              className={`task-chip ${activeTask ? '' : 'empty'}`}
-              onClick={() => setTaskMenuOpen((v) => !v)}
-              disabled={busy}
-            >
-              {activeTask ? activeTask.name : 'Select task'}
-            </button>
+          {/* Task picker. Shown whenever there are tasks here, or when a task is
+              required (so the requirement is visible even with none available).
+              When required and there are no tasks → nothing to track. */}
+          {noTasksAvailable ? (
+            <span className="task-chip empty" title="No tasks assigned to you">
+              No tasks assigned
+            </span>
+          ) : (
+            (tasks.length > 0 || requireTask) && (
+              <button
+                className={`task-chip ${activeTask ? '' : 'empty'}`}
+                onClick={() => setTaskMenuOpen((v) => !v)}
+                disabled={busy}
+              >
+                {activeTask ? activeTask.name : 'Select task'}
+              </button>
+            )
           )}
         </div>
 
@@ -300,7 +353,8 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           className="round-btn play"
           aria-label="start"
           onClick={start}
-          disabled={running || busy}
+          disabled={running || busy || startBlocked}
+          title={startBlocked ? 'Select an assigned task to start tracking' : undefined}
         >
           <PlayIcon />
         </button>
@@ -333,9 +387,11 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
 
         {taskMenuOpen && (
           <div className="task-menu">
-            <button onClick={() => { setSelectedTask(null); setTaskMenuOpen(false); }}>
-              No task
-            </button>
+            {!requireTask && (
+              <button onClick={() => { setSelectedTask(null); setTaskMenuOpen(false); }}>
+                No task
+              </button>
+            )}
             {tasks.map((t) => (
               <button
                 key={t.id}
