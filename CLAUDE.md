@@ -127,6 +127,8 @@ cd apps/desktop/src-tauri && cargo check
 `auth` · `health` · `me` (today, profile) · `projects` (list **member-scoped** to the caller's active assignments) ·
 `screenshots` · `team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ `/:userId/activity`) ·
 `clients` · `settings` · `presence` · `ingest` (activity/app-usage/url-usage) ·
+`tasks` (`GET /v1/tasks` — OpsCore tasks the caller can track, scoped to assignee/collaborator by
+`users.opscore_employee_id`; DONE hidden) ·
 `admin` (`opscore/sync` — **disables members absent from the OpsCore response**) · `reports` (filters/run/saved;
 employees get no clients/projects) · `realtime` (ws presence) ·
 `opscore` (`/v1/opscore/tasks/time-summary` — **reverse of the sync**: OpsCore pulls per-task tracked time back for
@@ -134,6 +136,22 @@ its task board. Bearer-authed against `OPSCORE_API_KEY` (the same shared service
 OpsCore org by `OPSCORE_ORG_SLUG` and reads cross-tenant via `asPlatform`; returns per opscore-task `total_seconds` +
 capped `entries[]`. `apps/api/src/routes/opscore.ts`).
 (OpenAPI is generated from the Zod route schemas: `pnpm gen:openapi`.)
+
+> **OpsCore Tasks (shipped).** Tasks mirror read-only from OpsCore into the `tasks` table (migration 0008,
+> `time_entries.task_id`). Sync logic is `lib/opscore-sync.ts` (called by the admin route AND a **scheduled sweep
+> every 2 min** in `server.ts` — OpsCore never pushes, so this is the only path in). `timer/start` takes an optional
+> `task_id` (validated assignee/collaborator + active → else 400 `task_not_trackable`). The desktop Timer picker
+> polls `/v1/tasks` every 45s. **`tracking.require_task`** (settings registry, **default OFF**) makes a task
+> mandatory: server 400s a no-task start, agent disables Start. **Staged rollout — flip it ON only once everyone is
+> on v0.1.14+**, else old agents (no task_id) are locked out.
+
+> **Desktop tracking-accuracy fix trail (v0.1.13→v0.1.19)** — task picker (0.1.13); timer/screenshot desync +
+> lock-screen pause (0.1.15); faster task refresh (0.1.16); **macOS App Nap** off via `src-tauri/Info.plist`
+> `NSAppSleepDisabled` (0.1.17, mac-only); **false "Tracking" after sleep/wake** — suspend clears the local timer
+> unconditionally + the Timer UI re-validates `timer_current` every 30s (0.1.18); **idle-sanitize** — reject bogus
+> idle >6h so a garbage `idle_secs` can't back-date a pause and wipe an entry (0.1.19, `capture/idle.rs`). ⚠️ Open:
+> **Windows background throttling** ("capture loop slow") is the deeper root — the App Nap fix is mac-only; Windows
+> still needs its own anti-suspension fix.
 
 ### Desktop Rust modules (`apps/desktop/src-tauri/src/`)
 `lib.rs` (bootstrap) · `commands.rs` (Tauri commands) · `api.rs` (HTTP client) ·
@@ -287,7 +305,7 @@ agent's localhost callback → `/v1/auth/opscore/exchange` → device session (`
 
 **Pending — phased (full detail in [docs/13 §3](docs/13-opscore-feature-roadmap.md)):**
 - ⏸️ **Phase 6 — Multi-tenancy & real auth** *(PAUSED — single-tenant Systemsd is the current focus)* — one shared DB, many orgs: 6.1 real auth (Argon2 + JWT, retire the `x-dev-*` shim) · 6.2 org onboarding/signup + invites · 6.3 per-org OpsCore SSO · 6.4 RLS fail-closed + DB role split · 6.5 tenant audit + org-context UX.
-- 🟡 **Phase 7 — Ship pipeline (B9)** — ✅ CI builds + hosts installers (mac + Windows) via the public `timepro-downloads` repo; Download page live; **in-app auto-updater** live (v0.1.5+); current shipped **v0.1.12**. 🔴 remaining: **code-sign/notarize** (currently unsigned — every mac update revokes Screen Recording), re-enable the **Linux** build leg (`libgbm-dev`).
+- 🟡 **Phase 7 — Ship pipeline (B9)** — ✅ CI builds + hosts installers (mac + Windows) via the public `timepro-downloads` repo; Download page live; **in-app auto-updater** live (v0.1.5+); current shipped **v0.1.19**. 🔴 remaining: **code-sign/notarize** (currently unsigned — every mac update revokes Screen Recording), re-enable the **Linux** build leg (`libgbm-dev`).
 - 🔴 **Phase 8 — Scale & storage** — rollups + scheduler (B8) · S3 storage + thumbnails · worker/realtime services + Redis-backed presence.
 - 🔴 **Phase 9 — Billing & plans**.
 - 🟡 **Phase P — Polish** — ✅ native screenshot toast (`tauri-plugin-notification`, gated by `screenshots.notify`) · ✅ desktop "weekly limit reached" message on the `timer/start` 409 (`commands::map_start_err`) · ✅ idle + **sleep/suspend** auto-pause, back-dated so away-time isn't billed (`/v1/timer/stop` `ended_at`) · ✅ **idle auto-resume** on activity + **persistent desktop login** (v0.1.12) · ✅ **server abandoned-timer sweep** self-heals inflated reports · 🔴 keyboard/mouse activity counts · 🔴 Reports shareable links.
