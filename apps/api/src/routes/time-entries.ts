@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { and, asc, eq, gte } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, isNull, lt, or } from 'drizzle-orm';
 import { schema, type DB } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { canView, forbid, isAdmin, visibleUsers, type VisibleUsers } from '../lib/access';
@@ -114,6 +114,119 @@ async function assertProjectAssignable(
 const isoOrNull = (d: Date | null) => (d ? d.toISOString() : null);
 
 export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
+  // ─── Create a manual time entry (backfill) ───
+  // The app can otherwise only *edit* existing entries — there is no way to add
+  // time for a window the agent never tracked (e.g. it stopped mid-day). This
+  // fills that gap: an admin/manager (or an employee on themselves, when
+  // `time.allow_self_edit` is on) records a `source='manual'` entry. Because it
+  // carries no activity signal, the abandoned-timer sweep leaves it alone, so a
+  // deliberate correction stays put. Overlaps are rejected so manual time can't
+  // double-count against tracked time. Audited like every other mutation here.
+  app.post(
+    '/time-entries',
+    {
+      preHandler: [requireAuth],
+      schema: {
+        body: z.object({
+          user_id: z.string().uuid().optional(), // defaults to the requester
+          project_id: z.string().uuid().nullable().optional(),
+          description: z.string().max(500).nullable().optional(),
+          started_at: z.string().datetime({ offset: true }),
+          ended_at: z.string().datetime({ offset: true }),
+        }),
+        response: { 201: ActivityResponse },
+        tags: ['time-entries'],
+      },
+    },
+    async (req, reply) => {
+      const body = req.body;
+      const targetUserId = body.user_id ?? req.userId!;
+      const started = new Date(body.started_at);
+      const ended = new Date(body.ended_at);
+
+      if (started.getTime() >= ended.getTime()) {
+        throw Object.assign(new Error('start must be before end'), {
+          statusCode: 422,
+          code: 'invalid_range',
+        });
+      }
+      const futureLimit = Date.now() + 60_000;
+      if (started.getTime() > futureLimit || ended.getTime() > futureLimit) {
+        throw Object.assign(new Error('times cannot be in the future'), {
+          statusCode: 422,
+          code: 'invalid_range',
+        });
+      }
+
+      const visible = await visibleUsers(req);
+      return req.withTenantDb(async (tx) => {
+        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, targetUserId);
+
+        if (body.project_id) {
+          await assertProjectAssignable(tx, req.organizationId!, body.project_id, targetUserId);
+        }
+
+        // Reject overlap with the user's existing (non-deleted) entries so manual
+        // time can never double-count against already-tracked time.
+        const [clash] = await tx
+          .select({ id: schema.timeEntries.id })
+          .from(schema.timeEntries)
+          .where(
+            and(
+              eq(schema.timeEntries.organizationId, req.organizationId!),
+              eq(schema.timeEntries.userId, targetUserId),
+              isNull(schema.timeEntries.deletedAt),
+              lt(schema.timeEntries.startedAt, ended),
+              or(isNull(schema.timeEntries.endedAt), gt(schema.timeEntries.endedAt, started)),
+            ),
+          )
+          .limit(1);
+        if (clash) {
+          throw Object.assign(new Error('overlaps an existing time entry'), {
+            statusCode: 409,
+            code: 'entry_overlap',
+          });
+        }
+
+        const [created] = await tx
+          .insert(schema.timeEntries)
+          .values({
+            organizationId: req.organizationId!,
+            userId: targetUserId,
+            projectId: body.project_id ?? null,
+            description: body.description ?? null,
+            startedAt: started,
+            endedAt: ended,
+            source: 'manual',
+            isManual: true,
+            clientEventId: `manual-${randomUUID()}`,
+          })
+          .returning();
+
+        await recordAudit(tx, {
+          organizationId: req.organizationId!,
+          actorUserId: req.userId!,
+          action: 'time_entry.create',
+          targetType: 'time_entry',
+          targetId: created!.id,
+          metadata: {
+            created: {
+              user_id: targetUserId,
+              project_id: body.project_id ?? null,
+              started_at: started.toISOString(),
+              ended_at: ended.toISOString(),
+              description: body.description ?? null,
+            },
+            source: 'manual',
+          },
+        });
+
+        reply.code(201);
+        return mapEntry(created!);
+      });
+    },
+  );
+
   // ─── Edit: project / description / trim start-end ───
   app.patch(
     '/time-entries/:id',
