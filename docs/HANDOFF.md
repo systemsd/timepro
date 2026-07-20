@@ -5,7 +5,49 @@ then this for current state + how to run. Full feature roadmap: [`docs/13-opscor
 
 ---
 
-## 🚧 CURRENT STATE (2026-07-02) — Live product; post-audit engineering-quality arc
+## 🚧 CURRENT STATE (2026-07-14) — OpsCore tasks shipped + a desktop tracking-accuracy fire-drill
+
+> Current desktop version on `main` = **v0.1.19** (shipped/auto-updating). Backend + web auto-deploy on push-to-`main`.
+> ⚠️ **Concurrent work:** another session/person has been on `main` — added an **OpsCore reverse-sync endpoint**
+> (`/v1/opscore/tasks/time-summary`, `routes/opscore.ts`) and an Obsidian-vault docs section, and is deploying
+> OpsCore via **ShipHub/opscorev2**. Expect `main` to move; rebase before large edits.
+
+### Shipped 2026-07-08 → 14
+
+**OpsCore Tasks → TimePro (PRs #55/#57/#60/#61/#62).** Read-only task mirror: `tasks` table (migration 0008) +
+`time_entries.task_id`; `GET /v1/tasks` scoped to assignee/collaborator (DONE hidden); `timer/start` optional
+`task_id` (400 `task_not_trackable` if not yours); desktop task picker (polls every 45s); Timeline "Tasks" panel
+shows the description + a blinking caret on the live entry. Sync = `lib/opscore-sync.ts`, run by the admin route
+**and a 2-min scheduled sweep** in `server.ts` (OpsCore never pushes). **`tracking.require_task`** setting
+(default **OFF**, staged) — server 400s a no-task start, agent disables Start; **flip ON only once everyone's on
+v0.1.14+** or old agents get locked out.
+
+**Desktop tracking-accuracy fixes (all from real user reports — the fire-drill):**
+- **v0.1.15** timer↔screenshot desync + lock-screen pause · **v0.1.16** faster task refresh
+- **v0.1.17** macOS **App Nap** off (`src-tauri/Info.plist` `NSAppSleepDisabled`, verified in the built bundle; **mac-only**)
+- **v0.1.18** **false "Tracking" after sleep/wake** — suspend clears the local timer unconditionally + the Timer UI
+  re-validates `timer_current` every 30s (independent of the Rust loop)
+- **v0.1.19** **idle-sanitize** (`capture/idle.rs`) — reject bogus idle >6h so a garbage `idle_secs≈4.29M` can't
+  back-date an idle-pause and wipe an entry (this had erased Rahat's ~1h)
+
+**Root causes seen (diagnosed via `/v1/admin/agent-logs` + `/user-activity`, Anas allowlisted):** Hamza —
+screenshots against a server-closed timer (0 tracked time); Uzair — namaz lock-screen billed, then a Windows
+sleep/wake false-"Tracking"; Usama — macOS App Nap throttling → time collapsed to ~1m; Ahmed — 13h unbroken
+inflated timer (old agent); Rahat — garbage idle wiped ~1h.
+
+### ⚠️ OPEN (next session)
+1. **Windows background throttling** ("capture loop slow") — the deeper root behind Usama/Uzair/Rahat. The App Nap
+   fix is **mac-only**; Windows still needs its own anti-suspension fix. Guards (v0.1.18/19) mitigate, don't cure.
+2. **Historical data backfill** — only **Rahat's one entry** was corrected (audited `PATCH /v1/time-entries/:id`
+   extending `ended_at`, as admin Hamid via dev-headers; note **0-min entries are invisible in the web UI** so the
+   API is the only way to edit them). Ahmed's 13h + others un-fixed — needs scope + sign-off.
+3. **Chase stragglers to v0.1.19** (were Rahat 0.1.18, Ahmed 0.1.17) via quit-and-reopen.
+4. **`tracking.require_task` flip** — Hamid turns it on in web Settings once adoption is confirmed.
+5. **Sign/notarize** (Phase 7) — still unsigned; every mac update revokes Screen Recording.
+
+---
+
+## 🗄️ EARLIER STATE (2026-07-02) — Live product; post-audit engineering-quality arc
 
 > Backend + downloads have been LIVE since 2026-06-18 (prod `timepro.systemsd.co` / `api.timepro.systemsd.co`,
 > push-to-`main` auto-deploy). Current desktop version on `main` = **v0.1.12**.
