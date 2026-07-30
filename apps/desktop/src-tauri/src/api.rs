@@ -99,18 +99,40 @@ impl ApiClient {
         Self::parse(resp).await
     }
 
+    // ---- products (OpsCore Internal Products — peer of projects) ----
+
+    pub async fn list_products(&self) -> ApiResult<ProductsResponse> {
+        let s = self.require_session()?;
+        let resp = self
+            .http
+            .get(self.url("/v1/products"))
+            .header("x-dev-org", &s.organization_id)
+            .header("x-dev-user", &s.user_id)
+            .send()
+            .await?;
+        Self::parse(resp).await
+    }
+
     // ---- tasks (OpsCore, read-only, scoped to the signed-in resource) ----
 
-    /// Tasks the caller can track against. `project_id` filters to one project;
-    /// pass `"none"` for the "No project" bucket, or `None` for all visible.
-    pub async fn list_tasks(&self, project_id: Option<&str>) -> ApiResult<TasksResponse> {
+    /// Tasks the caller can track against. `project_id` filters to one project
+    /// (or `"none"` for the unattached bucket), `product_id` to one internal
+    /// product; both `None` lists everything visible. The two are mutually
+    /// exclusive — product wins server-side if a caller sends both.
+    pub async fn list_tasks(
+        &self,
+        project_id: Option<&str>,
+        product_id: Option<&str>,
+    ) -> ApiResult<TasksResponse> {
         let s = self.require_session()?;
         let mut req = self
             .http
             .get(self.url("/v1/tasks"))
             .header("x-dev-org", &s.organization_id)
             .header("x-dev-user", &s.user_id);
-        if let Some(p) = project_id {
+        if let Some(p) = product_id {
+            req = req.query(&[("product_id", p)]);
+        } else if let Some(p) = project_id {
             req = req.query(&[("project_id", p)]);
         }
         let resp = req.send().await?;
@@ -119,9 +141,13 @@ impl ApiClient {
 
     // ---- timer ----
 
+    /// Start tracking. `project_id` and `product_id` are mutually exclusive (the
+    /// server 400s `project_product_exclusive` if both arrive); product time is
+    /// forced non-billable server-side.
     pub async fn timer_start(
         &self,
         project_id: Option<&str>,
+        product_id: Option<&str>,
         task_id: Option<&str>,
         description: Option<&str>,
         client_event_id: &str,
@@ -131,7 +157,9 @@ impl ApiClient {
             "client_event_id": client_event_id,
             "source": "desktop",
         });
-        if let Some(p) = project_id {
+        if let Some(p) = product_id {
+            body["product_id"] = serde_json::Value::String(p.to_string());
+        } else if let Some(p) = project_id {
             body["project_id"] = serde_json::Value::String(p.to_string());
         }
         if let Some(t) = task_id {
@@ -421,6 +449,23 @@ pub struct Project {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductsResponse {
+    pub products: Vec<Product>,
+}
+
+/// An OpsCore Internal Product the user may track against. Mirrors `Project`
+/// (so the UI can list both in one picker) but carries the OpsCore lifecycle
+/// `stage` instead of a project status, and is never billable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Product {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub stage: String,
+    pub is_billable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TasksResponse {
     pub tasks: Vec<Task>,
 }
@@ -432,12 +477,14 @@ pub struct Task {
     pub status: String,
     pub priority: String,
     pub project_id: Option<String>,
+    pub product_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimerSnapshot {
     pub id: String,
     pub project_id: Option<String>,
+    pub product_id: Option<String>,
     pub started_at: String,
     pub description: Option<String>,
 }
@@ -446,6 +493,7 @@ pub struct TimerSnapshot {
 pub struct TimerStopResponse {
     pub id: String,
     pub project_id: Option<String>,
+    pub product_id: Option<String>,
     pub started_at: String,
     pub ended_at: String,
     pub description: Option<String>,

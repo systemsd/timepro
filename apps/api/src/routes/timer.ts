@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
 import { mondayWeekStartMs, resolveWeeklyLimitHours, weeklyTrackedSeconds } from '../lib/limits';
@@ -9,6 +9,10 @@ import { getEffectiveForUser } from '../lib/settings';
 
 const StartBody = z.object({
   project_id: z.string().uuid().optional(),
+  // Internal-product tracking — mutually exclusive with `project_id` (see the
+  // `project_product_exclusive` guard below). Optional, so an agent that predates
+  // products simply never sends it.
+  product_id: z.string().uuid().optional(),
   task_id: z.string().uuid().optional(),
   description: z.string().max(500).optional(),
   client_event_id: z.string().min(8).max(128),
@@ -28,6 +32,7 @@ const StopBody = z.object({
 const TimerSnapshot = z.object({
   id: z.string().uuid(),
   project_id: z.string().uuid().nullable(),
+  product_id: z.string().uuid().nullable(),
   started_at: z.string(),
   description: z.string().nullable(),
 });
@@ -53,6 +58,16 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       const body = req.body;
+      // An entry is client-project time OR internal-product time, never both —
+      // mirrors OpsCore's task XOR and the DB check constraint. Rejected before
+      // any DB work so a confused client gets a clear 400, not a 500 from the
+      // constraint.
+      if (body.project_id && body.product_id) {
+        throw Object.assign(new Error('Track against a project or a product, not both'), {
+          statusCode: 400,
+          code: 'project_product_exclusive',
+        });
+      }
       return req.withTenantDb(async (tx) => {
         // Serialize concurrent starts for this user so the check-then-insert below
         // is race-free (double-click / two devices / offline replay carry different
@@ -70,6 +85,7 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
           return {
             id: running.id,
             project_id: running.projectId ?? null,
+            product_id: running.productId ?? null,
             started_at: running.startedAt.toISOString(),
             description: running.description ?? null,
           };
@@ -138,23 +154,61 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
           }
         }
 
+        // If tracking against an internal product, it must be a live product in
+        // this org that the caller is a member of (owner ∪ ProductMember, per the
+        // OpsCore sync) — mirrors GET /v1/products, including the ARCHIVED and
+        // `active=false` exclusions, so the picker and the server agree.
+        if (body.product_id) {
+          const [product] = await tx
+            .select({ id: schema.products.id })
+            .from(schema.products)
+            .innerJoin(
+              schema.productMembers,
+              and(
+                eq(schema.productMembers.productId, schema.products.id),
+                eq(schema.productMembers.userId, req.userId!),
+              ),
+            )
+            .where(
+              and(
+                eq(schema.products.organizationId, req.organizationId!),
+                eq(schema.products.id, body.product_id),
+                eq(schema.products.active, true),
+                ne(schema.products.stage, 'ARCHIVED'),
+              ),
+            )
+            .limit(1);
+          if (!product) {
+            throw Object.assign(new Error('Product not found or not assigned to you'), {
+              statusCode: 400,
+              code: 'product_not_trackable',
+            });
+          }
+        }
+
         const [inserted] = await tx
           .insert(schema.timeEntries)
           .values({
             organizationId: req.organizationId!,
             userId: req.userId!,
             projectId: body.project_id ?? null,
+            productId: body.product_id ?? null,
             taskId: body.task_id ?? null,
             startedAt: new Date(),
             source: body.source,
             description: body.description ?? null,
             clientEventId: body.client_event_id,
+            // Internal-product time is never billable. Decided server-side — the
+            // client never gets a say, and OpsCore emits no billable signal for
+            // products by design.
+            isBillable: !body.product_id,
           })
           .returning();
 
         return {
           id: inserted!.id,
           project_id: inserted!.projectId ?? null,
+          product_id: inserted!.productId ?? null,
           started_at: inserted!.startedAt.toISOString(),
           description: inserted!.description ?? null,
         };
@@ -213,6 +267,7 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
         return {
           id: running.id,
           project_id: running.projectId ?? null,
+          product_id: running.productId ?? null,
           started_at: running.startedAt.toISOString(),
           ended_at: endedAt.toISOString(),
           description: running.description ?? null,
@@ -237,6 +292,7 @@ export const timerRoutes: FastifyPluginAsyncZod = async (app) => {
         return {
           id: running.id,
           project_id: running.projectId ?? null,
+          product_id: running.productId ?? null,
           started_at: running.startedAt.toISOString(),
           description: running.description ?? null,
         };

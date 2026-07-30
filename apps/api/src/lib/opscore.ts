@@ -67,12 +67,29 @@ export interface OpsPartner {
   name: string;
   status: string;
 }
+/**
+ * OpsCore Internal Product — a peer of `OpsProject`, not a child of one.
+ * `member_ids` is the full trackable set (the owner plus every ProductMember,
+ * all roles); OpsCore emits no billable signal for products by design, since
+ * internal product time is never billable.
+ */
+export interface OpsProduct {
+  id: string;
+  name: string;
+  slug: string | null;
+  stage: string; // IDEA | VALIDATE | PLAN | BUILD | LAUNCH | IMPROVE | PAUSED | SUNSET | ARCHIVED
+  owner_employee_id: string | null;
+  member_ids: string[];
+}
 export interface OpsTask {
   id: string;
   name: string;
   status: string; // TODO | IN_PROGRESS | REVIEW | BLOCKED | DONE (CLOSED never returned)
   priority: string; // LOW | MEDIUM | HIGH | URGENT
   project_id: string | null;
+  // Internal-product board context (project XOR product upstream). Optional so
+  // an OpsCore that predates the products feed still parses — absent → null.
+  product_id?: string | null;
   assigned_employee_id: string | null;
   collaborator_ids: string[];
   updated_at: string;
@@ -99,4 +116,19 @@ export const opscoreApi = {
   businessPartners: () =>
     fetchJson<{ business_partners: OpsPartner[] }>('/api/timepro/sync/business-partners'),
   tasks: () => fetchJson<{ tasks: OpsTask[] }>('/api/timepro/sync/tasks'),
+  products: () => fetchJson<{ products: OpsProduct[] }>('/api/timepro/sync/products'),
+  /**
+   * The products feed is newer than the other three: an OpsCore deployment that
+   * predates it answers 404. Returning null instead of throwing keeps the rest of
+   * the directory sync (employees/projects/clients/tasks) working against an
+   * un-upgraded OpsCore — the products pass is simply skipped, and nothing is
+   * deactivated on the strength of a feed we never got.
+   */
+  productsOrNull: async (): Promise<{ products: OpsProduct[] } | null> => {
+    try {
+      return await opscoreApi.products();
+    } catch {
+      return null;
+    }
+  },
 };

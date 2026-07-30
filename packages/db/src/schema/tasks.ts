@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { pkId, timestamps, tsCol } from './_common';
 import { organizations } from './organizations';
+import { products } from './products';
 import { projects } from './projects';
 
 /**
@@ -27,6 +28,9 @@ export const tasks = pgTable(
     // Resolved from the feed's `project_id` → local project uuid; null = the
     // "No project" bucket (assigned work with no project — still trackable).
     projectId: uuid('project_id').references(() => projects.id),
+    // Internal-product board context, resolved from the feed's `product_id`.
+    // OpsCore enforces project XOR product on a task; the check below mirrors it.
+    productId: uuid('product_id').references(() => products.id),
     name: text('name').notNull(),
     status: text('status').notNull(), // TODO | IN_PROGRESS | REVIEW | BLOCKED | DONE
     priority: text('priority').notNull(), // LOW | MEDIUM | HIGH | URGENT
@@ -42,6 +46,13 @@ export const tasks = pgTable(
   (t) => ({
     opscoreUnique: uniqueIndex('tasks_org_opscore_unique').on(t.organizationId, t.opscoreTaskId),
     projectIdx: index('tasks_org_project_idx').on(t.organizationId, t.projectId),
+    productIdx: index('tasks_org_product_idx').on(t.organizationId, t.productId),
+    // Mirror of OpsCore's task XOR (a task is client-project work or
+    // internal-product work, never both).
+    projectXorProduct: check(
+      'tasks_project_xor_product',
+      sql`not (${t.projectId} is not null and ${t.productId} is not null)`,
+    ),
   }),
 );
 

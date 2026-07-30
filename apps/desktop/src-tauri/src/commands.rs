@@ -11,7 +11,7 @@ use tauri::State;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::api::{ApiClient, ApiError, Project, Task, TimerSnapshot};
+use crate::api::{ApiClient, ApiError, Product, Project, Task, TimerSnapshot};
 use crate::capture::{idle, screenshot};
 use crate::state::{AppState, RunningTimer, Session};
 
@@ -222,15 +222,32 @@ pub async fn list_projects(state: State<'_, Arc<AppState>>) -> Result<Vec<Projec
     Ok(resp.projects)
 }
 
+// ---- products (OpsCore Internal Products) ----
+
+/// Internal Products the signed-in resource may track against — the peer list to
+/// `list_projects`, shown as its own group in the picker.
+#[tauri::command]
+pub async fn list_products(state: State<'_, Arc<AppState>>) -> Result<Vec<Product>> {
+    let api = client(&state)?;
+    let resp = api.list_products().await.map_err(map_err)?;
+    Ok(resp.products)
+}
+
 /// OpsCore tasks the signed-in resource can track against, for the picker.
-/// `project_id` = a project uuid, `"none"` for the No-project bucket, or omitted.
+/// `project_id` = a project uuid or `"none"` for the unattached bucket;
+/// `product_id` = an internal-product uuid. Mutually exclusive; both omitted
+/// lists everything visible.
 #[tauri::command]
 pub async fn list_tasks(
     state: State<'_, Arc<AppState>>,
     project_id: Option<String>,
+    product_id: Option<String>,
 ) -> Result<Vec<Task>> {
     let api = client(&state)?;
-    let resp = api.list_tasks(project_id.as_deref()).await.map_err(map_err)?;
+    let resp = api
+        .list_tasks(project_id.as_deref(), product_id.as_deref())
+        .await
+        .map_err(map_err)?;
     Ok(resp.tasks)
 }
 
@@ -249,6 +266,9 @@ pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<serde_json:
 #[derive(Debug, Deserialize)]
 pub struct TimerStartArgs {
     pub project_id: Option<String>,
+    /// Internal-product tracking. Mutually exclusive with `project_id`; the
+    /// server rejects a request carrying both.
+    pub product_id: Option<String>,
     pub task_id: Option<String>,
     pub description: Option<String>,
 }
@@ -257,6 +277,7 @@ pub struct TimerStartArgs {
 pub struct TimerView {
     pub time_entry_id: String,
     pub project_id: Option<String>,
+    pub product_id: Option<String>,
     pub started_at: String,
 }
 
@@ -265,6 +286,7 @@ impl From<TimerSnapshot> for TimerView {
         Self {
             time_entry_id: s.id,
             project_id: s.project_id,
+            product_id: s.product_id,
             started_at: s.started_at,
         }
     }
@@ -279,6 +301,7 @@ pub async fn timer_start(
     let snap = api
         .timer_start(
             args.project_id.as_deref(),
+            args.product_id.as_deref(),
             args.task_id.as_deref(),
             args.description.as_deref(),
             &Uuid::new_v4().to_string(),
@@ -289,11 +312,17 @@ pub async fn timer_start(
     state.set_timer(RunningTimer {
         time_entry_id: snap.id.clone(),
         project_id: snap.project_id.clone(),
+        product_id: snap.product_id.clone(),
         task_id: args.task_id.clone(),
         description: args.description.clone(),
         started_at: snap.started_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     });
-    info!(time_entry_id = %snap.id, project = ?snap.project_id, "timer started");
+    info!(
+        time_entry_id = %snap.id,
+        project = ?snap.project_id,
+        product = ?snap.product_id,
+        "timer started"
+    );
     Ok(snap.into())
 }
 
@@ -311,6 +340,7 @@ pub async fn timer_stop(state: State<'_, Arc<AppState>>) -> Result<TimerView> {
     Ok(TimerView {
         time_entry_id: resp.id,
         project_id: resp.project_id,
+        product_id: resp.product_id,
         started_at: resp.started_at,
     })
 }

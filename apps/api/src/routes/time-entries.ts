@@ -288,6 +288,16 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
         if (body.project_id !== undefined && (body.project_id ?? null) !== (entry.projectId ?? null)) {
           set.projectId = body.project_id;
           changes.project_id = { old: entry.projectId ?? null, new: body.project_id ?? null };
+          // An entry is project time XOR internal-product time (DB check
+          // `time_entries_project_xor_product`). Re-assigning internal-product time
+          // to a client project therefore drops the product link — audited, and
+          // done here rather than letting the constraint surface as a 500.
+          // `is_billable` is deliberately left alone (still false): re-billing is a
+          // money decision, not a side effect of moving an entry.
+          if (body.project_id && entry.productId) {
+            set.productId = null;
+            changes.product_id = { old: entry.productId, new: null };
+          }
         }
         if (body.description !== undefined && (body.description ?? null) !== (entry.description ?? null)) {
           set.description = body.description;

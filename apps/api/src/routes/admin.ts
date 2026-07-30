@@ -45,6 +45,12 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
             disabled: z.number(),
             tasks: z.number(),
             tasksDisabled: z.number(),
+            products: z.number(),
+            productAssignments: z.number(),
+            productsDisabled: z.number(),
+            // false → this OpsCore has no /sync/products feed yet, so the
+            // products pass was skipped (not "all products deleted").
+            productsFeedAvailable: z.boolean(),
           }),
         },
         tags: ['admin'],
