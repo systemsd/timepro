@@ -376,10 +376,11 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
             {projects.map((p) => (
               <button
                 key={p.id}
+                title={p.name}
                 onClick={() => { setSelectedProject(p.id); setProjMenuOpen(false); }}
               >
                 <span className="dot" style={{ background: p.color }} />
-                {p.name}
+                <span className="proj-name">{p.name}</span>
               </button>
             ))}
           </div>
@@ -396,6 +397,7 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
               <button
                 key={t.id}
                 className="task-option"
+                title={t.name}
                 onClick={() => { setSelectedTask(t.id); setTaskMenuOpen(false); }}
               >
                 <span className="task-name">{t.name}</span>

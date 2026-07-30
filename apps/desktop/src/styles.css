@@ -156,7 +156,12 @@ button:disabled { cursor: default; }
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 30px rgba(0,0,0,0.14);
-  min-width: 200px; max-height: var(--menu-max-h); overflow-y: auto;
+  /* max-width: absolutely-positioned boxes are shrink-to-fit, which never goes
+     below min-content — and a nowrap label makes min-content the whole label,
+     so a long name would push the menu wider than the window (leftward, since
+     it is right-anchored). Cap it to the space left of the `right` offset. */
+  min-width: 200px; max-width: calc(100vw - 208px);
+  max-height: var(--menu-max-h); overflow-y: auto;
   padding: 6px; z-index: 30;
 }
 .proj-menu button {
@@ -165,6 +170,7 @@ button:disabled { cursor: default; }
   padding: 9px 12px; border-radius: 7px;
   color: var(--text); font-size: 13px;
 }
+.proj-menu .proj-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proj-menu button:hover { background: #f4f5f6; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
@@ -191,7 +197,9 @@ button:disabled { cursor: default; }
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 30px rgba(0,0,0,0.14);
-  min-width: 240px; max-height: var(--menu-max-h); overflow-y: auto;
+  /* See .proj-menu — same shrink-to-fit trap; this one is anchored 20px in. */
+  min-width: 240px; max-width: calc(100vw - 40px);
+  max-height: var(--menu-max-h); overflow-y: auto;
   padding: 6px; z-index: 30;
 }
 .task-menu button {
@@ -201,7 +209,10 @@ button:disabled { cursor: default; }
   color: var(--text); font-size: 13px;
 }
 .task-menu button:hover { background: #f4f5f6; }
-.task-option .task-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Single-line ellipsis on the label so only it gives way — the badges are
+   `flex: none` below and stay whole. `min-width: 0` is belt-and-braces: the
+   `overflow: hidden` already zeroes the flex item's automatic minimum size. */
+.task-option .task-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-badge {
   flex: none; font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.3px;
