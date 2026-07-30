@@ -182,8 +182,19 @@ capped `entries[]`. `apps/api/src/routes/opscore.ts`).
 - **pnpm 9 has no `--env-file`.** Node scripts load the root `.env` via a path-resolving helper
   (`packages/db/src/lib/loadEnv.ts`, `apps/api/src/lib/loadEnv.ts`) — *not* `import 'dotenv/config'`
   (which is cwd-relative and breaks when run from a subpackage). Reuse `loadRootEnv()`.
-- **Migrations bootstrap extensions.** `packages/db/src/migrate.ts` runs
+- **Migrations bootstrap extensions.** `packages/db/src/migrator.ts` runs
   `CREATE EXTENSION IF NOT EXISTS citext/pgcrypto` before applying migrations. Don't remove it.
+  (`IF NOT EXISTS` short-circuits for an unprivileged role once the extension exists — only a *first*
+  install needs SUPERUSER.)
+- **The API applies pending migrations at boot.** `server.ts` `main()` awaits `runMigrations()` from
+  `@timepro/db/migrator` **before** `listen()`. This is the only thing that applies a migration in
+  production — the deploy pipeline (ShipHub: install → build → start) has no migrate step, which is why
+  0009 once shipped un-applied and `/v1/products` 500'd on a missing table. Idempotent (Drizzle skips what's
+  in `drizzle.__drizzle_migrations`), and deliberately **not** wrapped in try/catch: a failure exits non-zero
+  before `listen()`, so under the build-then-swap deploy the new version never passes the health gate and the
+  old one keeps serving. Boot passes `url: config.DATABASE_URL` explicitly — the same string the app pool uses
+  — so we can never migrate one database and serve another; the `pnpm db:migrate` CLI keeps preferring
+  `DATABASE_ADMIN_URL`. Drizzle takes no advisory lock, so this assumes a single instance.
 - **Partitioning/RLS are DESIGN-ONLY, not built.** Despite docs §5/§8 (and some stale schema comments), **no
   partitioning and no RLS DDL exist in any migration** — `time_entries`/`activity_samples`/`app_usage`/`url_usage`
   are plain tables and tenant isolation is app-layer (see the Tenancy note above). When you hand-write such a

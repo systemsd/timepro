@@ -4,6 +4,7 @@ loadRootEnv();
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { closeDb } from '@timepro/db';
+import { runMigrations } from '@timepro/db/migrator';
 import { initObservability } from './lib/observability';
 import { pruneAgentLogs, pruneAllOrgs } from './lib/retention';
 import { sweepAbandonedTimers } from './lib/timer-sweep';
@@ -13,6 +14,27 @@ async function main() {
   const config = loadConfig();
   // Initialize error tracking before anything else (no-op unless SENTRY_DSN is set).
   initObservability(config);
+
+  // Apply pending DB migrations BEFORE serving. The deploy pipeline has no
+  // migrate step, so this is the only thing that applies a new migration in
+  // production (0009 shipped un-applied and `/v1/products` 500'd on a missing
+  // table). Idempotent — a restart against an up-to-date DB is one round-trip.
+  //
+  // Deliberately NOT wrapped in try/catch: a failed migration must abort boot.
+  // `main().catch` below exits non-zero before `listen()`, so under the
+  // build-then-swap deploy the new version never passes the health gate and the
+  // previous one keeps serving — rather than a half-migrated app taking traffic.
+  // `url` is passed explicitly — it MUST be the database this process serves
+  // (`config.DATABASE_URL`, the same string the app pool uses in `db/client.ts`).
+  // The CLI defaults to DATABASE_ADMIN_URL when present, which is right for a
+  // privileged one-off run but wrong here: if an environment carried both and
+  // they differed, we'd migrate one database, serve another, and report success.
+  await runMigrations({
+    url: config.DATABASE_URL,
+    // eslint-disable-next-line no-console
+    log: (msg) => console.log(`[server] migrate: ${msg}`),
+  });
+
   const app = await buildApp(config);
 
   try {
