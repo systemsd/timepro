@@ -17,6 +17,11 @@
   --field: #ffffff;
   --group: #f4f5f6;
   --accent: #5bbf3a;
+  /* Control-band dropdowns open 122px below the window top (58px header +
+     their 64px offset) and `body` is `overflow: hidden`, so anything past the
+     viewport is clipped, not scrollable. Cap them to the space that actually
+     exists (+12px breathing room) so a long list scrolls inside instead. */
+  --menu-max-h: calc(100vh - 134px);
 }
 
 * { box-sizing: border-box; }
@@ -151,7 +156,8 @@ button:disabled { cursor: default; }
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 30px rgba(0,0,0,0.14);
-  min-width: 200px; padding: 6px; z-index: 30;
+  min-width: 200px; max-height: var(--menu-max-h); overflow-y: auto;
+  padding: 6px; z-index: 30;
 }
 .proj-menu button {
   display: flex; align-items: center; gap: 10px;
@@ -185,7 +191,7 @@ button:disabled { cursor: default; }
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 30px rgba(0,0,0,0.14);
-  min-width: 240px; max-height: 320px; overflow-y: auto;
+  min-width: 240px; max-height: var(--menu-max-h); overflow-y: auto;
   padding: 6px; z-index: 30;
 }
 .task-menu button {
