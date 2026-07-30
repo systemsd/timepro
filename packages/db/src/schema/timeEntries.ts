@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { pkId, softDeletedAt, timestamps, tsCol } from './_common';
+import { products } from './products';
 import { projects } from './projects';
 import { tasks } from './tasks';
 import { users } from './users';
@@ -19,6 +20,10 @@ export const timeEntries = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.id),
+    // Internal-product attribution — the peer of `project_id`, never set with it
+    // (see the `time_entries_project_xor_product` check). Product time is always
+    // non-billable; `timer/start` forces `is_billable=false` when this is set.
+    productId: uuid('product_id').references(() => products.id),
     taskId: uuid('task_id').references(() => tasks.id),
     deviceId: uuid('device_id'),
     startedAt: tsCol('started_at').notNull(),
@@ -51,6 +56,15 @@ export const timeEntries = pgTable(
     running: index('time_entries_running_idx')
       .on(t.organizationId, t.userId)
       .where(sql`ended_at IS NULL`),
+    productStarted: index('time_entries_product_started_idx')
+      .on(t.organizationId, t.productId, t.startedAt.desc())
+      .where(sql`product_id IS NOT NULL`),
+    // An entry is client-project time or internal-product time, never both —
+    // mirrors OpsCore's task XOR and keeps Phase-B reporting unambiguous.
+    projectXorProduct: check(
+      'time_entries_project_xor_product',
+      sql`not (${t.projectId} is not null and ${t.productId} is not null)`,
+    ),
   }),
 );
 

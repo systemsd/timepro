@@ -125,10 +125,13 @@ cd apps/desktop/src-tauri && cargo check
 
 ### API routes (`apps/api/src/routes/`)
 `auth` · `health` · `me` (today, profile) · `projects` (list **member-scoped** to the caller's active assignments) ·
+`products` (`GET /v1/products` — OpsCore **Internal Products** the caller may track, member-scoped the same way;
+ARCHIVED + feed-absent hidden) ·
 `screenshots` · `team` · `timer` · `roster` (self-scoped for employees) · `timeline` (+ `/:userId/activity`) ·
 `clients` · `settings` · `presence` · `ingest` (activity/app-usage/url-usage) ·
 `tasks` (`GET /v1/tasks` — OpsCore tasks the caller can track, scoped to assignee/collaborator by
-`users.opscore_employee_id`; DONE hidden) ·
+`users.opscore_employee_id`; DONE hidden; `?project_id=<uuid>|none` or `?product_id=<uuid>` — **`none` means
+unattached: neither a project NOR a product**, so product tasks are only ever offered under their product) ·
 `admin` (`opscore/sync` — **disables members absent from the OpsCore response**) · `reports` (filters/run/saved;
 employees get no clients/projects) · `realtime` (ws presence) ·
 `opscore` (`/v1/opscore/tasks/time-summary` — **reverse of the sync**: OpsCore pulls per-task tracked time back for
@@ -144,6 +147,21 @@ capped `entries[]`. `apps/api/src/routes/opscore.ts`).
 > polls `/v1/tasks` every 45s. **`tracking.require_task`** (settings registry, **default OFF**) makes a task
 > mandatory: server 400s a no-task start, agent disables Start. **Staged rollout — flip it ON only once everyone is
 > on v0.1.14+**, else old agents (no task_id) are locked out.
+
+> **OpsCore Internal Products — Phase A (mirror + attribution).** Products are a **peer of projects**, never nested:
+> OpsCore has no FK between `Product` and `Project`, and a task belongs to EITHER one. Mirrored into `products` /
+> `product_members` (migration 0009) exactly like `projects`/`project_members`, keyed on `opscore_product_id`; a
+> member = **owner ∪ every ProductMember, all roles**. Attribution is `time_entries.product_id`, **mutually exclusive
+> with `project_id`** — enforced in `timer/start` (400 `project_product_exclusive`) *and* by the DB checks
+> `time_entries_project_xor_product` / `tasks_project_xor_product` (added NOT VALID: identical write enforcement, no
+> validation scan on the big table). **Product time is always non-billable** — `timer/start` forces
+> `is_billable=false` server-side; the client never gets a say and OpsCore emits no billable signal. The mirror keeps
+> ARCHIVED/feed-absent rows so old time still resolves a name; the picker filter lives in `/v1/products`. The desktop
+> picker (v0.1.22+) is one dropdown with two labelled groups and stores `{kind,id}` in `tf_context` (migrating the old
+> `tf_project` key). ⚠️ **Blocked on OpsCore:** it has no `/api/timepro/sync/products` feed and its tasks feed omits
+> `product_id`, so nothing lists until that ships — `opscoreApi.productsOrNull()` fail-softs to null meanwhile
+> (`productsFeedAvailable:false` in the sync result) so the rest of the directory sync keeps working.
+> **Reports/timeline/exports are Phase B** — they still group by project only.
 
 > **Desktop tracking-accuracy fix trail (v0.1.13→v0.1.19)** — task picker (0.1.13); timer/screenshot desync +
 > lock-screen pause (0.1.15); faster task refresh (0.1.16); **macOS App Nap** off via `src-tauri/Info.plist`

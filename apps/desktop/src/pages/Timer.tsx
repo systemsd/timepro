@@ -2,7 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ipc } from '../ipc';
-import type { Project, ScreenshotUploadEvent, Session, Task, TimerView } from '../types';
+import type {
+  Product,
+  Project,
+  ScreenshotUploadEvent,
+  Session,
+  Task,
+  TimerView,
+  TrackingContext,
+} from '../types';
 import { ChevronDown, GearIcon, KebabIcon, PlayIcon, StopIcon } from '../icons';
 
 interface Props {
@@ -12,15 +20,35 @@ interface Props {
 }
 
 const LS_TASK = 'tf_task';
+/** Legacy key: a bare project uuid. Superseded by LS_CONTEXT; still read once. */
 const LS_PROJECT = 'tf_project';
+const LS_CONTEXT = 'tf_context';
 const LS_TASKID = 'tf_task_id';
 const LS_AUTOSTART = 'tf_autostart';
 
+/**
+ * Restore the picker selection, migrating the pre-products `tf_project` key
+ * (a bare project uuid) to the `{kind, id}` shape. Written back on the first
+ * selection change, so the old key just fades out.
+ */
+function loadContext(): TrackingContext | null {
+  const raw = localStorage.getItem(LS_CONTEXT);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as TrackingContext;
+      if ((parsed?.kind === 'project' || parsed?.kind === 'product') && parsed.id) return parsed;
+    } catch {
+      /* corrupt value → fall through to the legacy key */
+    }
+  }
+  const legacy = localStorage.getItem(LS_PROJECT);
+  return legacy ? { kind: 'project', id: legacy } : null;
+}
+
 export function Timer({ session, onLogout, onOpenSettings }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string | null>(
-    () => localStorage.getItem(LS_PROJECT) || null,
-  );
+  const [products, setProducts] = useState<Product[]>([]);
+  const [context, setContext] = useState<TrackingContext | null>(loadContext);
   const [task, setTask] = useState(() => localStorage.getItem(LS_TASK) || '');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<string | null>(
@@ -38,6 +66,9 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [projMenuOpen, setProjMenuOpen] = useState(false);
+  // Both picker lists have answered — gates auto-start, which must not fire
+  // before we know what the user can track (a products-only user has no projects).
+  const [contextsLoaded, setContextsLoaded] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const autoStartTried = useRef(false);
@@ -53,10 +84,16 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
       : 'Stopped';
   const statusClass = running ? 'tracking' : paused ? 'paused' : 'stopped';
 
-  const project = useMemo(
-    () => projects.find((p) => p.id === selectedProject) ?? null,
-    [projects, selectedProject],
-  );
+  // The selected project/product, whichever kind the context names. `label` and
+  // `color` drive the one chip that fronts both lists.
+  const selected = useMemo(() => {
+    if (!context) return null;
+    const row =
+      context.kind === 'project'
+        ? projects.find((p) => p.id === context.id)
+        : products.find((p) => p.id === context.id);
+    return row ? { name: row.name, color: row.color } : null;
+  }, [context, projects, products]);
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === selectedTask) ?? null,
     [tasks, selectedTask],
@@ -70,11 +107,23 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const [ps, cur] = await Promise.all([ipc.listProjects(), ipc.timerCurrent()]);
+        const [ps, prods, cur] = await Promise.all([
+          ipc.listProjects(),
+          // Fail-soft: the agent auto-updates independently of the API deploy, so
+          // a new agent can meet an API without /v1/products. An empty product
+          // group must never take the projects list down with it.
+          ipc.listProducts().catch(() => []),
+          ipc.timerCurrent(),
+        ]);
         setProjects(ps);
+        setProducts(prods);
+        setContextsLoaded(true);
         if (cur) {
           setTimer(cur);
-          if (cur.project_id) setSelectedProject(cur.project_id);
+          // Follow the running entry's attribution; keep the restored selection
+          // when it tracks against nothing.
+          const ctx = contextOf(cur);
+          if (ctx) setContext(ctx);
         }
       } catch (err) {
         setError(asMessage(err));
@@ -88,14 +137,18 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     })();
   }, []);
 
-  // Load the OpsCore tasks for the selected project (or the "No project" bucket).
-  // Server-side these are scoped to the signed-in resource (assignee/collaborator).
-  // Drop the current task selection if it's not in the new project's set.
+  // Load the OpsCore tasks for the selected context — a project, an internal
+  // product, or the unattached bucket. Server-side these are scoped to the
+  // signed-in resource (assignee/collaborator). Drop the current task selection
+  // if it isn't in the new context's set.
   useEffect(() => {
     let cancelled = false;
     const load = () =>
       ipc
-        .listTasks(selectedProject ?? 'none')
+        .listTasks(
+          context?.kind === 'product' ? null : (context?.id ?? 'none'),
+          context?.kind === 'product' ? context.id : null,
+        )
         .then((ts) => {
           if (cancelled) return;
           setTasks(ts);
@@ -106,13 +159,15 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
         });
     void load();
     // Poll so a task assigned in OpsCore (synced server-side) appears here without
-    // a logout/login. Cleared on project change / unmount.
+    // a logout/login. Cleared on context change / unmount.
     const id = setInterval(load, 45_000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [selectedProject]);
+    // Primitive deps: a fresh-but-equal context object (e.g. re-reading the
+    // running timer) must not restart the poll.
+  }, [context?.kind, context?.id]);
 
   // reflect tracking state in the native window title
   useEffect(() => {
@@ -190,7 +245,8 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
         await listen<TimerView>('timer:auto-resumed', (e) => {
           if (e.payload) {
             setTimer(e.payload);
-            if (e.payload.project_id) setSelectedProject(e.payload.project_id);
+            const ctx = contextOf(e.payload);
+            if (ctx) setContext(ctx);
           }
           setPausedReason(null);
           showToast('Tracking resumed');
@@ -205,9 +261,11 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     localStorage.setItem(LS_TASK, task);
   }, [task]);
   useEffect(() => {
-    if (selectedProject) localStorage.setItem(LS_PROJECT, selectedProject);
-    else localStorage.removeItem(LS_PROJECT);
-  }, [selectedProject]);
+    if (context) localStorage.setItem(LS_CONTEXT, JSON.stringify(context));
+    else localStorage.removeItem(LS_CONTEXT);
+    // The legacy project-only key is superseded either way.
+    localStorage.removeItem(LS_PROJECT);
+  }, [context]);
   useEffect(() => {
     if (selectedTask) localStorage.setItem(LS_TASKID, selectedTask);
     else localStorage.removeItem(LS_TASKID);
@@ -216,14 +274,14 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
   // auto-start tracking on launch when the user opted in
   useEffect(() => {
     if (autoStartTried.current) return;
-    if (projects.length === 0) return; // wait for load
+    if (!contextsLoaded) return; // wait for both picker lists
     autoStartTried.current = true;
     const wants = localStorage.getItem(LS_AUTOSTART) === '1';
     if (wants && !timer) {
       void start();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects]);
+  }, [contextsLoaded]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -235,7 +293,13 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const t = await ipc.timerStart(selectedProject, selectedTask, task.trim() || null);
+      // Exactly one of the two is ever sent (the server 400s on both).
+      const t = await ipc.timerStart(
+        context?.kind === 'project' ? context.id : null,
+        context?.kind === 'product' ? context.id : null,
+        selectedTask,
+        task.trim() || null,
+      );
       setTimer(t);
       setPausedReason(null);
     } catch (err) {
@@ -323,11 +387,12 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
             disabled={busy}
           />
           <button
-            className={`project-chip ${project ? '' : 'empty'}`}
-            style={project ? { background: project.color } : undefined}
+            className={`project-chip ${selected ? '' : 'empty'}`}
+            style={selected ? { background: selected.color } : undefined}
             onClick={() => setProjMenuOpen((v) => !v)}
+            title={selected?.name}
           >
-            {project ? project.name : 'Select project'}
+            {selected ? selected.name : 'Select project'}
           </button>
           {/* Task picker. Shown whenever there are tasks here, or when a task is
               required (so the requirement is visible even with none available).
@@ -367,17 +432,33 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
           <StopIcon />
         </button>
 
+        {/* One picker, two labelled groups — client projects and internal
+            products are peers in OpsCore, so neither nests under the other.
+            The Internal Products group is omitted entirely when the user is on
+            none, so nothing changes for project-only users. */}
         {projMenuOpen && (
           <div className="proj-menu">
-            <button onClick={() => { setSelectedProject(null); setProjMenuOpen(false); }}>
+            <button onClick={() => { setContext(null); setProjMenuOpen(false); }}>
               <span className="dot" style={{ background: '#c4c8cd' }} />
               No project
             </button>
+            {projects.length > 0 && <div className="menu-group">Client Projects</div>}
             {projects.map((p) => (
               <button
                 key={p.id}
                 title={p.name}
-                onClick={() => { setSelectedProject(p.id); setProjMenuOpen(false); }}
+                onClick={() => { setContext({ kind: 'project', id: p.id }); setProjMenuOpen(false); }}
+              >
+                <span className="dot" style={{ background: p.color }} />
+                <span className="proj-name">{p.name}</span>
+              </button>
+            ))}
+            {products.length > 0 && <div className="menu-group">Internal Products</div>}
+            {products.map((p) => (
+              <button
+                key={p.id}
+                title={`${p.name} — ${p.stage.toLowerCase()}`}
+                onClick={() => { setContext({ kind: 'product', id: p.id }); setProjMenuOpen(false); }}
               >
                 <span className="dot" style={{ background: p.color }} />
                 <span className="proj-name">{p.name}</span>
@@ -440,6 +521,13 @@ export function Timer({ session, onLogout, onOpenSettings }: Props) {
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
+}
+
+/** The tracking context a server-side timer view is attributed to, if any. */
+function contextOf(t: TimerView): TrackingContext | null {
+  if (t.product_id) return { kind: 'product', id: t.product_id };
+  if (t.project_id) return { kind: 'project', id: t.project_id };
+  return null;
 }
 
 function splitHM(totalSeconds: number): { hours: number; minutes: string } {

@@ -10,6 +10,7 @@ const TaskRow = z.object({
   status: z.string(),
   priority: z.string(),
   project_id: z.string().uuid().nullable(),
+  product_id: z.string().uuid().nullable(),
 });
 
 const TasksResponse = z.object({ tasks: z.array(TaskRow) });
@@ -19,10 +20,17 @@ const TasksResponse = z.object({ tasks: z.array(TaskRow) });
  * a user sees a task only when their OpsCore employee id (the handoff `sub`,
  * stored as `users.opscore_employee_id`) is the assignee OR a collaborator.
  *
- * The desktop picker calls this per selected project:
+ * The desktop picker calls this per selected tracking context:
  *   `project_id=<uuid>` → that project's visible tasks
- *   `project_id=none`   → the "No project" bucket (project_id IS NULL)
+ *   `product_id=<uuid>` → that internal product's visible tasks
+ *   `project_id=none`   → the unattached bucket (NEITHER a project NOR a product)
  *   (omitted)           → all visible tasks
+ *
+ * ⚠️ `project_id=none` means *unattached*, not merely "no project". Internal-
+ * product tasks have `project_id IS NULL` too, so without the product exclusion
+ * they'd appear both under "No project" and under their product — and picking
+ * them from the "No project" entry would silently track them with no attribution
+ * at all. The product's own entry is the only place they're offered.
  */
 export const taskRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get(
@@ -32,6 +40,7 @@ export const taskRoutes: FastifyPluginAsyncZod = async (app) => {
       schema: {
         querystring: z.object({
           project_id: z.union([z.string().uuid(), z.literal('none')]).optional(),
+          product_id: z.string().uuid().optional(),
         }),
         response: { 200: TasksResponse },
         tags: ['tasks'],
@@ -59,8 +68,15 @@ export const taskRoutes: FastifyPluginAsyncZod = async (app) => {
             sql`${me.opsId} = ANY(${schema.tasks.collaboratorOpscoreEmployeeIds})`,
           ),
         ];
-        if (req.query.project_id === 'none') conds.push(isNull(schema.tasks.projectId));
-        else if (req.query.project_id) conds.push(eq(schema.tasks.projectId, req.query.project_id));
+        // A product filter wins if both are sent (they're mutually exclusive
+        // upstream, so this only ever resolves a confused client).
+        if (req.query.product_id) {
+          conds.push(eq(schema.tasks.productId, req.query.product_id));
+        } else if (req.query.project_id === 'none') {
+          conds.push(isNull(schema.tasks.projectId), isNull(schema.tasks.productId));
+        } else if (req.query.project_id) {
+          conds.push(eq(schema.tasks.projectId, req.query.project_id));
+        }
 
         const rows = await tx
           .select({
@@ -69,6 +85,7 @@ export const taskRoutes: FastifyPluginAsyncZod = async (app) => {
             status: schema.tasks.status,
             priority: schema.tasks.priority,
             projectId: schema.tasks.projectId,
+            productId: schema.tasks.productId,
           })
           .from(schema.tasks)
           .where(and(...conds))
@@ -81,6 +98,7 @@ export const taskRoutes: FastifyPluginAsyncZod = async (app) => {
             status: r.status,
             priority: r.priority,
             project_id: r.projectId ?? null,
+            product_id: r.productId ?? null,
           })),
         };
       });

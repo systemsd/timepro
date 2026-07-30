@@ -199,6 +199,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                     match client
                         .timer_start(
                             p.project_id.as_deref(),
+                            p.product_id.as_deref(),
                             p.task_id.as_deref(),
                             p.description.as_deref(),
                             &Uuid::new_v4().to_string(),
@@ -209,6 +210,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                             state.set_timer(RunningTimer {
                                 time_entry_id: snap.id.clone(),
                                 project_id: snap.project_id.clone(),
+                                product_id: snap.product_id.clone(),
                                 task_id: p.task_id.clone(),
                                 description: p.description.clone(),
                                 started_at: snap.started_at.parse().unwrap_or_else(|_| Utc::now()),
@@ -218,6 +220,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                                 serde_json::json!({
                                     "time_entry_id": snap.id,
                                     "project_id": snap.project_id,
+                                    "product_id": snap.product_id,
                                     "started_at": snap.started_at,
                                 }),
                             );
@@ -288,6 +291,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
             if stopped {
                 state.set_paused(PausedTimer {
                     project_id: timer.project_id.clone(),
+                    product_id: timer.product_id.clone(),
                     task_id: timer.task_id.clone(),
                     description: timer.description.clone(),
                 });
@@ -326,6 +330,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
                 // input returns (no manual "play" click).
                 state.set_paused(PausedTimer {
                     project_id: timer.project_id.clone(),
+                    product_id: timer.product_id.clone(),
                     task_id: timer.task_id.clone(),
                     description: timer.description.clone(),
                 });
@@ -427,6 +432,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
         let task_state = state.clone();
         let task_paused = PausedTimer {
             project_id: timer.project_id.clone(),
+            product_id: timer.product_id.clone(),
             task_id: timer.task_id.clone(),
             description: timer.description.clone(),
         };

@@ -26,17 +26,23 @@ pub struct Session {
 pub struct RunningTimer {
     pub time_entry_id: String,
     pub project_id: Option<String>,
+    /// Internal-product attribution — the peer of `project_id`, never set with it.
+    pub product_id: Option<String>,
     pub task_id: Option<String>,
     pub description: Option<String>,
     pub started_at: DateTime<Utc>,
 }
 
 /// Context captured when tracking auto-pauses on idle, so the same
-/// project/task/description can be resumed automatically once the user is active
-/// again (no manual "play" click). Runtime-only — never persisted.
+/// project-or-product/task/description can be resumed automatically once the user
+/// is active again (no manual "play" click). Carrying `product_id` here is what
+/// keeps an auto-resumed entry attributed to the same product — without it the
+/// fresh entry would silently become unattributed (and billable). Runtime-only —
+/// never persisted.
 #[derive(Debug, Clone)]
 pub struct PausedTimer {
     pub project_id: Option<String>,
+    pub product_id: Option<String>,
     pub task_id: Option<String>,
     pub description: Option<String>,
 }

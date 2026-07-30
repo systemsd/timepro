@@ -26,6 +26,12 @@ export interface OpscoreSyncResult {
   disabled: number;
   tasks: number;
   tasksDisabled: number;
+  /** Internal Products. `productsFeedAvailable=false` → OpsCore has no products
+   *  feed yet, so the products pass was skipped entirely (nothing deactivated). */
+  products: number;
+  productAssignments: number;
+  productsDisabled: number;
+  productsFeedAvailable: boolean;
 }
 
 /** OpsCore ProjectStatus → TimePro project status. */
@@ -46,11 +52,13 @@ export async function syncOrgFromOpsCore(
 ): Promise<OpscoreSyncResult> {
   const db = getDb();
 
-  const [emp, proj, bp, tsk] = await Promise.all([
+  const [emp, proj, bp, tsk, prod] = await Promise.all([
     opscoreApi.employees(),
     opscoreApi.projects(),
     opscoreApi.businessPartners(),
     opscoreApi.tasks(),
+    // Fail-soft: null when this OpsCore predates the products feed.
+    opscoreApi.productsOrNull(),
   ]);
 
   // 1) Clients (business partners) — match by opscore id, then by name
@@ -212,6 +220,83 @@ export async function syncOrgFromOpsCore(
     }
   }
 
+  // 3b) Internal Products (+ membership) — same pattern as projects, but keyed
+  // ONLY on the OpsCore id: there is no local product catalog to adopt by name.
+  // Skipped wholesale when the feed is unavailable, so an un-upgraded OpsCore
+  // can't look like "every product was deleted".
+  let productAssignments = 0;
+  let productsDisabled = 0;
+  const productByOps = new Map<string, string>(); // OpsCore product id → local uuid
+  if (prod) {
+    for (const p of prod.products) {
+      const values = {
+        name: p.name,
+        slug: p.slug ?? null,
+        stage: p.stage,
+        active: true,
+      };
+      const [existing] = await db
+        .select({ id: schema.products.id })
+        .from(schema.products)
+        .where(
+          and(
+            eq(schema.products.organizationId, orgId),
+            eq(schema.products.opscoreProductId, p.id),
+          ),
+        )
+        .limit(1);
+      let productId: string;
+      if (existing) {
+        await db.update(schema.products).set(values).where(eq(schema.products.id, existing.id));
+        productId = existing.id;
+      } else {
+        const [created] = await db
+          .insert(schema.products)
+          .values({ organizationId: orgId, opscoreProductId: p.id, ...values })
+          .returning({ id: schema.products.id });
+        productId = created!.id;
+      }
+      productByOps.set(p.id, productId);
+
+      // Trackable set = owner ∪ every ProductMember (all roles). Reconciled
+      // wholesale so a removed member loses access on the next sweep.
+      const memberOpsIds = new Set(p.member_ids);
+      if (p.owner_employee_id) memberOpsIds.add(p.owner_employee_id);
+      const memberUserIds = [...memberOpsIds]
+        .map((mid) => userByOps.get(mid))
+        .filter((x): x is string => !!x);
+      await db.delete(schema.productMembers).where(eq(schema.productMembers.productId, productId));
+      for (const uid of memberUserIds) {
+        await db
+          .insert(schema.productMembers)
+          .values({ productId, userId: uid })
+          .onConflictDoNothing();
+        productAssignments += 1;
+      }
+    }
+
+    // Deactivate any local product no longer in the feed (deleted upstream).
+    // The row stays so historical time entries still resolve a name.
+    const presentProductOps = new Set(prod.products.map((p) => p.id));
+    const localProducts = await db
+      .select({
+        id: schema.products.id,
+        opsId: schema.products.opscoreProductId,
+        active: schema.products.active,
+      })
+      .from(schema.products)
+      .where(eq(schema.products.organizationId, orgId));
+    for (const lp of localProducts) {
+      if (!presentProductOps.has(lp.opsId) && lp.active) {
+        await db
+          .update(schema.products)
+          .set({ active: false })
+          .where(eq(schema.products.id, lp.id));
+        productsDisabled += 1;
+      }
+    }
+  }
+
   // 4) Tasks (read-only mirror). CLOSED/deleted tasks vanish from the feed →
   // deactivate locally (keep the row so historical time entries stay valid).
   const presentTaskOps = new Set<string>();
@@ -220,11 +305,17 @@ export async function syncOrgFromOpsCore(
     // Resolve the OpsCore project id → local uuid; unknown/absent → null
     // ("No project" bucket), so assigned work is never silently dropped.
     const projectId = t.project_id ? projectByOps.get(t.project_id) ?? null : null;
+    // Same for the internal-product context. Upstream guarantees project XOR
+    // product; belt-and-braces here so a bad feed can't trip the DB check —
+    // a project link always wins and the product link is dropped.
+    const productId =
+      !projectId && t.product_id ? productByOps.get(t.product_id) ?? null : null;
     const values = {
       name: t.name,
       status: t.status,
       priority: t.priority,
       projectId,
+      productId,
       assignedOpscoreEmployeeId: t.assigned_employee_id,
       collaboratorOpscoreEmployeeIds: t.collaborator_ids ?? [],
       active: true,
@@ -262,6 +353,10 @@ export async function syncOrgFromOpsCore(
     disabled,
     tasks: tsk.tasks.length,
     tasksDisabled,
+    products: prod?.products.length ?? 0,
+    productAssignments,
+    productsDisabled,
+    productsFeedAvailable: prod !== null,
   };
 }
 
