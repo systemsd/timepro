@@ -1,3 +1,12 @@
+/*
+ * Responsive breakpoints (literal values — CSS vars can't be used in media queries):
+ *   1024px  narrow desktop — squeeze wide fixed layouts (team sidebar, chart head)
+ *    760px  structural     — nav collapse, tables→cards, sidebars stack, --pad-x 28→16
+ *    480px  phone density  — fonts/targets/grids tighten, --pad-x →12
+ * Always write width queries as `@media screen and (max-width: …)` — A4 print is
+ * ≈794 CSS px wide, so an unscoped 760px query would leak into the print styles.
+ * Hover-only affordances get `@media (hover: none)` capability queries instead.
+ */
 :root {
   --bg: #f6f7f9;
   --panel: #ffffff;
@@ -26,7 +35,12 @@
 
   --shadow-modal: 0 12px 40px rgba(20, 24, 33, 0.22);
   --overlay: rgba(20, 24, 33, 0.42);
+
+  --pad-x: 28px;   /* horizontal page gutter — the single knob for band/content padding */
+  --touch: 44px;   /* minimum touch-target size */
 }
+@media screen and (max-width: 760px) { :root { --pad-x: 16px; } }
+@media screen and (max-width: 480px) { :root { --pad-x: 12px; } }
 
 * { box-sizing: border-box; }
 
@@ -72,7 +86,7 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  padding: 14px 28px;
+  padding: 14px var(--pad-x);
 }
 .topbar-left { display: flex; align-items: baseline; gap: 12px; }
 .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.2px; }
@@ -86,7 +100,7 @@ body {
 }
 .signout:hover { background: #f6f7f8; color: var(--text); }
 
-.content { max-width: 1040px; margin: 0 auto; padding: 28px; }
+.content { max-width: 1040px; margin: 0 auto; padding: 28px var(--pad-x); }
 .title { font-size: 26px; font-weight: 600; margin: 0 0 18px; }
 
 .stats {
@@ -129,7 +143,7 @@ body {
 .topnav { background: linear-gradient(180deg, #3b4a63 0%, #455269 100%); color: #fff; }
 .topnav-inner {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 28px 10px;
+  padding: 14px var(--pad-x) 10px;
 }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 22px; font-weight: 700; }
 .brand-mark {
@@ -171,6 +185,29 @@ body {
 }
 .nav-menu-item:hover { background: #3b4a63; color: #fff; }
 .nav-menu-empty { color: #9aa3b2; padding: 11px 14px; font-size: 14px; }
+
+/* mobile nav: toggle button collapses the tab row into a slide-down panel ≤760px */
+.topnav-mobile-toggle {
+  display: none; align-items: center; justify-content: center;
+  width: var(--touch); height: 40px; border: none; border-radius: 8px;
+  background: transparent; color: #fff; font-size: 20px; cursor: pointer;
+}
+.topnav-mobile-toggle:hover { background: rgba(255,255,255,0.12); }
+.topnav-mobile-menu {
+  display: none; flex-direction: column; background: #2f3a4d;
+  padding: 6px var(--pad-x) 10px;
+}
+.topnav-mobile-menu .nav-menu-item { min-height: 48px; font-size: 16px; }
+.topnav-mobile-menu .nav-menu-item.active { background: #3b4a63; color: #fff; }
+.topnav-mobile-sub { padding-left: 16px; }
+@media screen and (max-width: 760px) {
+  .topnav-tabs { display: none; }
+  .topnav-mobile-toggle { display: inline-flex; }
+  .topnav-mobile-menu { display: flex; }
+}
+@media screen and (max-width: 480px) {
+  .hello { display: none; }
+}
 
 .presence-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
 .presence-dot.offline { background: #8a93a6; }
@@ -224,7 +261,7 @@ body {
 
 /* ───────────── team ───────────── */
 .team-band {
-  background: #eef0f2; border-bottom: 1px solid var(--border); padding: 18px 28px;
+  background: #eef0f2; border-bottom: 1px solid var(--border); padding: 18px var(--pad-x);
 }
 .team-band h1 { margin: 0; font-size: 26px; font-weight: 500; color: #5a6068; }
 
@@ -315,15 +352,36 @@ body {
 .eff-val { color: var(--accent); font-size: 15px; }
 
 .team-foot {
-  max-width: 1180px; margin: 0 auto; padding: 16px 28px 30px;
+  max-width: 1180px; margin: 0 auto; padding: 16px var(--pad-x) 30px;
   color: var(--muted); font-size: 13px; line-height: 1.6;
 }
 .small { font-size: 12px; }
 
+/* team/settings/projects shell: narrower sidebar on small laptops, stacked on phones */
+@media screen and (max-width: 1024px) {
+  .team-layout { grid-template-columns: 280px 1fr; }
+}
+@media screen and (max-width: 760px) {
+  .team-layout { grid-template-columns: 1fr; min-height: 0; }
+  .team-list { border-right: none; border-bottom: 1px solid var(--border); }
+  .team-detail { padding: 18px var(--pad-x); scroll-margin-top: 12px; }
+  .detail-head { flex-wrap: wrap; gap: 8px; }
+  .detail-actions { flex-wrap: wrap; gap: 10px 16px; }
+  .proj-grid { grid-template-columns: 1fr; max-width: none; }
+  .set-editor { flex-wrap: wrap; }
+}
+@media screen and (max-width: 480px) {
+  .indiv-row { flex-wrap: wrap; }
+  .indiv-editor { margin-left: 0; width: 100%; }
+}
+@media (hover: none) {
+  .detail-actions button { min-height: 40px; }
+}
+
 /* ───────────── download ───────────── */
 .dl-layout {
   display: grid; grid-template-columns: 1fr 300px; gap: 30px;
-  max-width: 1120px; margin: 0 auto; padding: 28px; align-items: start;
+  max-width: 1120px; margin: 0 auto; padding: 28px var(--pad-x); align-items: start;
 }
 .dl-main { background: #fff; }
 .dl-h { font-size: 24px; font-weight: 500; margin: 0 0 8px; }
@@ -340,11 +398,14 @@ body {
 .dl-side-h { font-weight: 600; color: var(--text); margin-bottom: 2px; }
 .dl-side-item a { color: var(--accent); font-size: 14px; }
 .dl-main code { background: #f0f1f3; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+@media screen and (max-width: 760px) {
+  .dl-layout { grid-template-columns: 1fr; }
+}
 
 /* ───────────── roster (My Home for admins) ───────────── */
 .mh-band {
   background: #eef0f2; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between; padding: 16px 28px;
+  display: flex; align-items: center; justify-content: space-between; padding: 16px var(--pad-x);
 }
 .mh-band h1 { margin: 0; font-size: 24px; font-weight: 500; color: #5a6068; }
 .mh-band .tz { color: var(--muted); font-size: 14px; }
@@ -365,11 +426,46 @@ body {
 .roster td.val { text-align: right; color: var(--accent); }
 .roster td.dash { text-align: right; color: var(--muted-2); }
 
+/* ≤760px: the 6-column roster becomes a stack of per-employee cards */
+@media screen and (max-width: 760px) {
+  .mh-band { flex-wrap: wrap; gap: 6px; }
+  .roster { padding: 14px var(--pad-x) 24px; }
+  .roster table, .roster tbody, .roster tr, .roster td { display: block; width: 100%; }
+  .roster thead { display: none; }
+  .roster tr {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; margin-bottom: 12px;
+  }
+  .roster td { padding: 6px 0; border-top: none; font-size: 14px; }
+  .roster .emp-name { font-size: 17px; }
+  .roster .thumb-cell button, .roster .thumb-cell figure { width: 100%; }
+  .roster .thumb-cell img, .roster .thumb-ph { width: 100%; height: auto; aspect-ratio: 25 / 16; }
+  .roster td[data-label] {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left;
+  }
+  .roster td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 13px; font-weight: 500; }
+  .roster tr.summary { background: #fafbfc; }
+  .roster tr.summary td { background: none; padding: 6px 0; }
+}
+@media screen and (max-width: 480px) {
+  .roster tr.summary { display: none; }
+}
+
+/* stat tiles (dashboard/timeline): 4-across → 2×2 → tighter on phones */
+@media screen and (max-width: 760px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media screen and (max-width: 480px) {
+  .stats { gap: 10px; }
+  .stat { padding: 14px; }
+  .stat-value { font-size: 22px; }
+}
+
 /* ───────────── timeline ───────────── */
 /* user header (name + timezone) */
 .tl-user {
   display: flex; align-items: center; gap: 11px;
-  background: #e7eaed; border-bottom: 1px solid var(--border); padding: 13px 28px;
+  background: #e7eaed; border-bottom: 1px solid var(--border); padding: 13px var(--pad-x);
 }
 .tl-user-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted-2); flex: none; }
 .tl-user-name { font-size: 18px; font-weight: 700; color: #3a3f45; }
@@ -377,7 +473,7 @@ body {
 
 /* summary card: left = date+total+week/month · right = Apps/URLs panel */
 .tl-card {
-  position: relative; display: flex; margin: 20px 28px; background: #f4f6f8;
+  position: relative; display: flex; margin: 20px var(--pad-x); background: #f4f6f8;
   border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
 }
 .tl-card-main {
@@ -396,7 +492,7 @@ body {
 .tl-sublink:hover b { text-decoration: underline; }
 
 /* Agent diagnostics */
-.diag-band { padding: 26px 32px; }
+.diag-band { padding: 26px var(--pad-x); }
 .diag-band h1 { margin: 0; font-size: 26px; font-weight: 500; color: #5a6068; }
 .diag-sub { margin: 4px 0 18px; }
 .diag-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -426,6 +522,14 @@ body {
 .diag-msg { color: #2d3138; word-break: break-word; }
 .diag-fields { color: #98a0aa; }
 .diag-meta { color: #b3b9c1; text-align: right; white-space: nowrap; }
+/* ≤760px: the fixed-track log grid becomes wrapped lines (timestamp first, message full-width) */
+@media screen and (max-width: 760px) {
+  .diag-row { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .diag-ts { order: -1; }
+  .diag-msg, .diag-fields { flex-basis: 100%; }
+  .diag-meta { text-align: left; }
+  .diag-filters input { min-width: 0; flex: 1 1 160px; }
+}
 .tl-dot-sep { margin: 0 8px; color: var(--muted-2); }
 .tl-card-side {
   flex: 1 1 52%; border-left: 1px solid var(--border); background: #fff;
@@ -470,7 +574,10 @@ body {
 .tl-step:disabled { opacity: 0.35; cursor: default; }
 
 /* 24-hour ruler with green activity track */
-.tl-hours-wrap { background: #f1f3f5; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tl-hours-wrap {
+  background: #f1f3f5; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
 .tl-hours { position: relative; display: flex; min-width: 760px; }
 .tl-hour {
   flex: 1 1 0; min-width: 0; font-size: 11px; color: #6b7178;
@@ -480,7 +587,7 @@ body {
 .tl-track { position: absolute; left: 0; right: 0; bottom: 0; height: 13px; pointer-events: none; }
 .tl-seg { position: absolute; bottom: 0; height: 13px; background: var(--green); }
 
-.tl-body { max-width: 1120px; margin: 0 auto; padding: 16px 28px 40px; }
+.tl-body { max-width: 1120px; margin: 0 auto; padding: 16px var(--pad-x) 40px; }
 .tl-shots { display: flex; flex-wrap: wrap; gap: 14px; }
 .tl-thumb { margin: 0; width: 200px; }
 .tl-thumb-bar {
@@ -507,6 +614,40 @@ body {
 .tl-thumb img, .tl-thumb-ph {
   width: 200px; height: 125px; object-fit: cover;
   border: 1px solid #d4d8dd; border-radius: 0 0 6px 6px; background: #eef0f2; display: block;
+}
+
+/* ≤760px: summary card stacks, day-step buttons tuck inside, screenshots go fluid */
+@media screen and (max-width: 760px) {
+  .tl-user { flex-wrap: wrap; }
+  .tl-card { flex-direction: column; }
+  .tl-card-side { border-left: none; border-top: 1px solid var(--border); }
+  .tl-tabs { justify-content: flex-start; }
+  .tl-step { top: 24px; transform: none; }
+  .tl-step.prev { left: 10px; }
+  .tl-step.next { right: 10px; }
+  .tl-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .tl-thumb { width: auto; }
+  .tl-thumb img, .tl-thumb-ph { width: 100%; height: auto; aspect-ratio: 8 / 5; }
+  .tl-act-head { flex-wrap: wrap; row-gap: 6px; }
+}
+@media screen and (max-width: 480px) {
+  .tl-total { font-size: 44px; }
+  .tl-hours { min-width: 640px; }
+  .tl-shots { grid-template-columns: repeat(2, 1fr); }
+  .tl-act-desc { flex: 1 1 100%; white-space: normal; }
+  .tl-act-task { max-width: 140px; }
+  .ss-modal { padding: 8px; }
+  .ss-nav { width: 44px; height: 44px; margin: 0 4px; font-size: 26px; }
+  .ss-modal-inner img { max-height: calc(100vh - 120px); max-height: calc(100dvh - 120px); }
+  .ss-modal-loading { min-width: 0; }
+  .tl-toast { left: 12px; right: 12px; }
+}
+/* touch devices: hover-revealed affordances must be visible and tappable */
+@media (hover: none) {
+  .tl-thumb-del { opacity: 1; padding: 6px; }
+  .tl-act-head:not(.read-only) .tl-act-pencil { opacity: 0.55; }
+  .tl-step { width: 40px; height: 40px; }
+  .cal-day { min-width: 44px; }
 }
 
 /* ───────────── clients ───────────── */
@@ -548,7 +689,7 @@ body {
 .indiv-editor { margin-left: auto; }
 
 /* ---- Reports console (B7 / Phase 5) ---- */
-.rep-wrap { max-width: 1180px; margin: 0 auto; padding: 18px 22px 60px; }
+.rep-wrap { max-width: 1180px; margin: 0 auto; padding: 18px var(--pad-x) 60px; }
 .rep-h1 { font-size: 26px; font-weight: 600; margin: 6px 0 16px; }
 
 .rep-builder {
@@ -763,6 +904,29 @@ body {
 .rep-subhead { font-size: 14px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
 @media (max-width: 760px) { .rep-appsurls { grid-template-columns: 1fr; } }
 
+/* ≤760px: chart stacks; the wide detailed/weekly tables scroll inside their wrapper */
+@media screen and (max-width: 760px) {
+  .rep-chart { flex-direction: column; }
+  .rep-chart-head { min-width: 0; align-self: stretch; }
+  .rep-chart-stats { flex-direction: row; flex-wrap: wrap; gap: 2px 14px; }
+  .rep-bars { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .rep-bar-col { flex: 1 0 24px; }
+  .rep-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .rep-table-scroll > .rep-table { min-width: 640px; }
+  .rep-table-scroll > .rep-week-table { min-width: 760px; }
+  .rep-actions-right { flex-wrap: wrap; justify-content: flex-end; }
+}
+@media screen and (max-width: 480px) {
+  .rep-presets-grid { grid-template-columns: repeat(2, max-content); }
+  .rep-actions-right { width: 100%; margin-left: 0; }
+  .rep-show { flex: 1; }
+  .rep-tz { margin-left: 0; }
+  .rep-bars { height: 170px; }
+  .rep-bar-val { display: none; }
+  .rep-week-head { flex-wrap: wrap; }
+  .rep-week-total { min-width: 0; }
+}
+
 /* avatar account dropdown */
 .account-wrap { position: relative; }
 .account-menu { left: auto; right: 0; min-width: 220px; }
@@ -771,10 +935,10 @@ body {
 /* My Account page */
 .acct-band {
   background: #e9ecf1; border-bottom: 1px solid var(--border);
-  padding: 22px 28px;
+  padding: 22px var(--pad-x);
 }
 .acct-band h1 { margin: 0; font-size: 26px; font-weight: 600; color: #4a4f55; }
-.acct-wrap { max-width: 920px; margin: 0 auto; padding: 28px 24px 60px; }
+.acct-wrap { max-width: 920px; margin: 0 auto; padding: 28px var(--pad-x) 60px; }
 .acct-section { padding: 8px 0 26px; border-bottom: 1px solid #eef0f3; margin-bottom: 22px; }
 .acct-section:last-child { border-bottom: none; }
 .acct-name { color: var(--accent); font-size: 22px; font-weight: 700; margin: 0 0 8px; }
@@ -794,9 +958,13 @@ body {
   background: #f4f6f8; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px;
 }
 .acct-token-label { font-weight: 600; color: #3a3f45; font-size: 14px; }
+@media screen and (max-width: 480px) {
+  .acct-token { flex-wrap: wrap; }
+  .entries th, .entries td { padding: 9px 10px; }
+}
 
 /* manager dashboard calendar strip (S2 day/month switch) */
-.cal { padding: 16px 28px 8px; }
+.cal { padding: 16px var(--pad-x) 8px; }
 .cal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .cal-nav {
   width: 32px; height: 32px; border: 1px solid var(--border); background: #fff; border-radius: 9px;
@@ -811,11 +979,12 @@ body {
 }
 .cal-today:hover { background: #e0def8; }
 .cal-strip {
-  display: flex; overflow-x: auto;
+  display: flex; overflow-x: auto; scroll-snap-type: x proximity;
   border: 1px solid var(--border); border-radius: 8px; background: #fff;
 }
 .cal-day {
-  flex: 1 1 0; min-width: 38px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  flex: 1 1 0; min-width: 38px; scroll-snap-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
   background: transparent; border: none; border-left: 1px solid var(--border);
   padding: 7px 4px 0; cursor: pointer;
 }
@@ -997,6 +1166,10 @@ body {
 }
 .et-split-lbl { font-size: 13.5px; color: var(--muted); }
 .et-split .et-field { background: var(--panel); }
+@media screen and (max-width: 480px) {
+  .et-split { flex-wrap: wrap; }
+  .et-field--sm { width: 118px; }
+}
 
 /* history timeline */
 .et-hist { border-top: 1px solid var(--border); padding-top: 16px; }
@@ -1036,4 +1209,11 @@ body {
 @keyframes tl-toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ───────────── touch ergonomics (capability query — applies at any width) ───────────── */
+@media (hover: none) {
+  .cal-nav { width: 40px; height: 40px; }
+  .tl-tabs button { padding: 8px 2px; }
+  .rep-tab { padding: 12px 16px; }
 }

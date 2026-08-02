@@ -11,6 +11,7 @@ export interface ModalProps {
   title: string;
   children?: ReactNode;
   footer?: ReactNode;
+  /** Maximum dialog width in px; the dialog shrinks with the viewport below it. */
   width?: number;
 }
 
@@ -83,7 +84,7 @@ export function Modal({ open, onClose, title, children, footer, width = 440 }: M
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        style={{ width }}
+        style={{ width: '100%', maxWidth: width }}
         tabIndex={-1}
       >
         <div className="ui-modal-head">

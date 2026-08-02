@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import {
@@ -41,6 +41,14 @@ export default function TeamPage() {
   const [savingProjects, setSavingProjects] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const detailRef = useRef<HTMLElement | null>(null);
+
+  // stacked layout on phones: picking a member should reveal the detail pane
+  const selectMember = (id: string) => {
+    setSelectedId(id);
+    if (window.matchMedia('(max-width: 760px)').matches)
+      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const loadMembers = useCallback(async (selectFirst = false) => {
     try {
@@ -197,7 +205,7 @@ export default function TeamPage() {
                   selectedId === m.user_id ? 'selected' : '',
                   m.status === 'archived' ? 'archived' : '',
                 ].join(' ')}
-                onClick={() => setSelectedId(m.user_id)}
+                onClick={() => selectMember(m.user_id)}
               >
                 <span className="num">{i + 1}</span>
                 <span className="mname">{m.display_name || m.email}</span>
@@ -219,7 +227,7 @@ export default function TeamPage() {
         </aside>
 
         {/* Right: detail panel */}
-        <section className="team-detail">
+        <section className="team-detail" ref={detailRef}>
           {error && <div className="error">{error}</div>}
 
           {!detail ? (

@@ -26,6 +26,11 @@
 }
 .ui-btn--md { padding: 9px 16px; font-size: 14px; }
 .ui-btn--sm { padding: 6px 12px; font-size: 13px; }
+/* touch devices: guarantee comfortable tap targets without changing desktop metrics */
+@media (hover: none) {
+  .ui-btn--md { min-height: 44px; }
+  .ui-btn--sm { min-height: 36px; }
+}
 
 .ui-btn--primary { background: var(--accent); color: var(--on-accent); }
 .ui-btn--primary:not(:disabled):hover { background: var(--accent-hover); }
@@ -56,6 +61,7 @@
   box-shadow: var(--shadow-modal);
   max-width: 100%;
   max-height: 90vh;
+  max-height: calc(100dvh - 32px); /* dvh: keep clear of mobile browser chrome (90vh fallback above) */
   display: flex;
   flex-direction: column;
   outline: none;
@@ -84,6 +90,7 @@
 .ui-modal-text { margin: 0; color: var(--text); font-size: 14px; line-height: 1.5; }
 .ui-modal-foot {
   display: flex;
+  flex-wrap: wrap; /* multi-button footers wrap instead of overflowing on narrow screens */
   justify-content: flex-end;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-5);
@@ -152,7 +159,7 @@
   margin: 0;
   padding: 4px;
   list-style: none;
-  max-height: 260px;
+  max-height: min(260px, 40vh); /* stays usable when the on-screen keyboard shrinks the viewport */
   overflow: auto;
   background: var(--panel);
   border: 1px solid var(--border);
