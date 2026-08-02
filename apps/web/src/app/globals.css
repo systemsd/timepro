@@ -1165,6 +1165,10 @@ body {
 }
 .et-split-lbl { font-size: 13.5px; color: var(--muted); }
 .et-split .et-field { background: var(--panel); }
+@media screen and (max-width: 480px) {
+  .et-split { flex-wrap: wrap; }
+  .et-field--sm { width: 118px; }
+}
 
 /* history timeline */
 .et-hist { border-top: 1px solid var(--border); padding-top: 16px; }

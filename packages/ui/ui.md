@@ -34,6 +34,9 @@ default so it never accidentally submits a form.
 Accessible dialog: `role="dialog"` + `aria-modal`, labelled by its title, **focus trap**, Escape-to-close,
 backdrop-click close, body-scroll lock, and focus restored to the trigger on close.
 - Props: `open`, `onClose`, `title`, `children` (body), `footer?`, `width?` (px).
+- `width` is a **maximum**: the dialog renders at `width: 100%; max-width: <width>px`, so it fills the
+  viewport (minus the overlay's 16px padding) on phones and caps at `width` on desktop. Height caps at
+  `calc(100dvh - 32px)` (90vh fallback) and the footer wraps, so multi-button footers stay usable at 320px.
 - Nesting: don't render two open Modals at once (their Escape/focus handlers conflict). To chain (e.g. a
   confirm on top of an editor), close the first by toggling its `open` — `<Modal open={!confirming} …>` +
   `<ConfirmModal open={confirming} …>`.
@@ -54,6 +57,14 @@ weren't keyboard-operable. Field is a focusable `role="combobox"`; popup is a `r
 click-outside and Tab. Multi renders removable chips; single renders the selected label.
 - Props: `options` (`{ id, name }[]`), `value` (`string[]`), `onChange(ids)`, `multiple?`, `placeholder?`,
   `ariaLabel?`.
+- The popup list caps at `min(260px, 40vh)` so it stays scrollable when a phone keyboard shrinks the
+  viewport. It always drops **down** — flip-up positioning near the viewport bottom would need JSX
+  measurement and is deliberately not implemented yet.
+
+## Touch behavior
+`styles.css` uses `@media (hover: none)` to guarantee tap targets on touch devices without changing desktop
+metrics: `Button` gets `min-height` 44px (`md`) / 36px (`sm`). Hover styles remain cosmetic-only — every
+interaction has a click/keyboard path.
 
 ### Icons
 Feather-style line icons (`HomeIcon`, `TrashIcon`, `CloseIcon`, `PencilIcon`, `ClockIcon`, `ChevronDownIcon`,
