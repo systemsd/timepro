@@ -914,6 +914,7 @@ body {
   .rep-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .rep-table-scroll > .rep-table { min-width: 640px; }
   .rep-table-scroll > .rep-week-table { min-width: 760px; }
+  .rep-actions-right { flex-wrap: wrap; justify-content: flex-end; }
 }
 @media screen and (max-width: 480px) {
   .rep-presets-grid { grid-template-columns: repeat(2, max-content); }
