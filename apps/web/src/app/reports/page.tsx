@@ -509,28 +509,30 @@ function WeekCard({ week }: { week: ReportWeekBlock }) {
         <span className="rep-week-total">{hm(week.seconds)}</span>
       </button>
       {open && (
-        <table className="rep-table rep-week-table">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              {WEEKDAYS.map((d) => <th key={d} className="rep-dur">{d}</th>)}
-              <th className="rep-act">Activity</th>
-              <th className="rep-dur">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {week.rows.map((r) => (
-              <tr key={r.key ?? '∅'}>
-                <td>{r.label}</td>
-                {r.days.map((s, i) => (
-                  <td key={i} className="rep-dur">{s > 0 ? hm(s) : <span className="muted">·</span>}</td>
-                ))}
-                <td className="rep-act">{actPct(r.activity_score)}</td>
-                <td className="rep-dur">{hm(r.seconds)}</td>
+        <div className="rep-table-scroll">
+          <table className="rep-table rep-week-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                {WEEKDAYS.map((d) => <th key={d} className="rep-dur">{d}</th>)}
+                <th className="rep-act">Activity</th>
+                <th className="rep-dur">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {week.rows.map((r) => (
+                <tr key={r.key ?? '∅'}>
+                  <td>{r.label}</td>
+                  {r.days.map((s, i) => (
+                    <td key={i} className="rep-dur">{s > 0 ? hm(s) : <span className="muted">·</span>}</td>
+                  ))}
+                  <td className="rep-act">{actPct(r.activity_score)}</td>
+                  <td className="rep-dur">{hm(r.seconds)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -540,27 +542,29 @@ function DetailTable({ rows, truncated }: { rows: ReportResult['detailed']; trun
   if (rows.length === 0) return <div className="rep-empty">No entries in this range.</div>;
   return (
     <>
-      <table className="rep-table">
-        <thead>
-          <tr>
-            <th>Date</th><th>Employee</th><th>Project</th><th>Note</th><th>From</th><th>To</th><th className="rep-act">Activity</th><th className="rep-dur">Duration</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.entry_id}>
-              <td>{dmy(r.date)}</td>
-              <td>{r.display_name}</td>
-              <td>{r.project_name ?? <span className="muted">No project</span>}</td>
-              <td>{r.note ?? ''}</td>
-              <td>{clock(r.from)}</td>
-              <td>{clock(r.to)}</td>
-              <td className="rep-act">{actPct(r.activity_score)}</td>
-              <td className="rep-dur">{hm(r.duration_seconds)}</td>
+      <div className="rep-table-scroll">
+        <table className="rep-table">
+          <thead>
+            <tr>
+              <th>Date</th><th>Employee</th><th>Project</th><th>Note</th><th>From</th><th>To</th><th className="rep-act">Activity</th><th className="rep-dur">Duration</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.entry_id}>
+                <td>{dmy(r.date)}</td>
+                <td>{r.display_name}</td>
+                <td>{r.project_name ?? <span className="muted">No project</span>}</td>
+                <td>{r.note ?? ''}</td>
+                <td>{clock(r.from)}</td>
+                <td>{clock(r.to)}</td>
+                <td className="rep-act">{actPct(r.activity_score)}</td>
+                <td className="rep-dur">{hm(r.duration_seconds)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {truncated && <div className="muted rep-trunc">Showing the first 5000 entries — narrow the range or use an export (5C).</div>}
     </>
   );

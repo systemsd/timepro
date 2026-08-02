@@ -872,6 +872,28 @@ body {
 .rep-subhead { font-size: 14px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
 @media (max-width: 760px) { .rep-appsurls { grid-template-columns: 1fr; } }
 
+/* ≤760px: chart stacks; the wide detailed/weekly tables scroll inside their wrapper */
+@media screen and (max-width: 760px) {
+  .rep-chart { flex-direction: column; }
+  .rep-chart-head { min-width: 0; align-self: stretch; }
+  .rep-chart-stats { flex-direction: row; flex-wrap: wrap; gap: 2px 14px; }
+  .rep-bars { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .rep-bar-col { flex: 1 0 24px; }
+  .rep-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .rep-table-scroll > .rep-table { min-width: 640px; }
+  .rep-table-scroll > .rep-week-table { min-width: 760px; }
+}
+@media screen and (max-width: 480px) {
+  .rep-presets-grid { grid-template-columns: repeat(2, max-content); }
+  .rep-actions-right { width: 100%; margin-left: 0; }
+  .rep-show { flex: 1; }
+  .rep-tz { margin-left: 0; }
+  .rep-bars { height: 170px; }
+  .rep-bar-val { display: none; }
+  .rep-week-head { flex-wrap: wrap; }
+  .rep-week-total { min-width: 0; }
+}
+
 /* avatar account dropdown */
 .account-wrap { position: relative; }
 .account-menu { left: auto; right: 0; min-width: 220px; }
