@@ -82,10 +82,10 @@ function ManagerHome() {
           <tbody>
             <tr className="summary">
               <td className="l" colSpan={2}>{headline}</td>
-              <td className="val">{fmt(roster?.totals.today_seconds)}</td>
-              <td className="val">{fmt(roster?.totals.yesterday_seconds)}</td>
-              <td className="val">{fmt(roster?.totals.week_seconds)}</td>
-              <td className="val">{fmt(roster?.totals.month_seconds)}</td>
+              <td className="val" data-label="Today">{fmt(roster?.totals.today_seconds)}</td>
+              <td className="val" data-label="Yesterday">{fmt(roster?.totals.yesterday_seconds)}</td>
+              <td className="val" data-label="This week">{fmt(roster?.totals.week_seconds)}</td>
+              <td className="val" data-label="This month">{fmt(roster?.totals.month_seconds)}</td>
             </tr>
             {(roster?.rows ?? []).map((r) => (
               <RosterRowView key={r.user_id} row={r} presence={presenceOf(r)} onOpen={() => router.push(`/timeline/${r.user_id}`)} />
@@ -120,15 +120,15 @@ function RosterRowView({ row, presence, onOpen }: { row: RosterRow; presence: Pr
           <span className="muted-2">…</span>
         )}
       </td>
-      <td className={row.today_seconds ? 'val' : 'dash'}>{fmt(row.today_seconds)}</td>
-      <td className={row.yesterday_seconds ? 'val' : 'dash'}>{fmt(row.yesterday_seconds)}</td>
-      <td className={row.over_limit ? 'val over-limit' : row.week_seconds ? 'val' : 'dash'}>
+      <td className={row.today_seconds ? 'val' : 'dash'} data-label="Today">{fmt(row.today_seconds)}</td>
+      <td className={row.yesterday_seconds ? 'val' : 'dash'} data-label="Yesterday">{fmt(row.yesterday_seconds)}</td>
+      <td className={row.over_limit ? 'val over-limit' : row.week_seconds ? 'val' : 'dash'} data-label="This week">
         {fmt(row.week_seconds)}
         {row.weekly_limit_hours > 0 && (
           <span className="limit-cap" title={`Weekly limit ${row.weekly_limit_hours}h`}> / {row.weekly_limit_hours}h</span>
         )}
       </td>
-      <td className={row.month_seconds ? 'val' : 'dash'}>{fmt(row.month_seconds)}</td>
+      <td className={row.month_seconds ? 'val' : 'dash'} data-label="This month">{fmt(row.month_seconds)}</td>
     </tr>
   );
 }
@@ -218,15 +218,15 @@ function EmployeeHome() {
                   <span className="muted-2">…</span>
                 )}
               </td>
-              <td className={me?.today_seconds ? 'val' : 'dash'}>{fmt(me?.today_seconds)}</td>
-              <td className={me?.yesterday_seconds ? 'val' : 'dash'}>{fmt(me?.yesterday_seconds)}</td>
-              <td className={me?.over_limit ? 'val over-limit' : me?.week_seconds ? 'val' : 'dash'}>
+              <td className={me?.today_seconds ? 'val' : 'dash'} data-label="Today">{fmt(me?.today_seconds)}</td>
+              <td className={me?.yesterday_seconds ? 'val' : 'dash'} data-label="Yesterday">{fmt(me?.yesterday_seconds)}</td>
+              <td className={me?.over_limit ? 'val over-limit' : me?.week_seconds ? 'val' : 'dash'} data-label="This week">
                 {fmt(me?.week_seconds)}
                 {(me?.weekly_limit_hours ?? 0) > 0 && (
                   <span className="limit-cap" title={`Weekly limit ${me!.weekly_limit_hours}h`}> / {me!.weekly_limit_hours}h</span>
                 )}
               </td>
-              <td className={me?.month_seconds ? 'val' : 'dash'}>{fmt(me?.month_seconds)}</td>
+              <td className={me?.month_seconds ? 'val' : 'dash'} data-label="This month">{fmt(me?.month_seconds)}</td>
             </tr>
           </tbody>
         </table>

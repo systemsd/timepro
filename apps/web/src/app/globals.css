@@ -402,6 +402,41 @@ body {
 .roster td.val { text-align: right; color: var(--accent); }
 .roster td.dash { text-align: right; color: var(--muted-2); }
 
+/* ≤760px: the 6-column roster becomes a stack of per-employee cards */
+@media screen and (max-width: 760px) {
+  .mh-band { flex-wrap: wrap; gap: 6px; }
+  .roster { padding: 14px var(--pad-x) 24px; }
+  .roster table, .roster tbody, .roster tr, .roster td { display: block; width: 100%; }
+  .roster thead { display: none; }
+  .roster tr {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; margin-bottom: 12px;
+  }
+  .roster td { padding: 6px 0; border-top: none; font-size: 14px; }
+  .roster .emp-name { font-size: 17px; }
+  .roster .thumb-cell button, .roster .thumb-cell figure { width: 100%; }
+  .roster .thumb-cell img, .roster .thumb-ph { width: 100%; height: auto; aspect-ratio: 25 / 16; }
+  .roster td[data-label] {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left;
+  }
+  .roster td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 13px; font-weight: 500; }
+  .roster tr.summary { background: #fafbfc; }
+  .roster tr.summary td { background: none; padding: 6px 0; }
+}
+@media screen and (max-width: 480px) {
+  .roster tr.summary { display: none; }
+}
+
+/* stat tiles (dashboard/timeline): 4-across → 2×2 → tighter on phones */
+@media screen and (max-width: 760px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media screen and (max-width: 480px) {
+  .stats { gap: 10px; }
+  .stat { padding: 14px; }
+  .stat-value { font-size: 22px; }
+}
+
 /* ───────────── timeline ───────────── */
 /* user header (name + timezone) */
 .tl-user {
