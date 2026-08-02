@@ -357,6 +357,27 @@ body {
 }
 .small { font-size: 12px; }
 
+/* team/settings/projects shell: narrower sidebar on small laptops, stacked on phones */
+@media screen and (max-width: 1024px) {
+  .team-layout { grid-template-columns: 280px 1fr; }
+}
+@media screen and (max-width: 760px) {
+  .team-layout { grid-template-columns: 1fr; min-height: 0; }
+  .team-list { border-right: none; border-bottom: 1px solid var(--border); }
+  .team-detail { padding: 18px var(--pad-x); scroll-margin-top: 12px; }
+  .detail-head { flex-wrap: wrap; gap: 8px; }
+  .detail-actions { flex-wrap: wrap; gap: 10px 16px; }
+  .proj-grid { grid-template-columns: 1fr; max-width: none; }
+  .set-editor { flex-wrap: wrap; }
+}
+@media screen and (max-width: 480px) {
+  .indiv-row { flex-wrap: wrap; }
+  .indiv-editor { margin-left: 0; width: 100%; }
+}
+@media (hover: none) {
+  .detail-actions button { min-height: 40px; }
+}
+
 /* ───────────── download ───────────── */
 .dl-layout {
   display: grid; grid-template-columns: 1fr 300px; gap: 30px;
@@ -377,6 +398,9 @@ body {
 .dl-side-h { font-weight: 600; color: var(--text); margin-bottom: 2px; }
 .dl-side-item a { color: var(--accent); font-size: 14px; }
 .dl-main code { background: #f0f1f3; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+@media screen and (max-width: 760px) {
+  .dl-layout { grid-template-columns: 1fr; }
+}
 
 /* ───────────── roster (My Home for admins) ───────────── */
 .mh-band {
@@ -498,6 +522,14 @@ body {
 .diag-msg { color: #2d3138; word-break: break-word; }
 .diag-fields { color: #98a0aa; }
 .diag-meta { color: #b3b9c1; text-align: right; white-space: nowrap; }
+/* ≤760px: the fixed-track log grid becomes wrapped lines (timestamp first, message full-width) */
+@media screen and (max-width: 760px) {
+  .diag-row { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .diag-ts { order: -1; }
+  .diag-msg, .diag-fields { flex-basis: 100%; }
+  .diag-meta { text-align: left; }
+  .diag-filters input { min-width: 0; flex: 1 1 160px; }
+}
 .tl-dot-sep { margin: 0 8px; color: var(--muted-2); }
 .tl-card-side {
   flex: 1 1 52%; border-left: 1px solid var(--border); background: #fff;
@@ -925,6 +957,10 @@ body {
   background: #f4f6f8; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px;
 }
 .acct-token-label { font-weight: 600; color: #3a3f45; font-size: 14px; }
+@media screen and (max-width: 480px) {
+  .acct-token { flex-wrap: wrap; }
+  .entries th, .entries td { padding: 9px 10px; }
+}
 
 /* manager dashboard calendar strip (S2 day/month switch) */
 .cal { padding: 16px var(--pad-x) 8px; }

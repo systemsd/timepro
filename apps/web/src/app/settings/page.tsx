@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
 import {
@@ -22,6 +22,14 @@ export default function SettingsPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const detailRef = useRef<HTMLElement | null>(null);
+
+  // stacked layout on phones: picking a setting should reveal the detail pane
+  const selectSetting = (key: string) => {
+    setSelectedKey(key);
+    if (window.matchMedia('(max-width: 760px)').matches)
+      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -64,7 +72,7 @@ export default function SettingsPage() {
               <li
                 key={s.key}
                 className={`set-row ${selectedKey === s.key ? 'selected' : ''}`}
-                onClick={() => setSelectedKey(s.key)}
+                onClick={() => selectSetting(s.key)}
               >
                 <span className="set-label">{s.label}</span>
                 <span className="set-value">{display(s, orgDefaults[s.key] ?? s.default)}</span>
@@ -73,7 +81,7 @@ export default function SettingsPage() {
           </ul>
         </aside>
 
-        <section className="team-detail">
+        <section className="team-detail" ref={detailRef}>
           {selected && (
             <SettingDetail
               key={selected.key}
