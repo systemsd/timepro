@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { TopNav } from '@/components/TopNav';
@@ -142,6 +142,14 @@ export default function TimelinePage() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // keep the selected day visible when the month strip scrolls horizontally (phones)
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector('.cal-day.selected')
+      ?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, [date, viewMonth]);
+
   if (!checked || !session) return <div className="center muted">Loading…</div>;
 
   const today = todayLocal();
@@ -219,7 +227,7 @@ export default function TimelinePage() {
           <button className="cal-nav" onClick={() => setViewMonth(shiftMonth(viewMonth, 1))} aria-label="Next month">›</button>
           <button className="cal-today" onClick={goToday}>Today</button>
         </div>
-        <div className="cal-strip">
+        <div className="cal-strip" ref={stripRef}>
           {monthDays(viewMonth).map((c) => {
             const future = c.date > today;
             const secs = dayActivity[c.date] ?? 0;
@@ -228,7 +236,10 @@ export default function TimelinePage() {
               <button
                 key={c.date}
                 className={`cal-day${c.date === date ? ' selected' : ''}${c.date === today ? ' today' : ''}${c.weekend ? ' weekend' : ''}${future ? ' future' : ''}`}
-                onClick={() => !future && setDate(c.date)}
+                onClick={() => {
+                  setTip(null); // a tap never fires mouseleave — don't leave the tooltip stuck
+                  if (!future) setDate(c.date);
+                }}
                 disabled={future}
                 onMouseEnter={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
