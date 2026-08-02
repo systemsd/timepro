@@ -186,6 +186,29 @@ body {
 .nav-menu-item:hover { background: #3b4a63; color: #fff; }
 .nav-menu-empty { color: #9aa3b2; padding: 11px 14px; font-size: 14px; }
 
+/* mobile nav: toggle button collapses the tab row into a slide-down panel ≤760px */
+.topnav-mobile-toggle {
+  display: none; align-items: center; justify-content: center;
+  width: var(--touch); height: 40px; border: none; border-radius: 8px;
+  background: transparent; color: #fff; font-size: 20px; cursor: pointer;
+}
+.topnav-mobile-toggle:hover { background: rgba(255,255,255,0.12); }
+.topnav-mobile-menu {
+  display: none; flex-direction: column; background: #2f3a4d;
+  padding: 6px var(--pad-x) 10px;
+}
+.topnav-mobile-menu .nav-menu-item { min-height: 48px; font-size: 16px; }
+.topnav-mobile-menu .nav-menu-item.active { background: #3b4a63; color: #fff; }
+.topnav-mobile-sub { padding-left: 16px; }
+@media screen and (max-width: 760px) {
+  .topnav-tabs { display: none; }
+  .topnav-mobile-toggle { display: inline-flex; }
+  .topnav-mobile-menu { display: flex; }
+}
+@media screen and (max-width: 480px) {
+  .hello { display: none; }
+}
+
 .presence-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
 .presence-dot.offline { background: #8a93a6; }
 .presence-dot.connected { background: #a6e08a; }   /* app open (Phase 2) */

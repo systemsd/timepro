@@ -29,9 +29,16 @@ export function TopNav({ session, active }: Props) {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileTimelineOpen, setMobileTimelineOpen] = useState(false);
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const closeTimer = useRef<number | null>(null);
   const accountTimer = useRef<number | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const accountRef = useRef<HTMLDivElement | null>(null);
+  const mobileToggleRef = useRef<HTMLButtonElement | null>(null);
+  const mobilePanelRef = useRef<HTMLElement | null>(null);
   const live = useRealtimePresence(); // realtime dots (B10 / 5E)
 
   const openAccount = () => {
@@ -46,14 +53,53 @@ export function TopNav({ session, active }: Props) {
     router.replace('/login');
   };
 
-  // lazily load employees for the Timeline dropdown (admin/manager only)
+  const closeAll = () => {
+    setTimelineOpen(false);
+    setMenuOpen(false);
+    setAccountOpen(false);
+    setMobileOpen(false);
+  };
+  const go = (href: string) => {
+    closeAll();
+    router.push(href);
+  };
+
+  // touch/keyboard safety net: hover-close never fires on touch devices,
+  // so close any open menu on an outside pointerdown or Escape
   useEffect(() => {
-    if (timelineOpen && members === null && isManagerOrAdmin(role)) {
+    if (!timelineOpen && !menuOpen && !accountOpen && !mobileOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (
+        timelineRef.current?.contains(t) ||
+        menuRef.current?.contains(t) ||
+        accountRef.current?.contains(t) ||
+        mobileToggleRef.current?.contains(t) ||
+        mobilePanelRef.current?.contains(t)
+      )
+        return;
+      closeAll();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAll();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [timelineOpen, menuOpen, accountOpen, mobileOpen]);
+
+  // lazily load employees for the Timeline dropdown / mobile disclosure (admin/manager only)
+  useEffect(() => {
+    const wantsMembers = timelineOpen || (mobileOpen && mobileTimelineOpen);
+    if (wantsMembers && members === null && isManagerOrAdmin(role)) {
       getTeamMembers()
         .then((r) => setMembers(r.members))
         .catch(() => setMembers([]));
     }
-  }, [timelineOpen, members, role]);
+  }, [timelineOpen, mobileOpen, mobileTimelineOpen, members, role]);
 
   const openTimeline = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
@@ -71,6 +117,26 @@ export function TopNav({ session, active }: Props) {
     { label: 'Download', href: '/download' },
   ].filter(Boolean) as Array<{ label: string; href: string }>;
 
+  const memberList = (onPick: (userId: string) => void) =>
+    members === null ? (
+      <div className="nav-menu-empty">Loading…</div>
+    ) : members.length === 0 ? (
+      <div className="nav-menu-empty">No employees</div>
+    ) : (
+      members.map((m) => {
+        const p: Presence = live[m.user_id] ?? m.presence;
+        return (
+          <button key={m.user_id} className="nav-menu-item" onClick={() => onPick(m.user_id)}>
+            <span
+              className={`presence-dot ${p}`}
+              title={p === 'tracking' ? 'Tracking' : p === 'connected' ? 'Online' : 'Offline'}
+            />
+            {m.display_name || m.email}
+          </button>
+        );
+      })
+    );
+
   return (
     <header className="topnav">
       <div className="topnav-inner">
@@ -82,12 +148,14 @@ export function TopNav({ session, active }: Props) {
           <span className="hello">Hello, {firstName}</span>
           <div
             className="account-wrap"
+            ref={accountRef}
             onMouseEnter={openAccount}
             onMouseLeave={scheduleAccountClose}
           >
             <button
               className="avatar"
               aria-label="Account menu"
+              aria-expanded={accountOpen}
               onClick={() => setAccountOpen((v) => !v)}
             >
               {initials}
@@ -119,8 +187,85 @@ export function TopNav({ session, active }: Props) {
               </div>
             )}
           </div>
+          <button
+            className="topnav-mobile-toggle"
+            ref={mobileToggleRef}
+            aria-label="Main menu"
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((v) => !v)}
+          >
+            ☰
+          </button>
         </div>
       </div>
+
+      {mobileOpen && (
+        <nav className="topnav-mobile-menu" aria-label="Main menu" ref={mobilePanelRef}>
+          <button
+            className={`nav-menu-item ${active === 'home' ? 'active' : ''}`}
+            onClick={() => go('/dashboard')}
+          >
+            My Home
+          </button>
+          {isManagerOrAdmin(role) ? (
+            <>
+              <button
+                className={`nav-menu-item ${active === 'timeline' ? 'active' : ''}`}
+                aria-expanded={mobileTimelineOpen}
+                onClick={() => setMobileTimelineOpen((v) => !v)}
+              >
+                Timeline <span className="caret">{mobileTimelineOpen ? '▴' : '▾'}</span>
+              </button>
+              {mobileTimelineOpen && (
+                <div className="topnav-mobile-sub">
+                  {memberList((userId) => go(`/timeline/${userId}`))}
+                </div>
+              )}
+            </>
+          ) : (
+            <button
+              className={`nav-menu-item ${active === 'timeline' ? 'active' : ''}`}
+              onClick={() => go(`/timeline/${session.user_id}`)}
+            >
+              Timeline
+            </button>
+          )}
+          <button
+            className={`nav-menu-item ${active === 'reports' ? 'active' : ''}`}
+            onClick={() => go('/reports')}
+          >
+            Reports
+          </button>
+          {isManagerOrAdmin(role) && (
+            <button
+              className={`nav-menu-item ${active === 'team' ? 'active' : ''}`}
+              onClick={() => go('/team')}
+            >
+              Team
+            </button>
+          )}
+          <div className="nav-menu-sep" />
+          {menuItems.map((it) => (
+            <button
+              key={it.href}
+              className={`nav-menu-item ${active === it.href.slice(1) ? 'active' : ''}`}
+              onClick={() => go(it.href)}
+            >
+              {it.label}
+            </button>
+          ))}
+          <div className="nav-menu-sep" />
+          <button
+            className={`nav-menu-item ${active === 'account' ? 'active' : ''}`}
+            onClick={() => go('/account')}
+          >
+            <SettingsIcon /> My Account
+          </button>
+          <button className="nav-menu-item" onClick={logout}>
+            <LogOutIcon /> Log out
+          </button>
+        </nav>
+      )}
 
       <nav className="topnav-tabs">
         <button
@@ -133,11 +278,13 @@ export function TopNav({ session, active }: Props) {
         {/* Timeline: dropdown of employees for admin/manager; direct for employee */}
         <div
           className="nav-tab-wrap"
+          ref={timelineRef}
           onMouseEnter={isManagerOrAdmin(role) ? openTimeline : undefined}
           onMouseLeave={isManagerOrAdmin(role) ? scheduleClose : undefined}
         >
           <button
             className={`nav-tab ${active === 'timeline' ? 'active' : ''}`}
+            aria-expanded={isManagerOrAdmin(role) ? timelineOpen : undefined}
             onClick={() =>
               isManagerOrAdmin(role)
                 ? setTimelineOpen((v) => !v)
@@ -148,31 +295,10 @@ export function TopNav({ session, active }: Props) {
           </button>
           {timelineOpen && isManagerOrAdmin(role) && (
             <div className="nav-menu" onMouseEnter={openTimeline} onMouseLeave={scheduleClose}>
-              {members === null ? (
-                <div className="nav-menu-empty">Loading…</div>
-              ) : members.length === 0 ? (
-                <div className="nav-menu-empty">No employees</div>
-              ) : (
-                members.map((m) => {
-                  const p: Presence = live[m.user_id] ?? m.presence;
-                  return (
-                    <button
-                      key={m.user_id}
-                      className="nav-menu-item"
-                      onClick={() => {
-                        setTimelineOpen(false);
-                        router.push(`/timeline/${m.user_id}`);
-                      }}
-                    >
-                      <span
-                        className={`presence-dot ${p}`}
-                        title={p === 'tracking' ? 'Tracking' : p === 'connected' ? 'Online' : 'Offline'}
-                      />
-                      {m.display_name || m.email}
-                    </button>
-                  );
-                })
-              )}
+              {memberList((userId) => {
+                setTimelineOpen(false);
+                router.push(`/timeline/${userId}`);
+              })}
             </div>
           )}
         </div>
@@ -194,11 +320,12 @@ export function TopNav({ session, active }: Props) {
         )}
 
         {/* ☰ menu */}
-        <div className="nav-tab-wrap" onMouseLeave={() => setMenuOpen(false)}>
+        <div className="nav-tab-wrap" ref={menuRef} onMouseLeave={() => setMenuOpen(false)}>
           <button
             className={`nav-tab hamburger ${['projects', 'clients', 'settings', 'diagnostics', 'download'].includes(active) ? 'active' : ''}`}
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="menu"
+            aria-expanded={menuOpen}
           >
             ☰
           </button>
