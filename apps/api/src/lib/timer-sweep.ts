@@ -16,6 +16,8 @@ import { recordAudit } from './audit';
  * sample / app-usage — all of which stop the instant the machine sleeps) and, if
  * there's a long dead tail after it, clamp `ended_at` back to that last activity.
  * An actively-tracking user is never touched (their last activity is seconds old).
+ * **Human-set entries (`is_manual = true` — manual add / timeline edit / split) are
+ * excluded entirely**: a person chose those times, so the sweep must not revert them.
  * Cross-tenant maintenance → runs under `asPlatform`. Every change is audited.
  */
 
@@ -79,6 +81,11 @@ export async function sweepAbandonedTimers(): Promise<{ scanned: number; correct
       .where(
         and(
           isNull(schema.timeEntries.deletedAt),
+          // Never touch human-set entries (manual add / timeline edit / split):
+          // a person explicitly chose those times, so clamping them back to the
+          // last screenshot silently reverts their edit. Only genuine agent
+          // timers are candidates for the abandoned-timer trim.
+          eq(schema.timeEntries.isManual, false),
           gt(schema.timeEntries.startedAt, new Date(now - LOOKBACK_MS)),
           or(
             isNull(schema.timeEntries.endedAt), // still running
