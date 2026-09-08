@@ -16,6 +16,17 @@ import { recordAudit } from './audit';
  * sample / app-usage — all of which stop the instant the machine sleeps) and, if
  * there's a long dead tail after it, clamp `ended_at` back to that last activity.
  * An actively-tracking user is never touched (their last activity is seconds old).
+ *
+ * A special case is a **ghost open timer**: an entry that opened and never produced
+ * a single signal, then stayed open for hours/days because neither the agent's
+ * suspend-recovery nor its idle-pause fired (the OS throttled the agent in sub-60s
+ * chunks, so no single sleep crossed the 60s suspend threshold — seen live on both
+ * macOS and Windows as continuous "capture loop slow" warnings). Such an entry bills
+ * to `now` forever (observed: 122h and 263h open entries → dashboards showing 24h/day
+ * including weekends). We close it back to its start once it's older than
+ * `GHOST_OPEN_MS` with zero signal. A *closed* signal-less entry is still left alone
+ * (the agent chose that end; could be legit tracking with capture disabled).
+ *
  * **Human-set entries (`is_manual = true` — manual add / timeline edit / split) are
  * excluded entirely**: a person chose those times, so the sweep must not revert them.
  * Cross-tenant maintenance → runs under `asPlatform`. Every change is audited.
@@ -26,6 +37,13 @@ const LOOKBACK_MS = 40 * 86_400_000; // only scan the last ~40 days (covers the 
 const SUSPECT_MIN_MS = 30 * MIN; // ignore short closed entries; only inspect open or >30 min ones
 const DEAD_GAP_MS = 15 * MIN; // no activity signal for >15 min = machine asleep / agent gone
 const GRACE_MS = 1 * MIN; // keep up to 1 min past the last activity
+// An OPEN entry with zero activity signal for longer than this is a ghost timer
+// (opened, then the machine slept / agent was killed before capturing anything) →
+// closed back to its start. Set well beyond any normal capture cadence so a genuinely
+// active user — who produces a screenshot and/or per-minute activity/app sample long
+// before this — is never mistaken for a ghost. (Requires some capture to be enabled,
+// which is the product default.)
+const GHOST_OPEN_MS = 60 * MIN;
 
 /** Latest activity timestamp (ms) recorded against each of the given time-entry ids. */
 async function lastActivityByEntry(tx: DB, ids: string[]): Promise<Map<string, number>> {
@@ -99,16 +117,32 @@ export async function sweepAbandonedTimers(): Promise<{ scanned: number; correct
 
     let corrected = 0;
     for (const e of suspects) {
-      // Only act on entries that have a real activity signal — if an entry has no
-      // screenshots/samples/app-usage at all (e.g. all tracking disabled), we can't
-      // tell "asleep" from "working", so leave it untouched rather than risk zeroing
-      // legitimate time.
-      const signalMs = lastAct.get(e.id);
-      if (signalMs === undefined) continue;
-
       const startMs = e.startedAt.getTime();
+      const isOpen = e.endedAt === null;
       const effEnd = e.endedAt ? e.endedAt.getTime() : now;
-      const lastActive = Math.max(startMs, signalMs);
+      const signalMs = lastAct.get(e.id);
+
+      // Work out the last moment we can prove the user was really present
+      // (`lastActive`) — anything after it is a "dead tail" the entry shouldn't bill.
+      let lastActive: number;
+      let reason: string;
+      if (signalMs !== undefined) {
+        // Normal case: trust the latest screenshot / activity / app-usage inside the entry.
+        lastActive = Math.max(startMs, signalMs);
+        reason = 'no activity (machine asleep / agent stopped); back-dated to last activity';
+      } else {
+        // No activity signal at all inside the entry:
+        //  - CLOSED: the agent chose that end (could be legit tracking with capture
+        //    disabled) — can't tell asleep from working, so leave it.
+        //  - OPEN but still young: an active user may simply not have produced the
+        //    first signal yet at a low capture cadence — leave it.
+        //  - OPEN and older than GHOST_OPEN_MS: a ghost timer that never captured
+        //    anything and would bill to `now` forever — close it back to the start.
+        if (!isOpen || now - startMs <= GHOST_OPEN_MS) continue;
+        lastActive = startMs;
+        reason = 'opened but never produced any activity signal (ghost timer); closed back to start';
+      }
+
       if (effEnd - lastActive <= DEAD_GAP_MS) continue; // active tail / normal entry — leave it
 
       const newEndMs = Math.min(effEnd, lastActive + GRACE_MS);
@@ -132,7 +166,7 @@ export async function sweepAbandonedTimers(): Promise<{ scanned: number; correct
           old_ended_at: e.endedAt ? e.endedAt.toISOString() : null,
           new_ended_at: newEnd.toISOString(),
           trimmed_seconds: Math.round((effEnd - newEndMs) / 1000),
-          reason: 'no activity (machine asleep / agent stopped); back-dated to last activity',
+          reason,
         },
       });
       corrected++;
