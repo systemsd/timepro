@@ -41,6 +41,29 @@ async function seedLongEntryWithEarlyActivity(
   return { id: e!.id, endedAt };
 }
 
+/** An OPEN entry with NO activity signal at all (no screenshot / sample / app-usage),
+ *  started `ageMs` ago — the shape of a "ghost" runaway timer. */
+async function seedOpenEntryNoSignal(
+  orgId: string,
+  userId: string,
+  ageMs: number,
+): Promise<{ id: string; startedAt: Date }> {
+  const startedAt = new Date(Date.now() - ageMs);
+  const [e] = await getDb()
+    .insert(schema.timeEntries)
+    .values({
+      organizationId: orgId,
+      userId,
+      startedAt,
+      endedAt: null, // still open
+      clientEventId: `evt-${randomUUID()}`,
+      source: 'desktop',
+      isManual: false,
+    })
+    .returning({ id: schema.timeEntries.id });
+  return { id: e!.id, startedAt };
+}
+
 const endedAtOf = async (id: string): Promise<Date | null> => {
   const [row] = await getDb()
     .select({ endedAt: schema.timeEntries.endedAt })
@@ -71,5 +94,26 @@ describe('abandoned-timer sweep — leaves human-set (manual) entries alone', ()
     expect((await endedAtOf(manual.id))!.getTime()).toBe(manual.endedAt.getTime());
     // Agent entry (control): clamped back toward the last activity → shorter.
     expect((await endedAtOf(agent.id))!.getTime()).toBeLessThan(agent.endedAt.getTime());
+  });
+
+  it('closes a ghost OPEN entry (open for hours with no signal) back to its start', async () => {
+    const ghost = await seedOpenEntryNoSignal(org, user, 3 * 60 * 60_000); // open 3h, no signal
+
+    await sweepAbandonedTimers();
+
+    // Was open + billing to `now`; now closed to ~start (within the 1-min grace).
+    const end = await endedAtOf(ghost.id);
+    expect(end).not.toBeNull();
+    const billedSec = (end!.getTime() - ghost.startedAt.getTime()) / 1000;
+    expect(billedSec).toBeLessThanOrEqual(65); // start + GRACE (1 min), not 3h
+  });
+
+  it('leaves a young signal-less OPEN entry alone (may just not have captured yet)', async () => {
+    const fresh = await seedOpenEntryNoSignal(org, user, 5 * 60_000); // open only 5 min, no signal
+
+    await sweepAbandonedTimers();
+
+    // Below the ghost threshold → still open, untouched.
+    expect(await endedAtOf(fresh.id)).toBeNull();
   });
 });
