@@ -72,6 +72,11 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     // health, so a manager can see *why* screenshots aren't landing (capture
     // hang, slow upload, throttling, disabled) — not just successes.
     let mut last_loop_start = Utc::now();
+    // The last tick the loop ran on schedule (cadence healthy). While a timer is
+    // running, if this falls too far behind `now` the loop has been throttled/frozen
+    // (the machine slept or the OS background-throttled us) → the stall watchdog stops
+    // the timer back-dated to here. Reset whenever no timer is running.
+    let mut last_healthy_at = Utc::now();
     let mut last_status_at: Option<DateTime<Utc>> = None;
     // Shared so the off-loop upload tasks can bump it without blocking the loop.
     let uploads_session = Arc::new(AtomicU64::new(0));
@@ -86,13 +91,27 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
     // (idle this low = the user is active again). The 5s tick bounds the latency.
     const RESUME_IDLE_SECS: u64 = 10;
 
+    // Loop-health watchdog. A single tick this far behind the 5s cadence means the
+    // loop was throttled/frozen (OS background-throttling, display sleep, a short
+    // suspend) rather than running normally.
+    const STALL_TICK_SECS: i64 = 15;
+    // If the loop stays unhealthy this long while a timer is running, the machine was
+    // effectively away the whole time — stop back-dated to the last healthy tick. This
+    // catches the chunked-throttle runaway (repeated 15–59s gaps) that the single-gap
+    // suspend check (`SUSPEND_GAP_SECS`) slips under indefinitely — the root cause of
+    // timers that ran open for days.
+    const STALL_STOP_SECS: i64 = 300;
+
     loop {
         // If the previous iteration took far longer than `tick`, the loop was
         // blocked (a slow/hung await — capture or upload) or the OS throttled us
         // (App Nap / background). Either way it delays screenshots; surface it.
         let loop_start = Utc::now();
         let since_last = (loop_start - last_loop_start).num_seconds();
-        if since_last >= 15 && since_last < SUSPEND_GAP_SECS {
+        if since_last < STALL_TICK_SECS {
+            // Ran on cadence → the machine is awake and scheduling us normally.
+            last_healthy_at = loop_start;
+        } else if since_last < SUSPEND_GAP_SECS {
             warn!(
                 since_last_sec = since_last,
                 "capture loop slow — previous iteration ran long (blocked await or system throttling)"
@@ -187,6 +206,9 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
 
         // Cheap reads to decide whether to capture this tick.
         let Some(timer) = state.timer() else {
+            // No running timer → nothing to protect; keep the health clock current so
+            // a freshly started/resumed timer never inherits a stale stall window.
+            last_healthy_at = Utc::now();
             // Auto-resume: if we idle-paused and the user is active again, start a
             // fresh entry with the same project/description automatically — no need
             // to click play. The idle gap stays unbilled (the pause back-dated the
@@ -252,6 +274,45 @@ pub async fn run_capture_loop(state: Arc<AppState>, app: AppHandle) {
         let entry_id = timer.time_entry_id.clone();
         let now_ev = Utc::now();
         let idle_secs = idle::seconds_idle();
+
+        // Stall watchdog: the loop has been throttled/frozen for a sustained window
+        // while this timer ran — the OS background-throttled us or the machine slept
+        // in sub-60s chunks, so the single-gap suspend check above never tripped and
+        // the timer would otherwise bill to `now` forever (seen: 122h / 263h open
+        // entries → 24h/day dashboards). The user was effectively away, so stop
+        // back-dated to the last healthy tick (nothing after it is real) and pause so
+        // auto-resume brings the same task back the moment the loop is healthy again.
+        let stalled_secs = (now_ev - last_healthy_at).num_seconds();
+        if stalled_secs >= STALL_STOP_SECS {
+            let client = ApiClient::new(api_base.clone(), Some(session.clone()));
+            let ended_at = last_healthy_at.to_rfc3339();
+            let res = client.timer_stop(&Uuid::new_v4().to_string(), Some(&ended_at)).await;
+            let stopped = match &res {
+                Ok(_) => true,
+                Err(e) => timer_already_gone(e),
+            };
+            if stopped {
+                state.set_paused(PausedTimer {
+                    project_id: timer.project_id.clone(),
+                    product_id: timer.product_id.clone(),
+                    task_id: timer.task_id.clone(),
+                    description: timer.description.clone(),
+                });
+                state.clear_timer();
+                if let Some((name, title, started)) = current_app.take() {
+                    let _ = client
+                        .ingest_app_usage(&name, title.as_deref(), &started.to_rfc3339(), &ended_at, Some(entry_id.clone()))
+                        .await;
+                }
+                let _ = app.emit(
+                    "timer:auto-paused",
+                    serde_json::json!({ "reason": "stalled", "seconds": stalled_secs }),
+                );
+                info!(stalled_secs, "auto-paused tracking (capture loop stalled — machine asleep/throttled, back-dated)");
+                last_healthy_at = now_ev; // don't re-fire until the loop stalls again
+            }
+            continue;
+        }
 
         // Periodic capture-health heartbeat while tracking (~every 2.5 min). Shows
         // the loop is alive and *why* shots may not be landing: whether captures
