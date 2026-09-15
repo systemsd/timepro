@@ -348,6 +348,28 @@ export interface TimeEntryHistory {
 }
 
 /** Edit an activity's project, description, and/or trim its start/end. */
+/**
+ * Create a manual ("offline") time entry — a block of time the agent never
+ * tracked. Admin/manager for anyone in their set; an employee for themselves
+ * only when `time.allow_offline` is on (server-enforced). Times are ISO with
+ * offset; server rejects overlaps, future times, and start >= end.
+ */
+export async function createTimeEntry(input: {
+  user_id?: string;
+  project_id?: string | null;
+  description?: string | null;
+  started_at: string;
+  ended_at: string;
+}): Promise<{ id: string }> {
+  const res = await fetch(`${API_BASE}/v1/time-entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
 export async function updateTimeEntry(
   id: string,
   patch: {

@@ -20,6 +20,8 @@ import {
   type TimelineAppsUrls,
 } from '@/lib/api';
 import { EditActivityModal } from '@/components/EditActivityModal';
+import { AddTimeModal } from '@/components/AddTimeModal';
+import { Button, PlusIcon } from '@timepro/ui';
 
 // ---- calendar-strip helpers (viewer-local) ----
 const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = Date.getDay()
@@ -79,7 +81,9 @@ export default function TimelinePage() {
   const [refreshTick, setRefreshTick] = useState(0); // bumped after a screenshot / activity edit
   const [allowSelfDelete, setAllowSelfDelete] = useState(false);
   const [allowSelfEdit, setAllowSelfEdit] = useState(false);
+  const [allowOffline, setAllowOffline] = useState(false);
   const [editing, setEditing] = useState<TimelineActivity | null>(null); // open Edit-Time modal
+  const [addOpen, setAddOpen] = useState(false); // open Add-Offline-Time modal
   const [toast, setToast] = useState<string | null>(null); // transient bottom-left toast
   const [flashId, setFlashId] = useState<string | null>(null); // activity briefly highlighted after a task jump
 
@@ -89,6 +93,9 @@ export default function TimelinePage() {
   const canDeleteShots = session?.role !== 'employee' || (isSelf && allowSelfDelete);
   // editing activities mirrors the same RBAC, gated by time.allow_self_edit.
   const canEditTime = session?.role !== 'employee' || (isSelf && allowSelfEdit);
+  // adding offline time: admin/manager for anyone they view; an employee for
+  // themselves only when time.allow_offline is on. Mirrors the API gate.
+  const canAddOffline = session?.role !== 'employee' || (isSelf && allowOffline);
 
   // all of the day's screenshots, flattened + chronological — for modal nav
   const allShots = (data?.activities ?? [])
@@ -124,8 +131,9 @@ export default function TimelinePage() {
       .then((e) => {
         setAllowSelfDelete(!!e['screenshots.allow_self_delete']);
         setAllowSelfEdit(e['time.allow_self_edit'] !== false); // default on
+        setAllowOffline(!!e['time.allow_offline']); // default off
       })
-      .catch(() => { setAllowSelfDelete(false); setAllowSelfEdit(false); });
+      .catch(() => { setAllowSelfDelete(false); setAllowSelfEdit(false); setAllowOffline(false); });
   }, [checked, session]);
 
   // clear the task-jump highlight shortly after it fires
@@ -218,6 +226,11 @@ export default function TimelinePage() {
         <span className="tl-user-dot" />
         <span className="tl-user-name">{data?.display_name ?? '…'}</span>
         <span className="tl-user-tz">All times are {tzLabel()}</span>
+        {canAddOffline && (
+          <Button variant="secondary" size="sm" style={{ marginLeft: 'auto' }} onClick={() => setAddOpen(true)}>
+            <PlusIcon size={14} /> Add time
+          </Button>
+        )}
       </div>
 
       <div className="cal">
@@ -422,6 +435,15 @@ export default function TimelinePage() {
           userId={userId}
           onClose={() => setEditing(null)}
           onSaved={() => setRefreshTick((t) => t + 1)}
+        />
+      )}
+
+      {addOpen && (
+        <AddTimeModal
+          userId={userId}
+          defaultDate={date}
+          onClose={() => setAddOpen(false)}
+          onSaved={() => { setRefreshTick((t) => t + 1); setToast('Time added'); }}
         />
       )}
 

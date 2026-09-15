@@ -36,6 +36,14 @@ describe('POST /v1/time-entries (manual backfill)', () => {
       payload: body,
     });
 
+  const setOrg = (actor: string, key: string, value: unknown) =>
+    app.inject({
+      method: 'PUT',
+      url: '/v1/settings',
+      headers: { ...authHeaders(org, actor), 'content-type': 'application/json' },
+      payload: { key, value },
+    });
+
   const START = '2026-07-17T09:40:21.000Z';
   const END = '2026-07-17T13:06:00.000Z';
 
@@ -62,6 +70,19 @@ describe('POST /v1/time-entries (manual backfill)', () => {
   it('an employee cannot create time for another user (403)', async () => {
     const res = await create(emp, { user_id: other, started_at: START, ended_at: END });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('an employee cannot add their OWN offline time while time.allow_offline is off (403)', async () => {
+    // default is off → self-add is denied by the offline-time gate.
+    const res = await create(emp, { started_at: START, ended_at: END, description: 'Offline work' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('an employee CAN add their own offline time once time.allow_offline is on (201)', async () => {
+    expect((await setOrg(admin, 'time.allow_offline', true)).statusCode).toBe(200);
+    const res = await create(emp, { started_at: START, ended_at: END, description: 'Offline work' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ user_id: emp, source: 'manual', is_manual: true });
   });
 
   it('rejects an entry that overlaps an existing one (409 entry_overlap)', async () => {

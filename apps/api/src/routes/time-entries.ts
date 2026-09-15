@@ -62,8 +62,26 @@ async function loadEntry(
 }
 
 /**
+ * The employee self-service gate for a given kind of write. Admins/managers are
+ * never gated (they always act within their visible set); an employee acting on
+ * their OWN time is allowed only when the relevant policy is on:
+ *   - editing existing entries  → `time.allow_self_edit` (default ON)
+ *   - adding new offline time    → `time.allow_offline`   (default OFF)
+ * These are deliberately separate switches (two distinct Settings toggles).
+ */
+const EDIT_GATE = {
+  key: 'time.allow_self_edit' as const,
+  deniedMsg: 'Editing your own time entries is disabled by your team settings',
+};
+const OFFLINE_GATE = {
+  key: 'time.allow_offline' as const,
+  deniedMsg: 'Adding offline time is disabled by your team settings',
+};
+
+/**
  * Authorize a write against the entry's owner. `visible` is resolved once by the
- * caller (outside the tenant tx); the settings gate is checked on `tx`.
+ * caller (outside the tenant tx); the settings gate is checked on `tx`. `gate`
+ * selects which employee self-service policy applies (edit vs. offline-add).
  */
 async function authorizeWrite(
   tx: DB,
@@ -71,14 +89,15 @@ async function authorizeWrite(
   requesterId: string,
   visible: VisibleUsers,
   targetUserId: string,
+  gate: { key: 'time.allow_self_edit' | 'time.allow_offline'; deniedMsg: string },
 ): Promise<void> {
   if (!canView(visible, targetUserId)) forbid('Not allowed to edit this time entry');
-  // Admins and managers may always edit within their visible set; an employee
-  // editing their own time is gated by the org/user policy (default on).
+  // Admins and managers may always act within their visible set; an employee
+  // acting on their own time is gated by the org/user policy.
   if (!isAdmin(visible.role) && visible.role !== 'manager') {
     const { effective } = await getEffectiveForUser(tx, orgId, requesterId);
-    if (!effective['time.allow_self_edit']) {
-      forbid('Editing your own time entries is disabled by your team settings');
+    if (!effective[gate.key]) {
+      forbid(gate.deniedMsg);
     }
   }
 }
@@ -118,7 +137,7 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
   // The app can otherwise only *edit* existing entries — there is no way to add
   // time for a window the agent never tracked (e.g. it stopped mid-day). This
   // fills that gap: an admin/manager (or an employee on themselves, when
-  // `time.allow_self_edit` is on) records a `source='manual'` entry. Because it
+  // `time.allow_offline` is on) records a `source='manual'` entry. Because it
   // carries no activity signal, the abandoned-timer sweep leaves it alone, so a
   // deliberate correction stays put. Overlaps are rejected so manual time can't
   // double-count against tracked time. Audited like every other mutation here.
@@ -160,7 +179,7 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
 
       const visible = await visibleUsers(req);
       return req.withTenantDb(async (tx) => {
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, targetUserId);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, targetUserId, OFFLINE_GATE);
 
         if (body.project_id) {
           await assertProjectAssignable(tx, req.organizationId!, body.project_id, targetUserId);
@@ -251,7 +270,7 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
       const visible = await visibleUsers(req);
       return req.withTenantDb(async (tx) => {
         const entry = await loadEntry(tx, req.organizationId!, req.params.id);
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId, EDIT_GATE);
 
         const editsTime = body.started_at !== undefined || body.ended_at !== undefined;
         if (editsTime && !entry.endedAt) {
@@ -360,7 +379,7 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
       const visible = await visibleUsers(req);
       return req.withTenantDb(async (tx) => {
         const entry = await loadEntry(tx, req.organizationId!, req.params.id);
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId, EDIT_GATE);
 
         if (!entry.endedAt) {
           throw Object.assign(new Error('cannot split a running timer'), {
@@ -457,7 +476,7 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
       const visible = await visibleUsers(req);
       return req.withTenantDb(async (tx) => {
         const entry = await loadEntry(tx, req.organizationId!, req.params.id);
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId, EDIT_GATE);
 
         await tx
           .update(schema.timeEntries)
