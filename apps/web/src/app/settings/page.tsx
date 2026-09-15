@@ -280,7 +280,7 @@ const ENFORCED: Record<string, string> = {
   idle: '— enforced by the desktop agent (auto-pause on idle)',
   notify: '— enforced by the desktop agent',
   limits: '— enforced: blocks starting the timer at the weekly cap',
-  offline_time: '— not yet enforced (offline-time entry isn’t built yet)',
+  offline_time: '— enforced: lets an employee add their own offline time on the timeline',
 };
 
 function display(def: SettingDef, value: SettingValue): string {
