@@ -90,12 +90,15 @@ export default function TimelinePage() {
   // admins/managers can delete; an employee can delete their own only when the
   // screenshots.allow_self_delete policy is on (C9). Mirrors the API's RBAC.
   const isSelf = session?.user_id === userId;
-  const canDeleteShots = session?.role !== 'employee' || (isSelf && allowSelfDelete);
+  // `can_manage` is false when this timeline is visible only through the
+  // reporting chain or an admin view grant — those are read-only.
+  const canManage = data?.can_manage ?? false;
+  const canDeleteShots = canManage && (session?.role !== 'employee' || (isSelf && allowSelfDelete));
   // editing activities mirrors the same RBAC, gated by time.allow_self_edit.
-  const canEditTime = session?.role !== 'employee' || (isSelf && allowSelfEdit);
-  // adding offline time: admin/manager for anyone they view; an employee for
+  const canEditTime = canManage && (session?.role !== 'employee' || (isSelf && allowSelfEdit));
+  // adding offline time: admin/manager for anyone they manage; an employee for
   // themselves only when time.allow_offline is on. Mirrors the API gate.
-  const canAddOffline = session?.role !== 'employee' || (isSelf && allowOffline);
+  const canAddOffline = canManage && (session?.role !== 'employee' || (isSelf && allowOffline));
 
   // all of the day's screenshots, flattened + chronological — for modal nav
   const allShots = (data?.activities ?? [])

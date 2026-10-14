@@ -11,7 +11,9 @@ import { loadSession } from './session';
  *
  * One shared socket per tab (ref-counted) feeds every component that calls the
  * hook — TopNav + dashboard don't each open their own connection. Auto-reconnects
- * with backoff. Only manager/admin/owner sessions are accepted by the server.
+ * with backoff. The server accepts anyone who can see other members (admins,
+ * team managers, reporting-line leads, view grants) and streams only those
+ * members; it closes others with 1008, which this hook never retries.
  */
 type PresenceMap = Record<string, Presence>;
 
@@ -26,13 +28,9 @@ function publish() {
   for (const l of listeners) l(presenceState);
 }
 
-const PRESENCE_ROLES = ['owner', 'admin', 'manager'];
-
 function connect() {
   const s = loadSession();
-  // Only presence-consuming roles subscribe; the server rejects others, so
-  // opening a socket for an employee would just churn in a reconnect loop.
-  if (!s || !PRESENCE_ROLES.includes(s.role)) return;
+  if (!s) return;
   closedByUs = false;
   const url =
     API_BASE.replace(/^http/, 'ws') +

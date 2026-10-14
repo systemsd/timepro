@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { clearSession, type WebSession } from '@/lib/session';
 import { getTeamMembers, type Presence, type TeamMember } from '@/lib/api';
 import { useRealtimePresence } from '@/lib/useRealtimePresence';
+import { roleAccess, useAccess } from '@/lib/useAccess';
 import { HomeIcon, LogOutIcon, SettingsIcon } from '@/components/icons';
 
 interface Props {
@@ -13,11 +14,15 @@ interface Props {
 }
 
 const isAdmin = (r: string) => r === 'owner' || r === 'admin';
-const isManagerOrAdmin = (r: string) => isAdmin(r) || r === 'manager';
 
 export function TopNav({ session, active }: Props) {
   const router = useRouter();
   const role = session.role;
+  // Hierarchy/grants can let anyone see others, so the employee picker follows
+  // the visibility scope; the Team page stays with team-management roles.
+  const access = useAccess(session) ?? roleAccess(session);
+  const seesTeam = access.can_view_others;
+  const managesTeam = access.can_manage_team;
   const initials = session.display_name
     .split(' ')
     .map((p) => p[0])
@@ -94,12 +99,12 @@ export function TopNav({ session, active }: Props) {
   // lazily load employees for the Timeline dropdown / mobile disclosure (admin/manager only)
   useEffect(() => {
     const wantsMembers = timelineOpen || (mobileOpen && mobileTimelineOpen);
-    if (wantsMembers && members === null && isManagerOrAdmin(role)) {
+    if (wantsMembers && members === null && seesTeam) {
       getTeamMembers()
         .then((r) => setMembers(r.members))
         .catch(() => setMembers([]));
     }
-  }, [timelineOpen, mobileOpen, mobileTimelineOpen, members, role]);
+  }, [timelineOpen, mobileOpen, mobileTimelineOpen, members, seesTeam]);
 
   const openTimeline = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
@@ -207,7 +212,7 @@ export function TopNav({ session, active }: Props) {
           >
             My Home
           </button>
-          {isManagerOrAdmin(role) ? (
+          {seesTeam ? (
             <>
               <button
                 className={`nav-menu-item ${active === 'timeline' ? 'active' : ''}`}
@@ -236,7 +241,7 @@ export function TopNav({ session, active }: Props) {
           >
             Reports
           </button>
-          {isManagerOrAdmin(role) && (
+          {managesTeam && (
             <button
               className={`nav-menu-item ${active === 'team' ? 'active' : ''}`}
               onClick={() => go('/team')}
@@ -279,21 +284,21 @@ export function TopNav({ session, active }: Props) {
         <div
           className="nav-tab-wrap"
           ref={timelineRef}
-          onMouseEnter={isManagerOrAdmin(role) ? openTimeline : undefined}
-          onMouseLeave={isManagerOrAdmin(role) ? scheduleClose : undefined}
+          onMouseEnter={seesTeam ? openTimeline : undefined}
+          onMouseLeave={seesTeam ? scheduleClose : undefined}
         >
           <button
             className={`nav-tab ${active === 'timeline' ? 'active' : ''}`}
-            aria-expanded={isManagerOrAdmin(role) ? timelineOpen : undefined}
+            aria-expanded={seesTeam ? timelineOpen : undefined}
             onClick={() =>
-              isManagerOrAdmin(role)
+              seesTeam
                 ? setTimelineOpen((v) => !v)
                 : router.push(`/timeline/${session.user_id}`)
             }
           >
-            Timeline {isManagerOrAdmin(role) && <span className="caret">▾</span>}
+            Timeline {seesTeam && <span className="caret">▾</span>}
           </button>
-          {timelineOpen && isManagerOrAdmin(role) && (
+          {timelineOpen && seesTeam && (
             <div className="nav-menu" onMouseEnter={openTimeline} onMouseLeave={scheduleClose}>
               {memberList((userId) => {
                 setTimelineOpen(false);
@@ -310,7 +315,7 @@ export function TopNav({ session, active }: Props) {
           Reports
         </button>
 
-        {isManagerOrAdmin(role) && (
+        {managesTeam && (
           <button
             className={`nav-tab ${active === 'team' ? 'active' : ''}`}
             onClick={() => router.push('/team')}

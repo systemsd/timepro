@@ -155,6 +155,46 @@ export async function getAgentLogs(params: {
   return res.json();
 }
 
+/** What the signed-in user can see/do — picks the team vs. personal home and nav. */
+export interface MyAccess {
+  role: string;
+  can_view_others: boolean;
+  can_manage_team: boolean;
+}
+
+export async function getMyAccess(): Promise<MyAccess> {
+  const res = await fetch(`${API_BASE}/v1/me/access`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export interface Person {
+  user_id: string;
+  display_name: string;
+}
+
+/** A member's OpsCore reporting line + admin-granted view access. */
+export interface MemberVisibility {
+  reports_to: Person | null;
+  subordinate_count: number;
+  grants: Person[];
+}
+
+export async function getMemberVisibility(userId: string): Promise<MemberVisibility> {
+  const res = await fetch(`${API_BASE}/v1/team/members/${userId}/visibility`, { headers: authHeaders() });
+  if (!res.ok) return asError(res);
+  return res.json();
+}
+
+export async function setMemberVisibility(userId: string, subjectUserIds: string[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/team/members/${userId}/visibility`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ subject_user_ids: subjectUserIds }),
+  });
+  if (!res.ok) await asError(res);
+}
+
 export async function getTeamMember(userId: string): Promise<MemberDetail> {
   const res = await fetch(`${API_BASE}/v1/team/members/${userId}`, { headers: authHeaders() });
   if (!res.ok) return asError(res);
@@ -289,6 +329,8 @@ export interface Timeline {
   intervals: Array<{ start: string; end: string }>;
   activities: TimelineActivity[];
   image_token: string;
+  /** Viewer may edit/delete this user's data (false for view-only hierarchy/grant access). */
+  can_manage: boolean;
 }
 
 export async function getTimeline(userId: string, date: string): Promise<Timeline> {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TopNav } from '@/components/TopNav';
 import { useSession } from '@/lib/useSession';
+import { useAccess } from '@/lib/useAccess';
 import { useRealtimePresence } from '@/lib/useRealtimePresence';
 import {
   getRoster,
@@ -13,21 +14,22 @@ import {
   type RosterRow,
 } from '@/lib/api';
 
-const isManagerOrAdmin = (r: string) => ['owner', 'admin', 'manager'].includes(r);
-
 export default function DashboardPage() {
   const { session, checked } = useSession();
-  if (!checked || !session) return <div className="center muted">Loading…</div>;
-  return isManagerOrAdmin(session.role) ? (
-    <ManagerHome />
+  const access = useAccess(session);
+  if (!checked || !session || !access) return <div className="center muted">Loading…</div>;
+  // Anyone who can see others — admins, team managers, and leads via the OpsCore
+  // reporting line or an admin view grant — gets the team roster.
+  return access.can_view_others ? (
+    <ManagerHome title={access.can_manage_team ? 'Manager Dashboard' : 'Team Dashboard'} />
   ) : (
     <EmployeeHome />
   );
 }
 
-/* ─────────── Manager / Admin: team roster (S2) ─────────── */
+/* ─────────── Team roster (S2) ─────────── */
 
-function ManagerHome() {
+function ManagerHome({ title }: { title: string }) {
   const { session } = useSession();
   const router = useRouter();
   const [roster, setRoster] = useState<Roster | null>(null);
@@ -61,7 +63,7 @@ function ManagerHome() {
     <div className="page">
       <TopNav session={session} active="home" />
       <div className="mh-band">
-        <h1>Manager Dashboard</h1>
+        <h1>{title}</h1>
         <span className="tz">All times are {tzLabel}</span>
       </div>
 
@@ -164,7 +166,7 @@ function EmployeeHome() {
 
   if (!session) return null;
   const tzLabel = `UTC${offsetLabel()}`;
-  const me = roster?.rows[0]; // self — the roster is scoped to the employee
+  const me = roster?.rows.find((r) => r.user_id === session?.user_id); // self row
   const presence: Presence = me?.presence ?? 'offline';
   const openTimeline = () => router.push(`/timeline/${session.user_id}`);
 

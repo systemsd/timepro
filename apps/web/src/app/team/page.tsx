@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TopNav } from '@/components/TopNav';
+import { ActivityVisibility } from '@/components/ActivityVisibility';
 import { useSession } from '@/lib/useSession';
 import {
   getTeamMember,
@@ -16,7 +17,7 @@ import {
 } from '@/lib/api';
 
 const ROLE_OPTIONS: Array<{ value: string; label: string; desc: string }> = [
-  { value: 'employee', label: 'User', desc: 'can see their own data only' },
+  { value: 'employee', label: 'User', desc: 'can see their own data, plus anyone below them in the reporting line' },
   { value: 'manager', label: 'Manager', desc: "can see selected user's Timeline & Reports (but not rates)" },
   { value: 'admin', label: 'Admin', desc: 'full control over Team, Projects & Settings.' },
 ];
@@ -267,6 +268,10 @@ export default function TeamPage() {
                     </label>
                   ))}
                 </div>
+              )}
+
+              {(session.role === 'owner' || session.role === 'admin') && (
+                <ActivityVisibility key={detail.user_id} userId={detail.user_id} members={members} />
               )}
 
               <div className="section-h-row">

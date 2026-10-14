@@ -345,6 +345,18 @@ body {
   font-size: 11px; color: #8a9097; font-weight: 700;
 }
 
+/* member activity visibility (reporting line + view grants) */
+.vis { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.vis-line { display: flex; gap: 12px; font-size: 15px; color: #3a3f45; flex-wrap: wrap; }
+.vis-label { min-width: 150px; color: #5a6068; }
+.vis-note { margin: 2px 0 0; line-height: 1.5; }
+.vis-actions { display: flex; align-items: center; gap: 12px; }
+.vis-error { font-size: 12px; color: var(--danger); }
+@media screen and (max-width: 480px) {
+  .vis-line { flex-direction: column; gap: 2px; }
+  .vis-label { min-width: 0; font-size: 13px; }
+}
+
 .eff-settings { max-width: 560px; }
 .eff-row { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid #f0f2f4; }
 .eff-row:last-child { border-bottom: none; }
