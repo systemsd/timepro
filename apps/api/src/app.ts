@@ -29,6 +29,7 @@ import { taskRoutes } from './routes/tasks';
 import { screenshotRoutes } from './routes/screenshots';
 import { meRoutes } from './routes/me';
 import { teamRoutes } from './routes/team';
+import { visibilityRoutes } from './routes/visibility';
 import { rosterRoutes } from './routes/roster';
 import { timelineRoutes } from './routes/timeline';
 import { clientRoutes } from './routes/clients';
@@ -164,6 +165,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(screenshotRoutes, { prefix: '/v1' });
   await app.register(meRoutes, { prefix: '/v1' });
   await app.register(teamRoutes, { prefix: '/v1' });
+  await app.register(visibilityRoutes, { prefix: '/v1' });
   await app.register(rosterRoutes, { prefix: '/v1' });
   await app.register(timelineRoutes, { prefix: '/v1' });
   await app.register(clientRoutes, { prefix: '/v1' });

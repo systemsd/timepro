@@ -7,7 +7,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import sharp from 'sharp';
 import { getDb, schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
-import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
+import { canView, forbid, isAdmin, manageableUsers } from '../lib/access';
 import { getEffectiveForUser } from '../lib/settings';
 import { verifyImageToken } from '../lib/signed-url';
 import { loadConfig } from '../config';
@@ -320,8 +320,8 @@ export const screenshotRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (req) => {
-      const visible = await visibleUsers(req);
-      const role = await requesterRole(req);
+      const manageable = await manageableUsers(req);
+      const role = manageable.role;
       return req.withTenantDb(async (tx) => {
         const [shot] = await tx
           .select({ userId: schema.screenshots.userId, s3Key: schema.screenshots.s3Key })
@@ -336,7 +336,7 @@ export const screenshotRoutes: FastifyPluginAsyncZod = async (app) => {
         if (!shot) {
           throw Object.assign(new Error('screenshot not found'), { statusCode: 404, code: 'not_found' });
         }
-        if (!canView(visible, shot.userId)) forbid('Not allowed to delete this screenshot');
+        if (!canView(manageable, shot.userId)) forbid('Not allowed to delete this screenshot');
         // Employee self-delete is gated by org/user policy; admins & managers always may.
         if (!isAdmin(role) && role !== 'manager') {
           const { effective } = await getEffectiveForUser(tx, req.organizationId!, req.userId!);

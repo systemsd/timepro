@@ -71,6 +71,13 @@
       "when": 1785411811441,
       "tag": "0009_smart_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791974338457,
+      "tag": "0010_wild_starhawk",
+      "breakpoints": true
     }
   ]
 }

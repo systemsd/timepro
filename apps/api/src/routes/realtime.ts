@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { schema, withTenant } from '@timepro/db';
 import { onPresenceChange, presenceSnapshot, type PresenceChange } from '../lib/presence';
+import { resolveVisibleUserIds } from '../lib/access';
 
 /**
  * Realtime presence channel (B10 / Phase 5, sub-phase 5E).
@@ -11,9 +12,11 @@ import { onPresenceChange, presenceSnapshot, type PresenceChange } from '../lib/
  * presence store transitions (heartbeat start/stop, TTL expiry → offline).
  *
  * Auth mirrors the HTTP dev shim (`requireAuth`): the browser WebSocket API can't
- * set headers, so org/user arrive as query params. Only managers/admins/owner —
- * the surfaces that render presence — may subscribe; others are closed. Replace
- * the query-param shim with the cookie/JWT path when real auth lands.
+ * set headers, so org/user arrive as query params. Anyone who can see someone
+ * other than themselves (admin, team manager, a lead in the OpsCore reporting
+ * chain, or a view grant) may subscribe, and receives presence only for the
+ * members they can see; others are closed. Replace the query-param shim with
+ * the cookie/JWT path when real auth lands.
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -27,10 +30,10 @@ export const realtimeRoutes: FastifyPluginAsync = async (app) => {
       return;
     }
 
-    // Role gate — presence is only consumed by manager/admin/owner surfaces.
-    let role = 'none';
+    // Scope gate — presence is only for the members this user can view.
+    let visible: string[] | 'all' = [];
     try {
-      role = await withTenant(orgId, async (tx) => {
+      visible = await withTenant(orgId, async (tx) => {
         const [m] = await tx
           .select({ role: schema.memberships.role })
           .from(schema.memberships)
@@ -41,26 +44,29 @@ export const realtimeRoutes: FastifyPluginAsync = async (app) => {
             ),
           )
           .limit(1);
-        return m?.role ?? 'none';
+        if (!m) return [];
+        return resolveVisibleUserIds(tx, orgId, userId, m.role);
       });
     } catch {
       socket.close(1011, 'auth-error');
       return;
     }
-    if (!['owner', 'admin', 'manager'].includes(role)) {
+    const scope = visible === 'all' ? null : new Set(visible);
+    if (scope && !Array.from(scope).some((id) => id !== userId)) {
       socket.close(1008, 'forbidden');
       return;
     }
+    const inScope = (id: string) => scope === null || scope.has(id);
 
     const send = (payload: unknown) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload));
     };
 
-    // initial snapshot of everyone currently non-offline in this org
-    send({ type: 'snapshot', presence: presenceSnapshot(orgId) });
+    // initial snapshot of everyone visible who is currently non-offline
+    send({ type: 'snapshot', presence: presenceSnapshot(orgId).filter((p) => inScope(p.user_id)) });
 
     const unsub = onPresenceChange((c: PresenceChange) => {
-      if (c.orgId !== orgId) return;
+      if (c.orgId !== orgId || !inScope(c.userId)) return;
       send({ type: 'update', user_id: c.userId, state: c.state });
     });
 

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, eq, gte, isNull, lt, or } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
-import { canView, forbid, visibleUsers } from '../lib/access';
+import { canView, forbid, manageableUsers, visibleUsers } from '../lib/access';
 import { DAY_MS, bucketSecondsByDay, localDateToUtcMs } from '../lib/time';
 import { listForUserDay } from '../repositories/screenshots';
 import { signImageToken } from '../lib/signed-url';
@@ -53,6 +53,10 @@ const TimelineResponse = z.object({
   activities: z.array(Activity),
   // Signed token for this user's screenshot image URLs (thumb/raw), ~1h TTL.
   image_token: z.string(),
+  // Whether the viewer may edit/delete this user's time and screenshots at all
+  // (false when access is view-only via the reporting chain or a view grant).
+  // Employees acting on their own data are further gated by self-service settings.
+  can_manage: z.boolean(),
 });
 
 export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -72,8 +76,9 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       const visible = await visibleUsers(req);
-      // an employee may view their own timeline; managers their team; admins all
+      // self, managed teams, the reporting chain below, view grants; admins all
       if (!canView(visible, req.params.userId)) forbid('Not allowed to view this timeline');
+      const canManage = canView(await manageableUsers(req), req.params.userId);
 
       const tz = req.query.tzOffsetMinutes;
       const dayStartMs = localDateToUtcMs(req.query.date, tz); // local midnight → real UTC
@@ -258,6 +263,7 @@ export const timelineRoutes: FastifyPluginAsyncZod = async (app) => {
           intervals,
           activities,
           image_token: signImageToken(req.organizationId!, req.params.userId),
+          can_manage: canManage,
         };
       });
     },

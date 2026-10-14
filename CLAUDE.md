@@ -119,9 +119,18 @@ cd apps/desktop/src-tauri && cargo check
   (`overlapSeconds`, `localDateToUtcMs`, `bucketSecondsByDay`, …); `report-time.ts` keeps only report-domain
   grouping. Don't re-inline day/overlap math in routes — import from `lib/time.ts`.
 
-- **RBAC scoping (C1)**: `apps/api/src/lib/access.ts` resolves the requester's role + visible-user
-  set — admin/owner = all, manager = own team (`teams.manager_user_id` → `team_members`), employee =
-  self. Use `visibleUsers(req)` / `canView()` / `isAdmin()` for any cross-user read.
+- **RBAC scoping (C1 + hierarchy)**: `apps/api/src/lib/access.ts` has **two scopes — never mix them up**.
+  `visibleUsers(req)` (**reads**) = admin/owner all; everyone else = self + teams they manage + **everyone
+  below them in the OpsCore reporting chain** (`memberships.reports_to_user_id`, recursive CTE, cycle-safe) +
+  **admin view grants** (`activity_view_grants`). `manageableUsers(req)` (**writes**: edit/split/delete time,
+  add offline time, delete screenshots) = the old scope only — admin all, manager own teams + self, employee
+  self. The chain and grants are **view-only by design**; routing a write through `visibleUsers` would let a
+  lead edit their reports' time. Use `canView()` / `seesOthers()` / `isAdmin()` on either set.
+  The reporting line mirrors OpsCore `Employee.reporting_manager_id` (same whole-chain rule as OpsCore's
+  `isInReportingChain`), synced in `lib/opscore-sync.ts` step 2c — skipped when the feed lacks the field, and
+  a departed (non-ACTIVE) manager is resolved through the local user mirror so the chain above holds.
+  Admins manage grants on the Team page (`GET/PUT /v1/team/members/:id/visibility`, audited);
+  `GET /v1/me/access` tells the web whether to show team views (`can_view_others`).
 
 ### API routes (`apps/api/src/routes/`)
 `auth` · `health` · `me` (today, profile) · `projects` (list **member-scoped** to the caller's active assignments) ·
@@ -299,7 +308,7 @@ capped `entries[]`. `apps/api/src/routes/opscore.ts`).
 **Working end-to-end (desktop agent verified live against PRODUCTION OpsCore):** loopback OpsCore login → directory
 sync → time tracking → real screen capture → API → DB + disk (native OS toast gated by `screenshots.notify`; the
 timer colon "beats" while tracking); the agent **project picker shows only the user's active assignments**.
-**Role-aware home** — admin/manager → 4-column team roster with realtime presence dots; **employee → company-row
+**Scope-aware home** — anyone who can see others (admin/manager, a lead via the OpsCore reporting line, or an admin view grant) → team roster with realtime presence dots, scoped to exactly who they can see; **otherwise → company-row
 dashboard** (org + role badge + last-active + period totals, via the self-scoped `/v1/roster`).
 **Timeline** (Hubstaff-style: month strip with per-day activity bars + weekday labels (weekends red) + yellow selected
 day; summary card with Week/Month totals + Apps/URLs panel + average-activity donut; 24h ruler with green run/stop bars

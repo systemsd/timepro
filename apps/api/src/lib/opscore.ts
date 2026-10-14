@@ -53,6 +53,12 @@ export interface OpsEmployee {
   company_email: string | null;
   status: string;
   role: string | null;
+  /**
+   * OpsCore `Employee.reporting_manager_id`. `undefined` (key absent) means this
+   * OpsCore predates the field — the sync then leaves reporting lines untouched.
+   * May reference a non-ACTIVE manager who is not in the feed.
+   */
+  reporting_manager_id?: string | null;
 }
 export interface OpsProject {
   id: string;

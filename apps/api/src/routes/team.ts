@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { schema } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
-import { canView, forbid, isAdmin, requesterRole, visibleUsers } from '../lib/access';
+import { canView, forbid, isAdmin, requesterRole, seesOthers, visibleUsers } from '../lib/access';
 import { getEffectiveForUser } from '../lib/settings';
 import { getPresence } from '../lib/presence';
 
@@ -60,8 +60,10 @@ export const teamRoutes: FastifyPluginAsyncZod = async (app) => {
       schema: { response: { 200: z.object({ members: z.array(MemberRow) }) }, tags: ['team'] },
     },
     async (req) => {
-      const visible = await visibleUsers(req); // C1: admin/owner=all, manager=own team, employee=self
-      if (visible.role === 'employee') forbid('Not allowed to view the team');
+      // C1 + hierarchy: anyone who can see someone besides themselves gets the
+      // list of exactly those members (drives the Timeline picker).
+      const visible = await visibleUsers(req);
+      if (!seesOthers(visible, req.userId!)) forbid('Not allowed to view the team');
 
       return req.withTenantDb(async (tx) => {
         const scope =

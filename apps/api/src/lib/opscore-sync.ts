@@ -32,6 +32,10 @@ export interface OpscoreSyncResult {
   productAssignments: number;
   productsDisabled: number;
   productsFeedAvailable: boolean;
+  /** Reporting lines changed this run. `hierarchyFeedAvailable=false` → the
+   *  employees feed has no `reporting_manager_id`, so lines were left as-is. */
+  reportingLinesChanged: number;
+  hierarchyFeedAvailable: boolean;
 }
 
 /** OpsCore ProjectStatus → TimePro project status. */
@@ -173,6 +177,51 @@ export async function syncOrgFromOpsCore(
         .set({ status: 'suspended' })
         .where(and(eq(schema.memberships.organizationId, orgId), eq(schema.memberships.userId, m.userId)));
       disabled += 1;
+    }
+  }
+
+  // 2c) Reporting lines (OpsCore reporting_manager_id → memberships.reports_to_user_id).
+  // Skipped when the feed predates the field, so an un-upgraded OpsCore never
+  // wipes lines a newer one already synced.
+  const hierarchyFeedAvailable = emp.employees.some((e) => e.reporting_manager_id !== undefined);
+  let reportingLinesChanged = 0;
+  if (hierarchyFeedAvailable) {
+    // A manager can be a non-ACTIVE employee absent from this ACTIVE-only feed
+    // (e.g. left the company). Resolve them through the local user mirror so the
+    // chain above a departed manager still connects.
+    const managerByOps = new Map(userByOps);
+    const unresolved = [
+      ...new Set(
+        emp.employees
+          .map((e) => e.reporting_manager_id)
+          .filter((id): id is string => !!id && !managerByOps.has(id)),
+      ),
+    ];
+    if (unresolved.length > 0) {
+      const known = await db
+        .select({ id: schema.users.id, opsId: schema.users.opscoreEmployeeId })
+        .from(schema.users)
+        .where(inArray(schema.users.opscoreEmployeeId, unresolved));
+      for (const k of known) if (k.opsId) managerByOps.set(k.opsId, k.id);
+    }
+
+    const current = await db
+      .select({ userId: schema.memberships.userId, reportsTo: schema.memberships.reportsToUserId })
+      .from(schema.memberships)
+      .where(eq(schema.memberships.organizationId, orgId));
+    const currentReportsTo = new Map(current.map((c) => [c.userId, c.reportsTo]));
+
+    for (const e of emp.employees) {
+      const userId = userByOps.get(e.id);
+      if (!userId) continue;
+      let reportsTo = e.reporting_manager_id ? managerByOps.get(e.reporting_manager_id) ?? null : null;
+      if (reportsTo === userId) reportsTo = null; // self-reference upstream → no line
+      if ((currentReportsTo.get(userId) ?? null) === reportsTo) continue;
+      await db
+        .update(schema.memberships)
+        .set({ reportsToUserId: reportsTo })
+        .where(and(eq(schema.memberships.organizationId, orgId), eq(schema.memberships.userId, userId)));
+      reportingLinesChanged += 1;
     }
   }
 
@@ -357,6 +406,8 @@ export async function syncOrgFromOpsCore(
     productAssignments,
     productsDisabled,
     productsFeedAvailable: prod !== null,
+    reportingLinesChanged,
+    hierarchyFeedAvailable,
   };
 }
 

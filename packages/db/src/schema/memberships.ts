@@ -19,6 +19,9 @@ export const memberships = pgTable(
     hourlyRateCents: integer('hourly_rate_cents'),
     currency: char('currency', { length: 3 }).default('USD'),
     weeklyHourLimit: integer('weekly_hour_limit'),
+    // Reporting line mirrored from OpsCore `Employee.reporting_manager_id`. A
+    // viewer sees the activity of everyone below them in this chain.
+    reportsToUserId: uuid('reports_to_user_id').references(() => users.id, { onDelete: 'set null' }),
     status: text('status').notNull().default('active'),  // active | invited | suspended
     invitedAt: tsCol('invited_at'),
     joinedAt: tsCol('joined_at'),
@@ -30,6 +33,9 @@ export const memberships = pgTable(
       .on(t.organizationId)
       .where(sql`status = 'active'`),
     activeByUser: index('memberships_user_idx').on(t.userId).where(sql`status = 'active'`),
+    reportsTo: index('memberships_org_reports_to_idx')
+      .on(t.organizationId, t.reportsToUserId)
+      .where(sql`reports_to_user_id IS NOT NULL`),
   }),
 );
 

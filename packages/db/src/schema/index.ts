@@ -5,6 +5,7 @@ export * from './organizations';
 export * from './users';
 export * from './memberships';
 export * from './teams';
+export * from './activityViewGrants';
 export * from './projects';
 export * from './products';
 export * from './tasks';

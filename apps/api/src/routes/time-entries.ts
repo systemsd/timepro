@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { and, asc, eq, gt, gte, isNull, lt, or } from 'drizzle-orm';
 import { schema, type DB } from '@timepro/db';
 import { requireAuth } from '../plugins/tenant';
-import { canView, forbid, isAdmin, visibleUsers, type VisibleUsers } from '../lib/access';
+import { canView, forbid, isAdmin, manageableUsers, visibleUsers, type VisibleUsers } from '../lib/access';
 import { getEffectiveForUser } from '../lib/settings';
 import { recordAudit } from '../lib/audit';
 
@@ -79,22 +79,23 @@ const OFFLINE_GATE = {
 };
 
 /**
- * Authorize a write against the entry's owner. `visible` is resolved once by the
- * caller (outside the tenant tx); the settings gate is checked on `tx`. `gate`
+ * Authorize a write against the entry's owner. `manageable` (from
+ * `manageableUsers`, never the wider view scope) is resolved once by the caller
+ * (outside the tenant tx); the settings gate is checked on `tx`. `gate`
  * selects which employee self-service policy applies (edit vs. offline-add).
  */
 async function authorizeWrite(
   tx: DB,
   orgId: string,
   requesterId: string,
-  visible: VisibleUsers,
+  manageable: VisibleUsers,
   targetUserId: string,
   gate: { key: 'time.allow_self_edit' | 'time.allow_offline'; deniedMsg: string },
 ): Promise<void> {
-  if (!canView(visible, targetUserId)) forbid('Not allowed to edit this time entry');
-  // Admins and managers may always act within their visible set; an employee
+  if (!canView(manageable, targetUserId)) forbid('Not allowed to edit this time entry');
+  // Admins and managers may always act within their manageable set; an employee
   // acting on their own time is gated by the org/user policy.
-  if (!isAdmin(visible.role) && visible.role !== 'manager') {
+  if (!isAdmin(manageable.role) && manageable.role !== 'manager') {
     const { effective } = await getEffectiveForUser(tx, orgId, requesterId);
     if (!effective[gate.key]) {
       forbid(gate.deniedMsg);
@@ -177,9 +178,9 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
         });
       }
 
-      const visible = await visibleUsers(req);
+      const manageable = await manageableUsers(req);
       return req.withTenantDb(async (tx) => {
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, targetUserId, OFFLINE_GATE);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, manageable, targetUserId, OFFLINE_GATE);
 
         if (body.project_id) {
           await assertProjectAssignable(tx, req.organizationId!, body.project_id, targetUserId);
@@ -267,10 +268,10 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       const body = req.body;
-      const visible = await visibleUsers(req);
+      const manageable = await manageableUsers(req);
       return req.withTenantDb(async (tx) => {
         const entry = await loadEntry(tx, req.organizationId!, req.params.id);
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId, EDIT_GATE);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, manageable, entry.userId, EDIT_GATE);
 
         const editsTime = body.started_at !== undefined || body.ended_at !== undefined;
         if (editsTime && !entry.endedAt) {
@@ -376,10 +377,10 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       const at = new Date(req.body.at);
-      const visible = await visibleUsers(req);
+      const manageable = await manageableUsers(req);
       return req.withTenantDb(async (tx) => {
         const entry = await loadEntry(tx, req.organizationId!, req.params.id);
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId, EDIT_GATE);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, manageable, entry.userId, EDIT_GATE);
 
         if (!entry.endedAt) {
           throw Object.assign(new Error('cannot split a running timer'), {
@@ -473,10 +474,10 @@ export const timeEntryRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (req) => {
-      const visible = await visibleUsers(req);
+      const manageable = await manageableUsers(req);
       return req.withTenantDb(async (tx) => {
         const entry = await loadEntry(tx, req.organizationId!, req.params.id);
-        await authorizeWrite(tx, req.organizationId!, req.userId!, visible, entry.userId, EDIT_GATE);
+        await authorizeWrite(tx, req.organizationId!, req.userId!, manageable, entry.userId, EDIT_GATE);
 
         await tx
           .update(schema.timeEntries)
