@@ -8,13 +8,8 @@ import {
 } from '@/lib/api';
 import { Button, ChevronDownIcon, ClockIcon, Modal } from '@timepro/ui';
 import { pad } from '@/lib/format';
+import { manualTimeRange } from '@/lib/date';
 
-/** A local calendar date ('YYYY-MM-DD') + wall-clock 'HH:MM' → ISO (viewer's tz). */
-const localIso = (dateStr: string, hm: string) => {
-  const [y, mo, d] = dateStr.split('-').map(Number);
-  const [h, mi] = hm.split(':').map(Number);
-  return new Date(y ?? 1970, (mo ?? 1) - 1, d ?? 1, h ?? 0, mi ?? 0, 0, 0).toISOString();
-};
 const fmtDur = (secs: number) => {
   const s = Math.max(0, Math.round(secs));
   const h = Math.floor(s / 3600);
@@ -51,14 +46,17 @@ export function AddTimeModal({
     getAssignableProjects(userId).then((r) => setProjects(r.projects)).catch(() => {});
   }, [userId]);
 
-  const startIso = localIso(date, start);
-  const endIso = localIso(date, end);
-  const durSecs = (Date.parse(endIso) - Date.parse(startIso)) / 1000;
-  const rangeInvalid = Date.parse(endIso) <= Date.parse(startIso);
+  // An end time at/before the start is read as an overnight shift (7pm→1am):
+  // the end rolls to the next calendar day. Equal times stay invalid.
+  const { startIso, endIso, crossesMidnight, invalid: rangeInvalid, durSecs } = manualTimeRange(
+    date,
+    start,
+    end,
+  );
 
   const save = async () => {
     setError(null);
-    if (rangeInvalid) { setError('Start must be before end.'); return; }
+    if (rangeInvalid) { setError('Start and end time can’t be the same.'); return; }
     setBusy(true);
     try {
       await createTimeEntry({
@@ -113,7 +111,9 @@ export function AddTimeModal({
             </div>
             <span className="et-dur">{rangeInvalid ? '—' : fmtDur(durSecs)}</span>
           </div>
-          <p className="et-hint">Times are in your local timezone.</p>
+          <p className="et-hint">
+            Times are in your local timezone.{crossesMidnight && ' Ends next day (+1).'}
+          </p>
         </div>
 
         <div className="et-group">

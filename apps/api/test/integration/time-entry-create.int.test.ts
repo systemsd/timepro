@@ -99,4 +99,14 @@ describe('POST /v1/time-entries (manual backfill)', () => {
     const res = await create(admin, { user_id: emp, started_at: END, ended_at: START });
     expect(res.statusCode).toBe(422);
   });
+
+  it('accepts an overnight entry that crosses midnight (19:00 → 01:00 next day)', async () => {
+    // The API has no same-day constraint — it only checks started < ended. The
+    // web "Add Offline Time" modal relies on this to log overnight shifts.
+    const startedAt = '2026-07-17T19:00:00.000Z';
+    const endedAt = '2026-07-18T01:00:00.000Z';
+    const res = await create(admin, { user_id: emp, started_at: startedAt, ended_at: endedAt });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ user_id: emp, source: 'manual', started_at: startedAt, ended_at: endedAt });
+  });
 });
