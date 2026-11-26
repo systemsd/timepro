@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { asPlatform, getDb, schema } from '@timepro/db';
 import { loadConfig } from '../config';
 
@@ -9,9 +9,15 @@ import { loadConfig } from '../config';
  * OpsCore-facing reporting API — the reverse direction of the directory sync.
  *
  * OpsCore is the source of truth for the task board; TimePro is the source of
- * truth for *tracked time*. This route lets OpsCore pull a task's tracked time
- * back so its task cards can show "time spent" + a time-activity feed, without
- * TimePro ever writing task state.
+ * truth for *tracked time*. This route lets OpsCore pull tracked time back —
+ * per TASK (task cards show "time spent" + a feed) and per EMPLOYEE (a manager
+ * reviewing someone in their reporting line) — without TimePro ever writing
+ * task state.
+ *
+ * NOTE both reads are unfiltered by design: TimePro has no way to evaluate
+ * OpsCore's reporting hierarchy, so OPSCORE decides who may see whose time
+ * before it calls. This endpoint is reachable only with the shared service key,
+ * never from a browser.
  *
  * Auth is the **same shared service key** the directory sync already uses (OpsCore
  * calls it `TIMEPRO_API_KEY`; here it's `OPSCORE_API_KEY` — same value both sides).
@@ -41,10 +47,34 @@ const TaskSummarySchema = z.object({
 
 const ResponseSchema = z.object({ tasks: z.array(TaskSummarySchema) });
 
+/**
+ * Employee-scoped entries carry where the time went (project/task), which the
+ * task-scoped feed doesn't need — on a person's page that context IS the point.
+ */
+const EmployeeEntrySchema = EntrySchema.extend({
+  project_name: z.string().nullable(),
+  task_name: z.string().nullable(),
+  opscore_task_id: z.string().nullable(),
+});
+
+const EmployeeSummarySchema = z.object({
+  opscore_employee_id: z.string(),
+  user_name: z.string().nullable(),
+  total_seconds: z.number().int().nonnegative(),
+  entry_count: z.number().int().nonnegative(),
+  entries: z.array(EmployeeEntrySchema),
+});
+
+const EmployeeResponseSchema = z.object({ employees: z.array(EmployeeSummarySchema) });
+
 // Cap the returned entry list per task so a heavily-tracked task can't return
 // thousands of rows. `total_seconds` / `entry_count` are computed over ALL
 // non-deleted entries, not just the returned page.
 const MAX_ENTRIES_PER_TASK = 500;
+/** Same idea per employee — a month of dense tracking is well under this. */
+const MAX_ENTRIES_PER_EMPLOYEE = 500;
+/** Employees per request. OpsCore asks for one resource at a time today. */
+const MAX_EMPLOYEES_PER_REQUEST = 100;
 
 /** Bearer check against the shared OpsCore↔TimePro service key (constant-time). */
 function isAuthorizedOpsCoreRequest(req: { headers: Record<string, unknown> }): boolean {
@@ -180,6 +210,156 @@ export const opscoreRoutes: FastifyPluginAsyncZod = async (app) => {
             .filter(([, v]) => v.count > 0)
             .map(([opscore_task_id, v]) => ({
               opscore_task_id,
+              total_seconds: v.total,
+              entry_count: v.count,
+              entries: v.entries,
+            })),
+        };
+      }, getDb());
+    },
+  );
+
+  /**
+   * Per-EMPLOYEE tracked-time activity, for OpsCore's resource detail page.
+   *   ?opscore_employee_ids=cuid1,cuid2,…   (1..100 OpsCore Employee ids)
+   *   &from=ISO  (optional, inclusive)
+   *   &to=ISO    (optional, exclusive)
+   *
+   * Returns one summary per requested id that has a synced TimePro user AND
+   * tracked time in the window; ids with neither simply don't appear (so an
+   * employee who has never tracked is "no data", not an error). Totals and
+   * `entry_count` cover every non-deleted entry in the window; `entries` is
+   * capped at MAX_ENTRIES_PER_EMPLOYEE, newest first.
+   *
+   * A running entry counts up to now, matching the task feed.
+   */
+  app.get(
+    '/opscore/employees/time-activity',
+    {
+      schema: {
+        querystring: z.object({
+          opscore_employee_ids: z
+            .string()
+            .min(1)
+            .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
+          from: z.string().datetime().optional(),
+          to: z.string().datetime().optional(),
+        }),
+        response: { 200: EmployeeResponseSchema, 401: z.object({ error: z.string() }) },
+        tags: ['opscore'],
+      },
+    },
+    async (req, reply) => {
+      if (!isAuthorizedOpsCoreRequest(req)) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const ids = Array.from(new Set(req.query.opscore_employee_ids)).slice(
+        0,
+        MAX_EMPLOYEES_PER_REQUEST,
+      );
+      if (ids.length === 0) return { employees: [] };
+
+      const from = req.query.from ? new Date(req.query.from) : null;
+      const to = req.query.to ? new Date(req.query.to) : null;
+
+      const slug = loadConfig().OPSCORE_ORG_SLUG;
+      const now = Date.now();
+
+      return asPlatform(async (tx) => {
+        const [org] = await tx
+          .select({ id: schema.organizations.id })
+          .from(schema.organizations)
+          .where(eq(schema.organizations.slug, slug))
+          .limit(1);
+        // Org not provisioned yet (no OpsCore login has happened) → nothing tracked.
+        if (!org) return { employees: [] };
+
+        // The TimePro users mirroring the requested OpsCore employees. Someone
+        // who has never signed into TimePro has no row here.
+        const localUsers = await tx
+          .select({
+            id: schema.users.id,
+            opscoreEmployeeId: schema.users.opscoreEmployeeId,
+            displayName: schema.users.displayName,
+          })
+          .from(schema.users)
+          .where(inArray(schema.users.opscoreEmployeeId, ids));
+        if (localUsers.length === 0) return { employees: [] };
+
+        const opsByUser = new Map(
+          localUsers.map((u) => [u.id, u.opscoreEmployeeId as string]),
+        );
+        const nameByOps = new Map(
+          localUsers.map((u) => [u.opscoreEmployeeId as string, u.displayName]),
+        );
+
+        const where = [
+          eq(schema.timeEntries.organizationId, org.id),
+          inArray(schema.timeEntries.userId, Array.from(opsByUser.keys())),
+          isNull(schema.timeEntries.deletedAt),
+        ];
+        // Window on started_at — the (org, user, started_at desc) index covers it.
+        if (from) where.push(gte(schema.timeEntries.startedAt, from));
+        if (to) where.push(lt(schema.timeEntries.startedAt, to));
+
+        const rows = await tx
+          .select({
+            id: schema.timeEntries.id,
+            userId: schema.timeEntries.userId,
+            startedAt: schema.timeEntries.startedAt,
+            endedAt: schema.timeEntries.endedAt,
+            description: schema.timeEntries.description,
+            source: schema.timeEntries.source,
+            projectName: schema.projects.name,
+            taskName: schema.tasks.name,
+            opscoreTaskId: schema.tasks.opscoreTaskId,
+          })
+          .from(schema.timeEntries)
+          .leftJoin(schema.projects, eq(schema.projects.id, schema.timeEntries.projectId))
+          .leftJoin(schema.tasks, eq(schema.tasks.id, schema.timeEntries.taskId))
+          .where(and(...where))
+          .orderBy(desc(schema.timeEntries.startedAt));
+
+        const byOps = new Map<
+          string,
+          { total: number; count: number; entries: z.infer<typeof EmployeeEntrySchema>[] }
+        >();
+        for (const opsId of ids) byOps.set(opsId, { total: 0, count: 0, entries: [] });
+
+        for (const r of rows) {
+          const opsId = opsByUser.get(r.userId);
+          if (!opsId) continue;
+          const bucket = byOps.get(opsId);
+          if (!bucket) continue;
+          const secs = entrySeconds(r.startedAt, r.endedAt, now);
+          bucket.total += secs;
+          bucket.count += 1;
+          if (bucket.entries.length < MAX_ENTRIES_PER_EMPLOYEE) {
+            bucket.entries.push({
+              id: r.id,
+              opscore_employee_id: opsId,
+              user_name: nameByOps.get(opsId) ?? null,
+              started_at: r.startedAt.toISOString(),
+              ended_at: r.endedAt ? r.endedAt.toISOString() : null,
+              is_running: r.endedAt === null,
+              seconds: secs,
+              description: r.description ?? null,
+              source: r.source,
+              project_name: r.projectName ?? null,
+              task_name: r.taskName ?? null,
+              opscore_task_id: r.opscoreTaskId ?? null,
+            });
+          }
+        }
+
+        return {
+          employees: Array.from(byOps.entries())
+            // Only surface employees who actually tracked time in the window.
+            .filter(([, v]) => v.count > 0)
+            .map(([opscore_employee_id, v]) => ({
+              opscore_employee_id,
+              user_name: nameByOps.get(opscore_employee_id) ?? null,
               total_seconds: v.total,
               entry_count: v.count,
               entries: v.entries,
